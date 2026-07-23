@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
@@ -35,17 +36,23 @@ public sealed class ScanQrHandler
     private readonly IVisitRepository _visits;
     private readonly IScanLogRepository _logs;
     private readonly IDateTimeProvider _clock;
+    private readonly IScanEventBroadcaster _broadcaster;
+    private readonly ILogger<ScanQrHandler> _logger;
 
     public ScanQrHandler(
         IQrSigningService signing,
         IVisitRepository visits,
         IScanLogRepository logs,
-        IDateTimeProvider clock)
+        IDateTimeProvider clock,
+        IScanEventBroadcaster broadcaster,
+        ILogger<ScanQrHandler> logger)
     {
         _signing = signing;
         _visits = visits;
         _logs = logs;
         _clock = clock;
+        _broadcaster = broadcaster;
+        _logger = logger;
     }
 
     public async Task<ScanQrResult> HandleAsync(ScanQrCommand command, CancellationToken ct)
@@ -98,6 +105,24 @@ public sealed class ScanQrHandler
             { IsGranted: true } => "GRANTED",
             _ => $"DENIED_{outcome.DenialReason}"
         };
+
+        // REQ-F-06 : diffusion temps réel (dashboard sûreté / portail hôte).
+        // Best-effort — une panne de diffusion ne doit jamais invalider un
+        // scan déjà journalisé.
+        try
+        {
+            await _broadcaster.BroadcastAsync(
+                new ScanBroadcastEvent(
+                    visit.Id, visit.VisitorName, verdict,
+                    outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
+                    command.AgentId, now),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Échec de diffusion temps réel du scan pour la visite {VisitId}.", visit.Id);
+        }
 
         return new ScanQrResult(
             outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,

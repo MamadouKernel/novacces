@@ -21,8 +21,12 @@ public sealed class TenantResolutionMiddleware
 
     public async Task InvokeAsync(HttpContext context, CurrentTenant currentTenant)
     {
-        // Endpoints exemptés (health check, etc.)
-        if (context.Request.Path.StartsWithSegments("/health"))
+        // Endpoints exemptés : health check, et le Hub SignalR (/hubs/*) qui
+        // valide lui-même son site via la query string à la connexion — une
+        // connexion WebSocket persistante ne repasse pas par ce middleware à
+        // chaque message, contrairement à une requête HTTP classique.
+        if (context.Request.Path.StartsWithSegments("/health")
+            || context.Request.Path.StartsWithSegments("/hubs"))
         {
             await _next(context);
             return;

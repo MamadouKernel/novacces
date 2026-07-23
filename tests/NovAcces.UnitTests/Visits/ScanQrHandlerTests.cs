@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Entities;
@@ -46,6 +47,16 @@ file sealed class FakeScanLogRepository : IScanLogRepository
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
+file sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
+{
+    public ScanBroadcastEvent? LastBroadcast { get; private set; }
+    public Task BroadcastAsync(ScanBroadcastEvent scanEvent, CancellationToken ct)
+    {
+        LastBroadcast = scanEvent;
+        return Task.CompletedTask;
+    }
+}
+
 public class ScanQrHandlerTests
 {
     [Fact]
@@ -65,7 +76,9 @@ public class ScanQrHandlerTests
         };
         var visits = new FakeVisitRepository();
         var logs = new FakeScanLogRepository();
-        var handler = new ScanQrHandler(signing, visits, logs, clock);
+        var handler = new ScanQrHandler(
+            signing, visits, logs, clock,
+            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),
@@ -90,7 +103,9 @@ public class ScanQrHandlerTests
             AccessMode.Unique, clock.UtcNow, 60, null, null, false, clock.UtcNow);
         var visits = new FakeVisitRepository { VisitToReturn = visit };
         var logs = new FakeScanLogRepository();
-        var handler = new ScanQrHandler(signing, visits, logs, clock);
+        var handler = new ScanQrHandler(
+            signing, visits, logs, clock,
+            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),

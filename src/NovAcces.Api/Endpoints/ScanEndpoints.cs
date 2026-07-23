@@ -6,7 +6,7 @@ namespace NovAcces.Api.Endpoints;
 
 public static class ScanEndpoints
 {
-    public static IEndpointRouteBuilder MapScanEndpoints(this IEndpointRouteBuilder app)
+    public static RouteGroupBuilder MapScanEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/scan").WithTags("Scan");
 
@@ -39,6 +39,6 @@ public static class ScanEndpoints
         .WithName("ScanQr")
         .WithSummary("Scanne un QR au poste de contrôle (entrée ou sortie).");
 
-        return app;
+        return group;
     }
 }

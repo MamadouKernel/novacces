@@ -6,7 +6,7 @@ namespace NovAcces.Api.Endpoints;
 
 public static class VisitEndpoints
 {
-    public static IEndpointRouteBuilder MapVisitEndpoints(this IEndpointRouteBuilder app)
+    public static RouteGroupBuilder MapVisitEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/visits").WithTags("Visits");
 
@@ -55,6 +55,6 @@ public static class VisitEndpoints
         .WithName("RevokeVisit")
         .WithSummary("Révoque un QR à tout moment (REQ-F-09).");
 
-        return app;
+        return group;
     }
 }

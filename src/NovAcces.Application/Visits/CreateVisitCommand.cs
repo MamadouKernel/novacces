@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
@@ -29,17 +30,23 @@ public sealed class CreateVisitHandler
     private readonly IQrSigningService _signing;
     private readonly IDateTimeProvider _clock;
     private readonly IExclusionListService _exclusionList;
+    private readonly INotificationService _notifications;
+    private readonly ILogger<CreateVisitHandler> _logger;
 
     public CreateVisitHandler(
         IVisitRepository visits,
         IQrSigningService signing,
         IDateTimeProvider clock,
-        IExclusionListService exclusionList)
+        IExclusionListService exclusionList,
+        INotificationService notifications,
+        ILogger<CreateVisitHandler> logger)
     {
         _visits = visits;
         _signing = signing;
         _clock = clock;
         _exclusionList = exclusionList;
+        _notifications = notifications;
+        _logger = logger;
     }
 
     public async Task<CreateVisitResult> HandleAsync(CreateVisitCommand command, CancellationToken ct)
@@ -60,6 +67,24 @@ public sealed class CreateVisitHandler
 
         await _visits.AddAsync(visit, ct);
         await _visits.SaveChangesAsync(ct);
+
+        // REQ-F-03 : envoi automatique du QR au visiteur. Best-effort — un
+        // échec de notification ne doit jamais invalider une visite dont le
+        // QR est déjà signé et enregistré.
+        try
+        {
+            await _notifications.SendVisitInvitationAsync(
+                new VisitInvitationNotification(
+                    visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
+                    signedPayload, visit.ScheduledAt, expiresAt),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Échec de l'envoi de l'invitation à {VisitorName} pour la visite {VisitId} — le QR reste valide.",
+                visit.VisitorName, visit.Id);
+        }
 
         return new CreateVisitResult(visit.Id, signedPayload, expiresAt);
     }

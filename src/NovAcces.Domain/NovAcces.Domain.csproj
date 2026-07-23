@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NovAcces.Domain</RootNamespace>
+    <!-- Le Domain ne référence RIEN d'autre : c'est une garantie architecturale,
+         pas une contrainte technique. Toute tentative d'y ajouter EF Core,
+         ASP.NET ou une lib tierce doit être vue comme une régression. -->
+  </PropertyGroup>
+
+</Project>

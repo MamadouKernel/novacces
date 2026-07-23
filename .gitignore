@@ -1,0 +1,13 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
+
+## Documents commerciaux bruts (hors dépôt — équivalents texte dans docs/*.md)
+/*.docx
+/*.pdf
+/*.zip

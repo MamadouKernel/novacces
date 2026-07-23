@@ -1,0 +1,267 @@
+using NovAcces.Domain.Enums;
+using NovAcces.Domain.Exceptions;
+
+namespace NovAcces.Domain.Entities;
+
+/// <summary>
+/// Une demande de visite et son cycle de vie complet.
+/// Toute la logique de sécurité (fenêtre, anti-rejeu, cycle entrée/sortie) est
+/// centralisée ici : jamais côté application mobile, jamais côté portail web
+/// (REQ-SEC-02 du CDC).
+/// </summary>
+public class Visit
+{
+    public Guid Id { get; private set; }
+
+    /// <summary>Identifiant de visite tel qu'il apparaît, chiffré et signé, dans le QR.</summary>
+    public Guid VisitToken { get; private set; }
+
+    public string VisitorName { get; private set; } = default!;
+    public string VisitorCompany { get; private set; } = default!;
+    public string? VisitorPhone { get; private set; }
+    public string? VisitorEmail { get; private set; }
+    public string Motif { get; private set; } = default!;
+
+    public string HostUserId { get; private set; } = default!;
+
+    public AccessMode Mode { get; private set; }
+    public VisitStatus Status { get; private set; }
+
+    /// <summary>Horodatage du rendez-vous prévu (mode Unique uniquement).</summary>
+    public DateTimeOffset? ScheduledAt { get; private set; }
+
+    /// <summary>Durée de visite prévue en minutes (supervision des dépassements).</summary>
+    public int PlannedDurationMinutes { get; private set; }
+
+    public bool IsOnSite { get; private set; }
+    public DateTimeOffset? CheckedInAt { get; private set; }
+    public DateTimeOffset? CheckedOutAt { get; private set; }
+
+    /// <summary>Vrai dès qu'un cycle entrée/sortie complet a eu lieu (mode Unique => QR définitivement clos).</summary>
+    public bool HasCompletedCycle { get; private set; }
+
+    /// <summary>Vrai si la personne figure sur la liste d'exclusion du site (REQ-F-11).</summary>
+    public bool IsExcluded { get; private set; }
+
+    public DateTimeOffset CreatedAt { get; private set; }
+
+    // Alertes de dépassement (supervision, jamais bloquant)
+    public int OverstayLevel { get; private set; }
+    public DateTimeOffset? LastOverstayAlertAt { get; private set; }
+
+    private Visit() { } // EF Core
+
+    public static Visit Create(
+        string visitorName,
+        string visitorCompany,
+        string motif,
+        string hostUserId,
+        AccessMode mode,
+        DateTimeOffset? scheduledAt,
+        int plannedDurationMinutes,
+        string? visitorPhone,
+        string? visitorEmail,
+        bool isExcluded,
+        DateTimeOffset now)
+    {
+        if (mode == AccessMode.Unique && scheduledAt is null)
+            throw new DomainException("Un rendez-vous doit être fourni pour un accès à passage unique.");
+
+        return new Visit
+        {
+            Id = Guid.NewGuid(),
+            VisitToken = Guid.NewGuid(),
+            VisitorName = visitorName,
+            VisitorCompany = visitorCompany,
+            Motif = motif,
+            HostUserId = hostUserId,
+            Mode = mode,
+            Status = VisitStatus.Valid,
+            ScheduledAt = scheduledAt,
+            PlannedDurationMinutes = plannedDurationMinutes <= 0 ? 60 : plannedDurationMinutes,
+            VisitorPhone = visitorPhone,
+            VisitorEmail = visitorEmail,
+            IsExcluded = isExcluded,
+            CreatedAt = now
+        };
+    }
+
+    /// <summary>
+    /// Fenêtre de validité calculée côté serveur exclusivement (REQ-SEC-02).
+    /// </summary>
+    public WindowState EvaluateWindow(DateTimeOffset now)
+    {
+        if (Mode != AccessMode.Unique || ScheduledAt is null)
+            return WindowState.Ok;
+
+        var opensAt = ScheduledAt.Value.AddMinutes(-20);
+        var closesAt = ScheduledAt.Value.AddMinutes(15);
+
+        if (now < opensAt) return WindowState.TooEarly;
+        if (now > closesAt) return WindowState.TooLate;
+        return WindowState.Ok;
+    }
+
+    /// <summary>
+    /// Coeur de l'anti-rejeu et du cycle entrée/sortie directionnel.
+    /// Appelé dans une transaction sérialisable avec verrou pessimiste (voir
+    /// Infrastructure/Persistence — REQ-SEC-03 : consommation atomique).
+    /// </summary>
+    public ScanOutcome Scan(CheckpointDirection direction, bool isBusinessDay, DateTimeOffset now)
+    {
+        // 1. Liste d'exclusion : refus générique, motif réservé à la sûreté (REQ-F-11)
+        if (IsExcluded && !IsOnSite)
+            return ScanOutcome.Denied(ScanDenialReason.Excluded, isSecurityEvent: true);
+
+        // 2. Poste SORTIE : ne gère que des sorties, jamais d'entrée
+        if (direction == CheckpointDirection.Exit)
+        {
+            if (!IsOnSite)
+                return ScanOutcome.Denied(ScanDenialReason.NoActiveEntry, isSecurityEvent: false);
+
+            return CheckOut(now);
+        }
+
+        // 3. Poste ENTRÉE : le titulaire est déjà sur site => suspicion de copie/vol
+        if (IsOnSite)
+            return ScanOutcome.Denied(ScanDenialReason.SuspectedDuplicate, isSecurityEvent: true);
+
+        // 4. Statuts bloquants
+        if (Status == VisitStatus.Revoked)
+            return ScanOutcome.Denied(ScanDenialReason.Revoked, isSecurityEvent: true);
+
+        if (Mode == AccessMode.Unique && HasCompletedCycle)
+            return ScanOutcome.Denied(ScanDenialReason.CycleAlreadyClosed, isSecurityEvent: true);
+
+        if (Mode == AccessMode.Unique && Status == VisitStatus.Consumed)
+            return ScanOutcome.Denied(ScanDenialReason.AlreadyConsumed, isSecurityEvent: true);
+
+        // 5. Fenêtre de validité (mode Unique)
+        if (Mode == AccessMode.Unique)
+        {
+            var window = EvaluateWindow(now);
+            if (window == WindowState.TooEarly)
+                return ScanOutcome.Denied(ScanDenialReason.TooEarly, isSecurityEvent: true);
+            if (window == WindowState.TooLate)
+                return ScanOutcome.Denied(ScanDenialReason.TooLate, isSecurityEvent: true);
+        }
+
+        // 5bis. Mode 30 jours : la période de 30 jours calendaires depuis la
+        // création ne doit jamais être dépassée (REQ-F-05 — un accès "30 jours"
+        // n'est pas un accès permanent). Gap identifié et corrigé le 23/07/2026 :
+        // absent de la première version du scaffold.
+        if (Mode == AccessMode.ThirtyDays && now > CreatedAt.AddDays(30))
+            return ScanOutcome.Denied(ScanDenialReason.TooLate, isSecurityEvent: true);
+
+        // 6. Jours ouvrés (mode 30 jours) — REQ-F-05
+        if (Mode == AccessMode.ThirtyDays && !isBusinessDay)
+            return ScanOutcome.Denied(ScanDenialReason.NonBusinessDay, isSecurityEvent: true);
+
+        // 7. Entrée autorisée — consommation atomique si mode Unique (REQ-SEC-03)
+        IsOnSite = true;
+        CheckedInAt = now;
+        OverstayLevel = 0;
+        LastOverstayAlertAt = null;
+
+        if (Mode == AccessMode.Unique)
+            Status = VisitStatus.Consumed;
+
+        return ScanOutcome.Granted();
+    }
+
+    private ScanOutcome CheckOut(DateTimeOffset now)
+    {
+        var overstayMinutes = ComputeOverstayMinutes(now);
+
+        IsOnSite = false;
+        CheckedOutAt = now;
+        OverstayLevel = 0;
+        LastOverstayAlertAt = null;
+
+        if (Mode == AccessMode.Unique)
+            HasCompletedCycle = true;
+
+        return ScanOutcome.CheckedOut(overstayMinutes);
+    }
+
+    /// <summary>Révocation manuelle par l'hôte ou la sûreté (REQ-F-09), possible à tout moment.</summary>
+    public void Revoke()
+    {
+        Status = VisitStatus.Revoked;
+    }
+
+    /// <summary>Dépassement de la durée de visite prévue — supervision, jamais bloquant.</summary>
+    public int ComputeOverstayMinutes(DateTimeOffset now)
+    {
+        if (!IsOnSite || CheckedInAt is null) return 0;
+        var expectedCheckOut = CheckedInAt.Value.AddMinutes(PlannedDurationMinutes);
+        var overstay = (now - expectedCheckOut).TotalMinutes;
+        return overstay > 0 ? (int)overstay : 0;
+    }
+
+    /// <summary>
+    /// Retourne le niveau d'alerte à déclencher (0 = aucun), avec anti-spam
+    /// (un rappel au maximum par intervalle configuré).
+    /// </summary>
+    public int EvaluateOverstayAlertLevel(DateTimeOffset now, TimeSpan reminderInterval)
+    {
+        var overstay = ComputeOverstayMinutes(now);
+        if (overstay <= 0) return 0;
+
+        if (LastOverstayAlertAt is null)
+        {
+            OverstayLevel = 1;
+            LastOverstayAlertAt = now;
+            return OverstayLevel;
+        }
+
+        if (now - LastOverstayAlertAt.Value >= reminderInterval)
+        {
+            OverstayLevel++;
+            LastOverstayAlertAt = now;
+            return OverstayLevel;
+        }
+
+        return 0; // pas encore l'heure du prochain rappel
+    }
+}
+
+public enum WindowState { Ok, TooEarly, TooLate }
+
+public enum ScanDenialReason
+{
+    Excluded,
+    NoActiveEntry,
+    SuspectedDuplicate,
+    Revoked,
+    CycleAlreadyClosed,
+    AlreadyConsumed,
+    TooEarly,
+    TooLate,
+    NonBusinessDay,
+    InvalidSignature
+}
+
+/// <summary>Résultat d'un scan — jamais d'exception pour un refus métier normal.</summary>
+public sealed class ScanOutcome
+{
+    public bool IsGranted { get; }
+    public bool IsCheckOut { get; }
+    public bool IsSecurityEvent { get; }
+    public ScanDenialReason? DenialReason { get; }
+    public int OverstayMinutesAtCheckOut { get; }
+
+    private ScanOutcome(bool granted, bool checkOut, bool securityEvent, ScanDenialReason? reason, int overstay)
+    {
+        IsGranted = granted;
+        IsCheckOut = checkOut;
+        IsSecurityEvent = securityEvent;
+        DenialReason = reason;
+        OverstayMinutesAtCheckOut = overstay;
+    }
+
+    public static ScanOutcome Granted() => new(true, false, false, null, 0);
+    public static ScanOutcome CheckedOut(int overstayMinutes) => new(true, true, false, null, overstayMinutes);
+    public static ScanOutcome Denied(ScanDenialReason reason, bool isSecurityEvent) =>
+        new(false, false, isSecurityEvent, reason, 0);
+}

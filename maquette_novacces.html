@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOVACCÈS — Maquette de démonstration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#10161D; --ink2:#3C4854; --muted:#6B7784;
+  --paper:#F4F5F2; --card:#FFFFFF; --line:#DCE0DB;
+  --navy:#0E2A3A; --navy2:#123649;
+  --amber:#F5A300; --amber-ink:#7A5200;
+  --ok:#0F8A3D; --ok-bg:#0D9142;
+  --no:#C92A2A; --no-bg:#CE2F2F;
+  --mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Public Sans',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.5}
+button{font-family:inherit;cursor:pointer}
+h1,h2,h3,.disp{font-family:'Barlow Condensed',sans-serif;letter-spacing:.01em}
+
+/* ===== console de démo ===== */
+.console{background:var(--navy);color:#fff;position:sticky;top:0;z-index:50;border-bottom:3px solid var(--amber)}
+.console-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand .n{font-family:'Barlow Condensed';font-weight:700;font-size:26px;letter-spacing:.04em}
+.brand .n span{color:var(--amber)}
+.brand .s{font-size:11px;opacity:.75;text-transform:uppercase;letter-spacing:.14em}
+.demo-tag{font-family:var(--mono);font-size:10.5px;background:rgba(245,163,0,.15);color:var(--amber);border:1px solid rgba(245,163,0,.5);padding:3px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.08em}
+.roles{display:flex;gap:6px;margin-left:auto}
+.role{background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.85);padding:8px 16px;border-radius:4px;font-size:13px;font-weight:600;transition:.15s}
+.role:hover{border-color:var(--amber);color:#fff}
+.role.on{background:var(--amber);border-color:var(--amber);color:var(--navy);font-weight:700}
+.role small{display:block;font-weight:400;font-size:10px;opacity:.8}
+.role.on small{opacity:.9}
+
+/* ===== layout ===== */
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+.view{display:none;animation:fade .25s ease}
+.view.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.vhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.vhead h1{font-size:34px;font-weight:700;color:var(--navy)}
+.vhead .who{font-size:13px;color:var(--muted)}
+.vhead .who b{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--amber-ink);margin-bottom:4px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px}
+.card h2{font-size:21px;color:var(--navy);padding:14px 18px;border-bottom:1px solid var(--line)}
+.pad{padding:18px}
+
+/* ===== boutons ===== */
+.btn{border:none;border-radius:5px;padding:10px 18px;font-size:14px;font-weight:600;transition:.15s}
+.btn-p{background:var(--navy);color:#fff}
+.btn-p:hover{background:var(--navy2)}
+.btn-a{background:var(--amber);color:var(--navy)}
+.btn-a:hover{filter:brightness(1.06)}
+.btn-o{background:#fff;border:1px solid var(--line);color:var(--ink2)}
+.btn-o:hover{border-color:var(--navy);color:var(--navy)}
+.btn-d{background:#fff;border:1px solid #E4B5B5;color:var(--no)}
+.btn-d:hover{background:#FCF1F1}
+.btn-sm{padding:6px 12px;font-size:12.5px}
+
+/* ===== tables ===== */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:500}
+td{padding:11px 14px;border-bottom:1px solid #ECEEE9;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.mono{font-family:var(--mono);font-size:12px}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:20px}
+.pi-ok{background:#E4F4E9;color:var(--ok)}
+.pi-wait{background:#FFF3D6;color:var(--amber-ink)}
+.pi-used{background:#EBEDF0;color:var(--muted)}
+.pi-in{background:#E3EEF9;color:#1B5E9E}
+.pi-rev{background:#FBE9E9;color:var(--no)}
+.pi-exp{background:#F3E8FB;color:#7B3FA0}
+.pi-deg{background:#FFF3D6;color:var(--amber-ink);border:1px dashed var(--amber)}
+.pi-sec{background:var(--no);color:#fff}
+
+/* ===== KPIs sûreté ===== */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--navy);border-radius:8px;padding:14px 16px;transition:transform .15s,box-shadow .15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(14,42,58,.10)}
+.kpi.warn{border-left-color:var(--no)}
+.kpi .v{font-family:'Barlow Condensed';font-size:36px;font-weight:700;color:var(--navy);line-height:1}
+.kpi.warn .v{color:var(--no)}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:4px}
+
+.grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;align-items:start}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* ===== formulaire ===== */
+.frm{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.frm .full{grid-column:1/-1}
+label{display:block;font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:5px}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:5px;padding:9px 11px;font-family:inherit;font-size:14px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber)}
+.hint{font-size:11.5px;color:var(--muted);margin-top:4px}
+.radio-row{display:flex;gap:10px}
+.mode-opt{flex:1;border:1px solid var(--line);border-radius:6px;padding:10px 12px;cursor:pointer;background:#fff}
+.mode-opt input{width:auto;margin-right:8px}
+.mode-opt.sel{border-color:var(--navy);background:#F0F4F6;outline:1px solid var(--navy)}
+.mode-opt b{font-size:13.5px}
+.mode-opt .d{font-size:11.5px;color:var(--muted)}
+
+/* ===== modal ===== */
+.overlay{position:fixed;inset:0;background:rgba(14,42,58,.55);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.overlay.on{display:flex}
+.modal{background:#fff;border-radius:10px;max-width:480px;width:100%;overflow:hidden;animation:fade .2s}
+.modal-h{background:var(--navy);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+.modal-h h3{font-size:20px}
+.modal-h button{background:none;border:none;color:#fff;font-size:20px;opacity:.7}
+.modal-b{padding:22px 20px;text-align:center}
+.qrbox{display:inline-block;padding:14px;border:1px solid var(--line);border-radius:8px;background:#fff;margin:10px 0}
+.qr-meta{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+.sent{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.sent span{font-size:12px;background:#E4F4E9;color:var(--ok);padding:4px 10px;border-radius:4px;font-weight:600}
+
+/* ===== téléphone agent ===== */
+.agent-stage{display:grid;grid-template-columns:390px 1fr;gap:26px;align-items:start}
+@media(max-width:900px){.agent-stage{grid-template-columns:1fr}}
+.phone{width:100%;max-width:390px;background:#0B0F14;border-radius:34px;padding:12px;box-shadow:0 24px 60px rgba(14,42,58,.35);margin:0 auto}
+.screen{background:#101820;border-radius:24px;overflow:hidden;height:660px;display:flex;flex-direction:column;position:relative;color:#E8ECEF}
+.ph-top{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-family:var(--mono);font-size:10.5px;color:#9AA7B2}
+.ph-app{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #1E2933}
+.ph-app .logo{font-family:'Barlow Condensed';font-weight:700;font-size:18px;letter-spacing:.05em}
+.ph-app .logo span{color:var(--amber)}
+.ph-app .site{margin-left:auto;font-size:10.5px;font-family:var(--mono);color:#9AA7B2;text-align:right}
+.net{width:9px;height:9px;border-radius:50%;background:#26C266;box-shadow:0 0 8px rgba(38,194,102,.7)}
+.net.off{background:var(--amber);box-shadow:0 0 8px rgba(245,163,0,.7)}
+.deg-banner{display:none;background:rgba(245,163,0,.12);border-top:1px solid rgba(245,163,0,.4);border-bottom:1px solid rgba(245,163,0,.4);color:var(--amber);font-size:10.5px;font-family:var(--mono);padding:6px 14px;line-height:1.45}
+.deg-banner.on{display:block}
+.viewfinder{flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:
+ radial-gradient(ellipse at 50% 40%,#1B2733 0%,#0E141B 70%)}
+.reticle{width:210px;height:210px;position:relative}
+.reticle i{position:absolute;width:34px;height:34px;border:3px solid var(--amber)}
+.reticle i:nth-child(1){top:0;left:0;border-right:none;border-bottom:none;border-radius:6px 0 0 0}
+.reticle i:nth-child(2){top:0;right:0;border-left:none;border-bottom:none;border-radius:0 6px 0 0}
+.reticle i:nth-child(3){bottom:0;left:0;border-right:none;border-top:none;border-radius:0 0 0 6px}
+.reticle i:nth-child(4){bottom:0;right:0;border-left:none;border-top:none;border-radius:0 0 6px 0}
+.scanline{position:absolute;left:8px;right:8px;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent);top:10px;animation:scan 2.2s ease-in-out infinite}
+@keyframes scan{0%,100%{top:10px}50%{top:196px}}
+.vf-hint{position:absolute;bottom:18px;left:0;right:0;text-align:center;font-size:12px;color:#9AA7B2}
+.verdict{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;z-index:5}
+.verdict.on{display:flex;animation:pop .18s ease}
+@keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.verdict.ok{background:var(--ok-bg)}
+.verdict.no{background:var(--no-bg)}
+.verdict.out{background:#1B5E9E}
+.verdict .big{font-family:'Barlow Condensed';font-weight:700;font-size:44px;letter-spacing:.06em;color:#fff;margin-top:10px}
+.verdict .ico{width:86px;height:86px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:44px;color:#fff;animation:pulse .5s ease}
+@keyframes pulse{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1)}}
+.verdict .who{color:rgba(255,255,255,.95);margin-top:14px;font-size:16px;font-weight:600}
+.verdict .det{color:rgba(255,255,255,.85);font-size:13px;margin-top:4px}
+.verdict .reason{margin-top:10px;background:rgba(0,0,0,.22);color:#fff;font-family:var(--mono);font-size:11px;padding:6px 12px;border-radius:4px}
+.verdict .degm{margin-top:8px;font-family:var(--mono);font-size:10px;color:#FFE2A8;border:1px dashed rgba(255,255,255,.6);padding:3px 9px;border-radius:3px}
+.verdict .back{margin-top:22px;background:rgba(255,255,255,.92);border:none;color:var(--ink);font-weight:700;padding:10px 22px;border-radius:6px}
+.ph-foot{padding:10px 14px;border-top:1px solid #1E2933;display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:10px;color:#9AA7B2}
+
+.sim{background:var(--card);border:1px solid var(--line);border-radius:8px}
+.sim h2{font-size:21px;color:var(--navy);padding:14px 18px;border-bottom:1px solid var(--line)}
+.sim .pad p{font-size:13px;color:var(--muted);margin-bottom:12px}
+.chips{display:flex;flex-direction:column;gap:8px}
+.chip{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:6px;padding:10px 12px;background:#fff;text-align:left;transition:.15s;width:100%}
+.chip:hover{border-color:var(--amber);background:#FFFBF0;transform:translateX(2px)}
+.chip{transition:transform .12s,border-color .12s,background .12s}
+.chip:active{transform:scale(.985)}
+.chip:disabled{opacity:.45;cursor:not-allowed}
+.chip .mini-qr{flex:none}
+.chip .ci b{display:block;font-size:13.5px}
+.chip .ci small{color:var(--muted);font-size:11.5px}
+.chip .st{margin-left:auto}
+.sw{margin-top:16px;display:flex;align-items:center;gap:10px;border-top:1px dashed var(--line);padding-top:14px}
+.switch{position:relative;width:46px;height:24px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#CBD2D8;border-radius:20px;transition:.2s}
+.slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.switch input:checked + .slider{background:var(--amber)}
+.switch input:checked + .slider:before{transform:translateX(22px)}
+.sw .t b{font-size:13px}
+.sw .t small{display:block;color:var(--muted);font-size:11.5px}
+
+/* ===== toasts ===== */
+.toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;z-index:200;max-width:340px}
+.toast{background:var(--navy);color:#fff;border-left:4px solid var(--amber);border-radius:6px;padding:12px 14px;font-size:13px;box-shadow:0 10px 30px rgba(14,42,58,.35);animation:tin .28s cubic-bezier(.2,.8,.3,1)}
+@keyframes tin{from{transform:translateX(26px);opacity:0}to{transform:none;opacity:1}}
+.toast b{display:block;font-size:13.5px}
+.toast small{opacity:.8;font-family:var(--mono);font-size:10.5px}
+.toast.sec{border-left-color:var(--no)}
+
+.hstats{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.hstat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 22px;display:flex;flex-direction:column;align-items:center;min-width:110px;transition:transform .15s}
+.hstat:hover{transform:translateY(-2px)}
+.hstat b{font-family:'Barlow Condensed';font-size:30px;color:var(--navy);line-height:1}
+.hstat span{font-size:11.5px;color:var(--muted)}
+.hstat.in b{color:#1B5E9E}
+.hstat.off b{color:var(--muted)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+/* divers */
+.empty{padding:26px;text-align:center;color:var(--muted);font-size:13.5px}
+.note{font-size:12px;color:var(--muted);padding:10px 18px;border-top:1px dashed var(--line)}
+.sec-row td{background:#FDF5F5}
+.footer{max-width:1180px;margin:0 auto;padding:0 20px 30px;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<header class="console">
+  <div class="console-in">
+    <div class="brand">
+      <div class="n">NOV<span>ACCÈS</span></div>
+      <div class="s">Sigasécurité · Contrôle des visiteurs</div>
+    </div>
+    <span class="demo-tag">Maquette — données simulées</span>
+    <nav class="roles" aria-label="Choix du profil">
+      <button class="role on" data-v="hote" onclick="go('hote')">Portail hôte<small>K. N'Guessan — Client SICOPA</small></button>
+      <button class="role" data-v="agent" onclick="go('agent')">App agent<small>A. Traoré — Poste 1</small></button>
+      <button class="role" data-v="surete" onclick="go('surete')">Dashboard sûreté<small>Resp. sûreté SICOPA</small></button>
+      <button class="role" data-v="admin" onclick="go('admin')">Admin multi-sites<small>Sigasécurité — vue globale</small></button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================= PORTAIL HÔTE ================= -->
+<section class="view on" id="v-hote">
+  <div class="vhead">
+    <div>
+      <div class="eyebrow">Site SICOPA — Zone industrielle de Vridi</div>
+      <h1>Mes demandes de visite</h1>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="who">Connecté : <b>Kouadio N'Guessan</b> · Hôte · <span class="mono">2FA ✓</span></div>
+      <button class="btn btn-a" onclick="openForm()">+ Nouvelle demande</button>
+    </div>
+  </div>
+
+  <div class="hstats" id="h-stats"></div>
+
+  <div class="card">
+    <h2>Demandes en cours</h2>
+    <div style="overflow-x:auto">
+    <table id="t-hote">
+      <thead><tr><th>Réf.</th><th>Visiteur</th><th>Entreprise</th><th>Rendez-vous</th><th>Mode</th><th>Statut</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div class="note">Principe du moindre privilège : vous ne voyez que vos propres demandes. Le QR envoyé au visiteur ne contient aucune donnée personnelle — uniquement un identifiant chiffré et signé.</div>
+  </div>
+</section>
+
+<!-- ================= APP AGENT ================= -->
+<section class="view" id="v-agent">
+  <div class="vhead">
+    <div>
+      <div class="eyebrow">Poste de contrôle 1 — Entrée principale SICOPA</div>
+      <h1>Application agent</h1>
+    </div>
+    <div class="who">Agent : <b>Adama Traoré</b> · Matricule <span class="mono">SG-0417</span></div>
+  </div>
+
+  <div class="agent-stage">
+    <div class="phone" aria-label="Simulation du terminal agent">
+      <div class="screen">
+        <div class="ph-top"><span id="ph-clock">--:--</span><span style="display:flex;gap:6px;align-items:center"><span class="net" id="net"></span><span id="net-l">EN LIGNE</span></span></div>
+        <div class="ph-app">
+          <div class="logo">NOV<span>ACCÈS</span></div>
+          <button onclick="toggleList()" style="background:none;border:1px solid #1E2933;border-radius:5px;color:#E8ECEF;font-size:12px;padding:4px 8px;margin-left:8px" title="Visiteurs attendus aujourd'hui">📋</button>
+          <button id="post" onclick="togglePost()" style="background:rgba(38,194,102,.12);border:1px solid #26C266;border-radius:5px;color:#26C266;font-size:10px;font-family:var(--mono);font-weight:600;padding:4px 8px;margin-left:8px;letter-spacing:.05em" title="Sens du poste de contrôle">⇢ ENTRÉE</button>
+          <button id="snd" onclick="toggleSnd()" style="background:none;border:1px solid #1E2933;border-radius:5px;color:#E8ECEF;font-size:13px;padding:3px 7px;margin-left:6px" title="Son du verdict">🔊</button>
+          <div class="site">SICOPA — Vridi<br>Poste 1 · SG-0417</div>
+        </div>
+        <div class="deg-banner" id="deg-banner">MODE DÉGRADÉ — liste locale signée du 22/07<br>Expiration : <span id="ttl">3 h 42 min</span> · validations resynchronisées à la reconnexion</div>
+        <div class="viewfinder">
+          <div class="reticle"><i></i><i></i><i></i><i></i><div class="scanline"></div></div>
+          <div class="vf-hint">Présentez le QR Code dans le cadre</div>
+
+          <div class="verdict" id="verdict">
+            <div class="ico" id="vd-ico">✓</div>
+            <div class="big" id="vd-big">ACCÈS AUTORISÉ</div>
+            <div class="who" id="vd-who"></div>
+            <div class="det" id="vd-det"></div>
+            <div class="reason" id="vd-reason" style="display:none"></div>
+            <div class="degm" id="vd-deg" style="display:none">VALIDÉ EN MODE DÉGRADÉ — À RESYNCHRONISER</div>
+            <button class="back" onclick="closeVerdict()">Scanner le suivant</button>
+          </div>
+        </div>
+          <div class="verdict" id="day-list" style="background:#101820;display:none;align-items:stretch;justify-content:flex-start;text-align:left;padding:0;overflow-y:auto">
+            <div style="width:100%">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #1E2933;position:sticky;top:0;background:#101820">
+                <div><b style="font-family:'Barlow Condensed';font-size:18px;letter-spacing:.03em">ATTENDUS AUJOURD'HUI</b><br><small style="color:#9AA7B2;font-family:var(--mono);font-size:10px" id="dl-count"></small></div>
+                <button onclick="toggleList()" style="background:none;border:1px solid #1E2933;border-radius:5px;color:#E8ECEF;font-size:14px;padding:4px 10px">X</button>
+              </div>
+              <div id="dl-rows"></div>
+              <div style="padding:12px 16px;font-size:10px;color:#9AA7B2;font-family:var(--mono);line-height:1.5;border-top:1px dashed #1E2933">DONNEES MINIMALES (moindre privilege) : ni motif, ni coordonnees. Visiteur sans QR (telephone decharge) : rechercher son nom ici et demander la validation manuelle a la surete.</div>
+            </div>
+          </div>
+        <div class="ph-foot"><span>Serveur central : <span id="foot-net">connecté</span></span><span id="foot-count">0 scan aujourd'hui</span></div>
+      </div>
+    </div>
+
+    <div class="sim">
+      <h2>Simuler la présentation d'un QR</h2>
+      <div class="pad">
+        <p>Dans la réalité, l'agent scanne le téléphone ou l'impression du visiteur. Pour la démonstration, choisissez le QR que le visiteur présente :</p>
+        <p style="background:#F0F4F6;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px"><b>Contraintes couvertes :</b> fenêtre −20/+15 min calculée en temps réel (trop tôt / trop tard) · poste directionnel <b>⇢ Entrée / ⇠ Sortie</b> (bouton dans l'app) · au poste Entrée, un QR « déjà sur site » = <b style="color:#C92A2A">suspicion de copie volée</b> avec alerte hôte + sûreté · au poste Sortie, le scan enregistre la <b style="color:#1B5E9E">sortie</b> avec durée · ré-usage après sortie = fraude · <b>copie volée simulable</b> : la chip « Copie volée » porte le vrai QR de Jean-Marc — scannez-la d'abord, puis le vrai · sortie jamais bloquée même si le QR est révoqué · jours ouvrés pour l'accès 30 j · QR falsifié détecté même hors ligne · liste d'exclusion (motif réservé à la sûreté) · en mode dégradé : QR émis pendant la coupure = hors liste, TTL expiré = plus aucune validation, révocation pendant coupure = conflit détecté à la resynchronisation.</p>
+        <div class="chips" id="chips"></div>
+        <div class="sw">
+          <label class="switch"><input type="checkbox" id="sw-deg" onchange="toggleDeg(this.checked)"><span class="slider"></span></label>
+          <div class="t"><b>Simuler une coupure réseau (mode dégradé)</b>
+          <small>Liste locale des QR du jour, signée par le serveur (TTL ≤ 4 h). REQ-SEC-06.</small></div>
+        </div>
+        <div class="sw" style="border-top:none;padding-top:4px">
+          <label class="switch"><input type="checkbox" id="sw-we" onchange="toggleWE(this.checked)"><span class="slider"></span></label>
+          <div class="t"><b>Simuler un week-end</b>
+          <small>Les accès 30 jours ne sont valables que les jours ouvrés (REQ-F-05).</small></div>
+        </div>
+        <div class="sw" id="row-ttl" style="border-top:none;padding-top:4px;display:none">
+          <button class="btn btn-o btn-sm" onclick="expireTTL()" id="btn-ttl">⏱ Faire expirer la liste locale (TTL)</button>
+          <div class="t"><small>Au-delà du TTL, l'app refuse toute validation hors ligne — même un QR valide.</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DASHBOARD SÛRETÉ ================= -->
+<section class="view" id="v-surete">
+  <div class="vhead">
+    <div>
+      <div class="eyebrow">Supervision sûreté — Site SICOPA</div>
+      <h1>Tableau de bord sûreté</h1>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="who">Connecté : <b>Resp. sûreté SICOPA</b> · <span class="mono">2FA ✓</span></div>
+      <button class="btn btn-o" onclick="exportCSV()">Exporter CSV</button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v" id="k-present">0</div><div class="l">Visiteurs présents sur site</div></div>
+    <div class="kpi"><div class="v" id="k-scans">0</div><div class="l">Scans aujourd'hui</div></div>
+    <div class="kpi warn"><div class="v" id="k-sec">0</div><div class="l">Événements de sécurité</div></div>
+    <div class="kpi"><div class="v" id="k-deg">0</div><div class="l">Validations en mode dégradé</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Journal des scans <span style="font-size:12px;color:var(--muted);font-family:'Public Sans';font-weight:400">— horodaté, inaltérable</span></h2>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--line)"><input id="j-filter" placeholder="Rechercher : nom, entreprise, agent, motif…" oninput="render()" style="font-size:13px"></div>
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto">
+      <table id="t-journal">
+        <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Résultat</th><th>Détail</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+      <div class="note">Toute tentative hors fenêtre ou sur QR consommé est journalisée comme <b>événement de sécurité</b> (REQ-SEC-05), pas comme simple refus.</div>
+    </div>
+
+    <div class="card" style="grid-column:1">
+      <h2>Synthèse intelligente du jour <span style="font-size:12px;color:var(--muted);font-family:'Public Sans';font-weight:400">— générée automatiquement à partir du journal</span></h2>
+      <div class="pad" id="brief" style="font-size:13.5px;line-height:1.6"></div>
+    </div>
+
+    <div class="card">
+      <h2>Visiteurs présents</h2>
+      <div style="overflow-x:auto">
+      <table id="t-present">
+        <thead><tr><th>Visiteur</th><th>Hôte</th><th>Entrée</th><th>Départ prévu</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+      <h2 style="border-top:1px solid var(--line)">Activité du jour <span style="font-size:12px;color:var(--muted);font-family:'Public Sans';font-weight:400">— scans par heure</span></h2>
+      <div style="padding:12px 16px"><canvas id="chart-h" width="470" height="120" style="width:100%;max-width:470px"></canvas></div>
+      <h2 style="border-top:1px solid var(--line)">QR actifs — révocation</h2>
+      <div style="overflow-x:auto">
+      <table id="t-actifs">
+        <thead><tr><th>Réf.</th><th>Visiteur</th><th>Mode</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ADMIN MULTI-SITES ================= -->
+<section class="view" id="v-admin">
+  <div class="vhead">
+    <div>
+      <div class="eyebrow">Supervision Sigasécurité — tous sites clients</div>
+      <h1>Administration multi-sites</h1>
+    </div>
+    <div class="who">Connecté : <b>Admin Sigasécurité</b> · <span class="mono">2FA ✓</span></div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v" id="a-sites">3</div><div class="l">Sites clients déployés</div></div>
+    <div class="kpi"><div class="v" id="a-visit">0</div><div class="l">Visiteurs présents (tous sites)</div></div>
+    <div class="kpi warn"><div class="v" id="a-sec">0</div><div class="l">Événements de sécurité (jour)</div></div>
+    <div class="kpi"><div class="v">99,97 %</div><div class="l">Disponibilité du service (30 j)</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Parc de sites — architecture multi-tenant</h2>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Site client</th><th>Localisation</th><th>Présents</th><th>Scans (jour)</th><th>Événements</th><th>Postes</th><th>État</th></tr></thead>
+      <tbody id="a-rows"></tbody>
+    </table>
+    </div>
+    <div class="note">Cloisonnement strict (REQ-F-10) : chaque site client dispose de sa propre base isolée — aucune donnée ne traverse la frontière d'un tenant. Ajouter un nouveau client = provisionner un nouveau tenant, sans toucher aux autres. C'est le moteur de déploiement commercial de NOVACCÈS.</div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h2>Déploiement commercial</h2>
+    <div class="pad" style="display:flex;gap:14px;flex-wrap:wrap">
+      <div class="hstat"><b>3</b><span>Sites en production</span></div>
+      <div class="hstat in"><b>2</b><span>En cours d'installation</span></div>
+      <div class="hstat"><b>6</b><span>Prospects qualifiés</span></div>
+      <div class="hstat off"><b>+30 %</b><span>Capacité sans refonte</span></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="footer">Maquette de démonstration NOVACCÈS · Aucune donnée réelle · Candidature M. KONATE — AO CDC-DEV-NOVACCES-2026-001</div>
+
+<!-- modal nouvelle demande -->
+<div class="overlay" id="ov-form">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-h"><h3>Nouvelle demande de visite</h3><button onclick="closeOv('ov-form')" aria-label="Fermer">×</button></div>
+    <div class="modal-b" style="text-align:left">
+      <div class="frm">
+        <div><label>Nom du visiteur</label><input id="f-nom" list="dl-visiteurs" placeholder="Ex. Aya Koné" oninput="prefillKnown()"><datalist id="dl-visiteurs"></datalist><div class="hint" id="h-nom"></div></div>
+        <div><label>Entreprise</label><input id="f-ent" placeholder="Ex. CFAO Motors"></div>
+        <div class="full"><label>Motif de la visite</label><input id="f-motif" placeholder="Ex. Livraison pièces détachées"></div>
+        <div><label>Date du rendez-vous</label><input id="f-date" type="date" value="2026-07-22"></div>
+        <div><label>Heure</label><input id="f-heure" type="time" value="14:30"></div>
+        <div><label>Durée de visite prévue</label><select id="f-dur"><option value="30">30 minutes</option><option value="60" selected>1 heure</option><option value="120">2 heures</option><option value="240">Demi-journée</option><option value="480">Journée</option></select></div>
+        <div><label>Email du visiteur</label><input id="f-mail" type="email" placeholder="visiteur@exemple.ci"></div>
+        <div><label>Téléphone (SMS)</label><input id="f-tel" placeholder="07 XX XX XX XX"></div>
+        <div class="full">
+          <label>Mode de validité</label>
+          <div class="radio-row">
+            <label class="mode-opt sel" id="mo-u"><input type="radio" name="mode" value="unique" checked onchange="selMode('u')"><b>Accès unique</b><div class="d">Fenêtre stricte −20 min / +15 min autour du rendez-vous</div></label>
+            <label class="mode-opt" id="mo-30"><input type="radio" name="mode" value="30j" onchange="selMode('30')"><b>Accès 30 jours</b><div class="d">Jours ouvrés uniquement, hors week-ends</div></label>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+        <button class="btn btn-o" onclick="closeOv('ov-form')">Annuler</button>
+        <button class="btn btn-p" onclick="submitForm()">Valider la demande</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- modal QR généré -->
+<div class="overlay" id="ov-qr">
+  <div class="modal">
+    <div class="modal-h"><h3>QR Code d'invitation généré</h3><button onclick="closeOv('ov-qr')" aria-label="Fermer">×</button></div>
+    <div class="modal-b">
+      <div style="font-size:14px"><b id="q-nom"></b> — <span id="q-ent" style="color:var(--muted)"></span></div>
+      <div class="qrbox"><canvas id="q-canvas" width="180" height="180"></canvas></div>
+      <div class="qr-meta" id="q-meta"></div>
+      <div class="sent"><span>✓ Envoyé par email</span><span>✓ Envoyé par SMS (LeTexto)</span></div>
+      <p style="font-size:12px;color:var(--muted);margin-top:14px">Le QR contient uniquement un identifiant de visite chiffré, signé Ed25519 côté serveur, avec expiration intégrée. Aucune donnée personnelle en clair (REQ-SEC-01).</p>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* ============ moteur de simulation NOVACCÈS — couverture complète des contraintes ============ */
+/* Contraintes couvertes :
+   - Fenêtre unique -20/+15 min DYNAMIQUE (trop tôt / trop tard, événement sécurité REQ-SEC-05)
+   - Accès 30 jours : jours ouvrés uniquement (simulation week-end)
+   - Cycle entrée/sortie intelligent (re-scan sur site = sortie ; après sortie = anti-rejeu)
+   - Sortie jamais bloquée (même QR révoqué pendant la présence)
+   - QR falsifié : signature invalide, vérifiable MÊME hors ligne
+   - Liste d'exclusion : refus générique à l'agent, motif réservé à la sûreté (REQ-F-11)
+   - Mode dégradé : liste locale signée, QR émis pendant la coupure = hors liste,
+     TTL expiré = plus aucune validation, révocation pendant coupure = conflit détecté à la resync
+*/
+let seq = 22;
+const T0 = Date.now();
+const MIN = 60000;
+function fmt(ts){const d=new Date(ts);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function now(){return fmt(Date.now());}
+
+const visits = [
+ {id:'NV-2207-014', nom:'Aïcha Diabaté', ent:'SGS Inspection', host:"K. N'Guessan", motif:'Audit qualité', mode:'unique', rdvAt:T0-56*MIN, statut:'consomme', present:true, entree:fmt(T0-50*MIN), entreeAt:T0-50*MIN, dur:120, inList:true},
+ {id:'NV-2207-015', nom:'Jean-Marc Kouassi', ent:'CFAO Motors', host:"K. N'Guessan", motif:'Livraison pièces', mode:'unique', rdvAt:T0+5*MIN, statut:'valide', present:false, dur:60, inList:true},
+ {id:'NV-2207-016', nom:'Fatou Bamba', ent:'Bureau Veritas', host:"K. N'Guessan", motif:'Inspection HSE', mode:'30j', statut:'valide', present:false, dur:240, inList:true},
+ {id:'NV-2207-019', nom:'Aya Touré', ent:'Nestlé CI', host:"K. N'Guessan", motif:'Réunion projet', mode:'unique', rdvAt:T0+130*MIN, statut:'valide', present:false, dur:60, inList:true},
+ {id:'NV-2107-009', nom:'Issa Ouattara', ent:'Trans. Ouattara & Fils', host:"K. N'Guessan", motif:'RDV du 21/07 manqué', mode:'unique', rdvAt:T0-19*3600000, statut:'valide', present:false, dur:60, inList:false},
+ {id:'NV-2207-017', nom:'Mariam Cissé', ent:'Orange Business', host:'B. Yao', motif:'Maintenance fibre', mode:'unique', rdvAt:T0-70*MIN, statut:'consomme', present:true, entree:fmt(T0-64*MIN), entreeAt:T0-64*MIN, dur:30, inList:true},
+ {id:'NV-2207-020', nom:'Moussa Koffi', ent:'MK Trading', host:'B. Yao', motif:'Prospection', mode:'unique', rdvAt:T0+2*MIN, statut:'valide', present:false, dur:60, inList:true, excluded:true}
+];
+const journal = [
+ {t:fmt(T0-64*MIN), nom:'Mariam Cissé', agent:'SG-0417', ok:true, det:'Accès unique · fenêtre respectée · entrée consommée', deg:false, sec:false},
+ {t:fmt(T0-50*MIN), nom:'Aïcha Diabaté', agent:'SG-0417', ok:true, det:'Accès unique · fenêtre respectée · entrée consommée', deg:false, sec:false},
+ {t:fmt(T0-93*MIN), nom:'QR inconnu', agent:'SG-0417', ok:false, det:'Signature invalide — QR altéré', deg:false, sec:true}
+];
+let degraded=false, weekend=false, ttlExpired=false, scansToday=3, verdictTimer=null;
+let outageScans=[]; // scans validés pendant la coupure, pour la resynchronisation
+
+/* ============ navigation ============ */
+function go(v){
+  document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  document.querySelectorAll('.role').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
+  render();
+}
+
+/* ============ pseudo-QR déterministe ============ */
+function drawQR(canvas, id, size){
+  const n=21, c=canvas.getContext('2d'), s=size/n;
+  let h=0; for(let i=0;i<id.length;i++){h=(h*31+id.charCodeAt(i))>>>0;}
+  const rnd=()=>{h^=h<<13;h>>>=0;h^=h>>17;h^=h<<5;h>>>=0;return h/4294967295;};
+  c.fillStyle='#fff';c.fillRect(0,0,size,size);c.fillStyle='#10161D';
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const inF=(x<7&&y<7)||(x>=n-7&&y<7)||(x<7&&y>=n-7);
+    if(!inF&&rnd()>0.52)c.fillRect(x*s,y*s,s,s);
+  }
+  const F=(ox,oy)=>{c.fillRect(ox*s,oy*s,7*s,7*s);c.fillStyle='#fff';c.fillRect((ox+1)*s,(oy+1)*s,5*s,5*s);c.fillStyle='#10161D';c.fillRect((ox+2)*s,(oy+2)*s,3*s,3*s);};
+  F(0,0);F(n-7,0);F(0,n-7);
+}
+
+/* ============ fenêtre de validité (calcul dynamique serveur) ============ */
+function windowState(v){
+  if(v.mode!=='unique')return 'ok';
+  const t=Date.now();
+  if(t < v.rdvAt-20*MIN) return 'early';
+  if(t > v.rdvAt+15*MIN) return 'late';
+  return 'ok';
+}
+function durSince(hm){
+  if(!hm)return '';
+  const [h,m]=hm.split(':').map(Number), d=new Date();
+  let mins=(d.getHours()*60+d.getMinutes())-(h*60+m); if(mins<0)mins+=1440;
+  return mins<60?(mins+' min'):(Math.floor(mins/60)+' h '+String(mins%60).padStart(2,'0'));
+}
+/* dépassement de la durée de visite prévue (supervision — jamais bloquant) */
+function overdueMin(v){
+  if(!v.present||!v.entreeAt||!v.dur)return 0;
+  return Math.max(0, Math.floor((Date.now()-(v.entreeAt+v.dur*MIN))/MIN));
+}
+function fmtDur(m){return m<60?(m+' min'):(Math.floor(m/60)+' h'+(m%60?String(m%60).padStart(2,'0'):''));}
+const RAPPEL_MS = 2*MIN; /* démo : rappel toutes les 2 min — en production : paramétrable par site (ex. 15 min) */
+function checkOverstay(){
+  visits.forEach(v=>{
+    const od=overdueMin(v);
+    if(od<=0)return;
+    if(!v.overstayAlerted){
+      /* niveau 1 : première alerte — hôte + sûreté */
+      v.overstayAlerted=true;v.overstayLevel=1;v.lastOverstayAt=Date.now();
+      journal.unshift({t:now(),nom:v.nom,agent:'SYSTÈME',ok:true,warn:true,det:'Dépassement de la durée de visite prévue ('+fmtDur(v.dur)+') : +'+od+' min — hôte et sûreté alertés',deg:false,sec:false});
+      toast('Dépassement de durée de visite',v.nom+' ('+v.ent+') devait sortir à '+fmt(v.entreeAt+v.dur*MIN)+' — dépassement de '+od+' min',true);
+      render();
+    } else if(Date.now()-v.lastOverstayAt>=RAPPEL_MS){
+      /* rappels périodiques avec escalade tant que le visiteur n'est pas sorti */
+      v.overstayLevel++;v.lastOverstayAt=Date.now();
+      const esc=v.overstayLevel>=3?' — ESCALADE : vérification physique par un agent recommandée':'';
+      journal.unshift({t:now(),nom:v.nom,agent:'SYSTÈME',ok:true,warn:true,det:'Rappel n°'+v.overstayLevel+' : '+v.nom+' toujours sur site, dépassement +'+od+' min'+esc,deg:false,sec:v.overstayLevel>=3});
+      toast('Rappel n°'+v.overstayLevel+' — toujours sur site',v.nom+' : dépassement +'+od+' min'+esc,true);
+      render();
+    }
+  });
+}
+
+/* ============ rendu ============ */
+const pills={valide:'<span class="pill pi-ok">QR actif</span>',consomme:'<span class="pill pi-used">Consommé</span>',revoque:'<span class="pill pi-rev">Révoqué</span>',expire:'<span class="pill pi-exp">Expiré</span>'};
+function pillOf(v){
+  if(v.present) return '<span class="pill pi-in">Sur site — entré '+v.entree+'</span>';
+  if(v.statut==='valide'&&v.mode==='unique'){
+    const w=windowState(v);
+    if(w==='late') return pills.expire;
+    if(w==='early') return '<span class="pill pi-wait">Fenêtre à '+fmt(v.rdvAt-20*MIN)+'</span>';
+  }
+  return pills[v.statut];
+}
+function rdvLabel(v){return v.mode==='unique'?('Auj. · '+fmt(v.rdvAt)):'Jours ouvrés';}
+
+function render(){
+  /* synthèse hôte : l'essentiel en un coup d'œil */
+  const mes=visits.filter(v=>v.host==="K. N'Guessan");
+  const aVenir=mes.filter(v=>v.statut==='valide'&&!v.present&&!(v.mode==='unique'&&windowState(v)==='late')).length;
+  const surSite=mes.filter(v=>v.present).length;
+  const closes=mes.length-aVenir-surSite;
+  const hs=document.getElementById('h-stats');
+  if(hs)hs.innerHTML=
+   '<div class="hstat"><b>'+aVenir+'</b><span>À venir</span></div>'+
+   '<div class="hstat in"><b>'+surSite+'</b><span>Sur site</span></div>'+
+   '<div class="hstat off"><b>'+closes+'</b><span>Terminées</span></div>';
+  const tb=document.querySelector('#t-hote tbody');
+  tb.innerHTML=visits.filter(v=>v.host==="K. N'Guessan").map(v=>`
+   <tr><td class="mono">${v.id}</td><td><b>${v.nom}</b></td><td>${v.ent}</td><td>${rdvLabel(v)}</td>
+   <td>${v.mode==='unique'?'Unique':'30 jours'}</td><td>${pillOf(v)}</td>
+   <td>${v.statut==='valide'&&windowState(v)!=='late'?`<button class="btn btn-o btn-sm" onclick="showQR('${v.id}')">Voir QR</button> <button class="btn btn-d btn-sm" onclick="revoke('${v.id}','hôte')">Révoquer</button>`:(v.present?'':`<button class="btn btn-o btn-sm" onclick="reinvite('${v.id}')">↻ Ré-inviter</button>`)}</td></tr>`).join('');
+
+  document.getElementById('chips').innerHTML=visits.map(v=>{
+    return `<button class="chip" onclick="scan('${v.id}')">
+      <canvas class="mini-qr" width="44" height="44" data-id="${v.id}"></canvas>
+      <span class="ci"><b>${v.nom}</b><small>${v.ent} · ${v.mode==='unique'?('RDV '+fmt(v.rdvAt)):'Accès 30 j'} · ${v.id}</small></span>
+      <span class="st">${pillOf(v)}</span></button>`;
+  }).join('')+`
+    <button class="chip" onclick="scan('NV-2207-015')" style="border-style:dashed;border-color:#B08C3E;background:#FFFDF6">
+      <canvas class="mini-qr" width="44" height="44" data-id="NV-2207-015"></canvas>
+      <span class="ci"><b>Copie volée — QR de Jean-Marc</b><small>Capture d'écran du VRAI QR : signature valide, indiscernable de l'original — la protection est au registre serveur, pas dans l'image</small></span>
+      <span class="st"><span class="pill pi-wait">Copie</span></span></button>
+    <button class="chip" onclick="scanFake()" style="border-style:dashed">
+      <canvas class="mini-qr" width="44" height="44" data-id="FAKE-XX"></canvas>
+      <span class="ci"><b>QR falsifié</b><small>Contenu altéré · signature invalide — détectable même hors ligne</small></span>
+      <span class="st"><span class="pill pi-sec">Fraude</span></span></button>`;
+  document.querySelectorAll('.mini-qr').forEach(cv=>drawQR(cv,cv.dataset.id,44));
+
+  document.getElementById('k-present').textContent=visits.filter(v=>v.present).length;
+  document.getElementById('k-scans').textContent=scansToday;
+  document.getElementById('k-sec').textContent=journal.filter(j=>j.sec).length;
+  document.getElementById('k-deg').textContent=journal.filter(j=>j.deg).length;
+  document.getElementById('foot-count').textContent=scansToday+' scans aujourd\u2019hui';
+
+  const q=((document.getElementById('j-filter')||{}).value||'').toLowerCase();
+  document.querySelector('#t-journal tbody').innerHTML=journal.filter(j=>!q||(j.nom+' '+j.det+' '+j.agent).toLowerCase().includes(q)).map(j=>`
+   <tr class="${j.sec?'sec-row':''}"><td class="mono">${j.t}</td><td>${j.nom}</td><td class="mono">${j.agent}</td>
+   <td>${j.warn?'<span class="pill pi-wait">Dépassement</span>':(j.out?'<span class="pill pi-in">Sortie</span>':(j.ok?'<span class="pill pi-ok">Autorisé</span>':'<span class="pill pi-rev">Refusé</span>'))}${j.deg?' <span class="pill pi-deg">dégradé</span>':''}${j.sec?' <span class="pill pi-sec">SÉCURITÉ</span>':''}</td>
+   <td style="font-size:12.5px">${j.det}</td></tr>`).join('');
+
+  document.querySelector('#t-present tbody').innerHTML=visits.filter(v=>v.present).map(v=>{
+   const od=overdueMin(v), dep=v.entreeAt&&v.dur?fmt(v.entreeAt+v.dur*MIN):'—';
+   return `<tr><td><b>${v.nom}</b><br><small style="color:var(--muted)">${v.ent}</small></td><td>${v.host}</td><td class="mono">${v.entree}</td>
+   <td class="mono">${dep}${od>0?' <span class="pill pi-rev">+'+od+' min</span>':''}</td>
+   <td><button class="btn btn-o btn-sm" onclick="sortie('${v.id}')">Sortie</button></td></tr>`;}).join('')||'<tr><td colspan="5" class="empty">Aucun visiteur présent</td></tr>';
+
+  document.querySelector('#t-actifs tbody').innerHTML=visits.filter(v=>v.statut==='valide'&&!(v.mode==='unique'&&windowState(v)==='late')).map(v=>`
+   <tr><td class="mono">${v.id}</td><td>${v.nom}${v.excluded?' <span class="pill pi-sec" title="Motif réservé à la sûreté">Liste d\u2019exclusion</span>':''}</td><td>${v.mode==='unique'?'Unique':'30 j'}</td>
+   <td><button class="btn btn-d btn-sm" onclick="revoke('${v.id}','sûreté')">Révoquer</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Aucun QR actif</td></tr>';
+  drawChart();
+  renderAdmin();
+  renderBrief();
+  if(listOpen)renderDayList();
+}
+
+/* ============ affichage du verdict ============ */
+let listOpen=false;
+function toggleList(){
+  listOpen=!listOpen;
+  const el=document.getElementById('day-list');
+  if(el)el.style.display=listOpen?'flex':'none';
+  if(listOpen)renderDayList();
+}
+function renderDayList(){
+  const rows=document.getElementById('dl-rows');if(!rows)return;
+  const day=visits.slice().sort((a,b)=>(a.rdvAt||0)-(b.rdvAt||0));
+  document.getElementById('dl-count').textContent=day.length+' visiteur(s) \u00b7 Poste 1 \u00b7 SICOPA \u2014 liste sign\u00e9e par le serveur';
+  rows.innerHTML=day.map(v=>{
+    let st, col;
+    if(v.present){st='SUR SITE \u00b7 '+v.entree;col='#5FA8E0';}
+    else if(v.exited||v.statut==='consomme'){st='SORTI';col='#7A8792';}
+    else if(v.statut==='revoque'){st='R\u00c9VOQU\u00c9';col='#E06A6A';}
+    else if(v.mode==='unique'&&windowState(v)==='late'){st='NON VENU';col='#B18AD6';}
+    else {st='ATTENDU '+(v.mode==='unique'?fmt(v.rdvAt):'(30 j)');col='#4FC57E';}
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-bottom:1px solid #18222C">'
+     +'<div><b style="font-size:13.5px">'+v.nom+'</b><br><small style="color:#9AA7B2;font-size:10.5px">'+(v.mode==='unique'?('Fen\u00eatre '+fmt(v.rdvAt-20*MIN)+' \u2013 '+fmt(v.rdvAt+15*MIN)):'Acc\u00e8s 30 jours ouvr\u00e9s')+'</small></div>'
+     +'<span style="font-family:var(--mono);font-size:9.5px;color:'+col+';border:1px solid '+col+';border-radius:3px;padding:2px 7px">'+st+'</span></div>';
+  }).join('');
+}
+let postMode='entree';
+function togglePost(){
+  postMode=postMode==='entree'?'sortie':'entree';
+  const b=document.getElementById('post');
+  if(b){
+    b.textContent=postMode==='entree'?'⇢ ENTRÉE':'⇠ SORTIE';
+    b.style.color=postMode==='entree'?'#26C266':'#F5A300';
+    b.style.borderColor=postMode==='entree'?'#26C266':'#F5A300';
+    b.style.background=postMode==='entree'?'rgba(38,194,102,.12)':'rgba(245,163,0,.12)';
+  }
+  toast('Poste basculé en '+(postMode==='entree'?'ENTRÉE':'SORTIE'),postMode==='entree'?'Les scans valident des entrées — un visiteur déjà sur site déclenchera une alerte':'Les scans enregistrent des sorties uniquement');
+}
+let soundOn=true, audioCtx=null;
+function toggleSnd(){soundOn=!soundOn;document.getElementById('snd').textContent=soundOn?'🔊':'🔇';}
+function feedback(kind){
+  if(navigator.vibrate){try{navigator.vibrate(kind==='ok'?[80]:(kind==='out'?[60,50,60]:[180,70,180]));}catch(e){}}
+  if(!soundOn)return;
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const seq=kind==='ok'?[[880,.12]]:(kind==='out'?[[520,.1],[660,.12]]:[[220,.16],[180,.2]]);
+    let t=audioCtx.currentTime;
+    seq.forEach(([f,d])=>{
+      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+      o.frequency.value=f;o.type='sine';o.connect(g);g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(.22,t);g.gain.exponentialRampToValueAtTime(.001,t+d);
+      o.start(t);o.stop(t+d);t+=d+.06;
+    });
+  }catch(e){}
+}
+function showVerdict(kind, big, who, det, reason){
+  feedback(kind);
+  const V=document.getElementById('verdict');
+  V.className='verdict on '+kind;
+  document.getElementById('vd-ico').textContent=kind==='ok'?'✓':(kind==='out'?'⇥':'✕');
+  document.getElementById('vd-big').textContent=big;
+  document.getElementById('vd-who').textContent=who;
+  document.getElementById('vd-det').textContent=det;
+  const R=document.getElementById('vd-reason');R.style.display=reason?'block':'none';R.textContent=reason||'';
+  document.getElementById('vd-deg').style.display=degraded&&kind!=='no'?'block':'none';
+  clearTimeout(verdictTimer);verdictTimer=setTimeout(closeVerdict,6500);
+}
+function closeVerdict(){document.getElementById('verdict').classList.remove('on');clearTimeout(verdictTimer);}
+
+/* ============ scan — arbre de décision complet ============ */
+function scan(id){
+  const v=visits.find(x=>x.id===id);
+  scansToday++;bumpHour();
+  let kind='no', reason='', detA='', detJ='', sec=false, out=false;
+
+  /* 0. Contraintes propres au mode dégradé (avant tout) */
+  if(degraded && ttlExpired){
+    reason='LISTE LOCALE EXPIRÉE (TTL)';
+    detJ='Validation hors ligne refusée : liste locale au-delà du TTL de 4 h';
+    journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:false,det:detJ,deg:true,sec:false});
+    showVerdict('no','VALIDATION IMPOSSIBLE',v.nom+' — '+v.ent,'Reconnexion requise · diriger le visiteur vers le poste de garde',reason);
+    render();return;
+  }
+  if(degraded && !v.inList && !v.present){
+    reason='HORS LISTE LOCALE';
+    detJ='QR absent de la liste locale signée (émis après la coupure ou hors journée) — vérification serveur impossible';
+    journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:false,det:detJ,deg:true,sec:false});
+    showVerdict('no','VÉRIFICATION IMPOSSIBLE',v.nom+' — '+v.ent,'Hors ligne : ce QR ne peut pas être contrôlé · poste de garde',reason);
+    render();return;
+  }
+
+  /* 1. Sens du poste : au poste SORTIE, on ne gère que des sorties */
+  if(postMode==='sortie'){
+    if(v.present){
+      const _od=overdueMin(v);
+      let detJ2='Sortie enregistrée par scan · présence : '+durSince(v.entree)+(_od>0?' · dépassement de la durée prévue ('+fmtDur(v.dur)+') : +'+_od+' min':'');
+      let detV2='Présence : '+(durSince(v.entree)||'—')+(_od>0?' · dépassement +'+_od+' min':' · bonne route');
+      if(v.statut==='revoque'){detJ2+=' · QR révoqué pendant la présence — sortie autorisée, ré-entrée impossible';detV2='QR révoqué : sortie autorisée, toute ré-entrée sera refusée';}
+      v.present=false;v.sortiA=now();v.overstayAlerted=false;v.overstayLevel=0;
+      if(v.mode==='unique'){v.exited=true;detJ2+=' · cycle clos';}
+      journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:true,out:true,det:detJ2,deg:degraded,sec:false});
+      if(degraded)outageScans.push({v,kind:'out'});
+      showVerdict('out','SORTIE ENREGISTRÉE',v.nom+' — '+v.ent,detV2,'');
+      if(v.host==="K. N'Guessan")toast('Votre visiteur a quitté le site',v.nom+' ('+v.ent+') — sortie au Poste 1 à '+now());
+      render();return;
+    } else {
+      journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:false,det:'Scan au poste SORTIE sans entrée enregistrée — visiteur dirigé vers l\u2019entrée',deg:degraded,sec:false});
+      showVerdict('no','AUCUNE ENTRÉE ENREGISTRÉE',v.nom+' — '+v.ent,'Ce visiteur n\u2019est pas enregistré sur site · diriger vers le poste d\u2019entrée','SORTIE IMPOSSIBLE');
+      render();return;
+    }
+  }
+
+  /* 1bis. Liste d'exclusion — refus générique à l'agent, motif réservé à la sûreté */
+  if(v.excluded && !v.present){
+    reason='VOIR POSTE DE GARDE';
+    detJ='Personne figurant sur la liste d\u2019exclusion du site — motif non communiqué à l\u2019agent (REQ-F-11)';
+    sec=true;
+    journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:false,det:detJ,deg:degraded,sec:true});
+    showVerdict('no','ACCÈS REFUSÉ',v.nom+' — '+v.ent,'Diriger le visiteur vers le poste de garde',reason);
+    toast('Alerte liste d\u2019exclusion',v.nom+' ('+v.ent+') s\u2019est présenté au Poste 1 — alerte réservée à la sûreté',true);
+    render();return;
+  }
+
+  /* 2. Poste ENTRÉE : un QR dont le titulaire est déjà sur site = suspicion de copie/vol */
+  if(v.present){
+    const detU='Présentation à l\u2019ENTRÉE d\u2019un QR dont le titulaire est déjà enregistré sur site (entré à '+v.entree+') — QR possiblement copié ou volé : vérification d\u2019identité au poste de garde';
+    journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:false,det:detU,deg:degraded,sec:true});
+    showVerdict('no','DÉJÀ SUR SITE',v.nom+' — '+v.ent,'Anomalie : ce visiteur est enregistré sur site depuis '+v.entree+' · vérification d\u2019identité requise','SUSPICION DE COPIE — VOIR POSTE DE GARDE');
+    toast('Suspicion d\u2019usurpation de QR',v.nom+' : QR présenté à l\u2019entrée alors qu\u2019une entrée est déjà enregistrée ('+v.entree+') — vérification humaine immédiate',true);
+    if(v.host==="K. N'Guessan")toast('Vérification en cours','Le QR de '+v.nom+' a été présenté une seconde fois à l\u2019entrée. Si votre visiteur n\u2019est pas encore arrivé, contactez la sûreté au plus vite.',true);
+    render();return;
+  }
+
+  /* 3. Statuts bloquants */
+  if(v.statut==='revoque'){
+    reason='QR RÉVOQUÉ PAR LA SÛRETÉ';detJ='Scan d\u2019un QR révoqué';sec=true;
+  }
+  else if(v.mode==='unique'&&v.statut==='consomme'&&v.exited){
+    reason='CYCLE ENTRÉE/SORTIE CLOS';detJ='Réutilisation d\u2019un QR unique après sortie du visiteur — si le porteur conteste, le QR a pu être copié : vérification d\u2019identité';sec=true;
+  }
+  else if(v.mode==='unique'&&v.statut==='consomme'){
+    reason='QR DÉJÀ CONSOMMÉ — ANTI-REJEU';detJ='Tentative de réutilisation d\u2019un QR à passage unique';sec=true;
+  }
+  /* 4. Fenêtre de validité — calcul serveur (ou liste locale signée en dégradé) */
+  else if(v.statut==='valide'&&v.mode==='unique'&&windowState(v)==='late'){
+    reason='HORS FENÊTRE DE VALIDITÉ (−20 / +15 min)';detJ='Tentative hors fenêtre : RDV '+fmt(v.rdvAt)+', fenêtre close à '+fmt(v.rdvAt+15*MIN);sec=true;
+  }
+  else if(v.statut==='valide'&&v.mode==='unique'&&windowState(v)==='early'){
+    reason='TROP TÔT — FENÊTRE À '+fmt(v.rdvAt-20*MIN);detJ='Présentation avant la fenêtre : RDV '+fmt(v.rdvAt)+', ouverture à '+fmt(v.rdvAt-20*MIN)+' (événement de sécurité REQ-SEC-05)';sec=true;
+  }
+  /* 5. Jours ouvrés pour l'accès 30 jours */
+  else if(v.statut==='valide'&&v.mode==='30j'&&weekend){
+    reason='JOUR NON OUVRÉ';detJ='Accès 30 jours présenté un week-end — validité limitée aux jours ouvrés (REQ-F-05)';sec=true;
+  }
+  /* 6. Entrée autorisée */
+  else if(v.statut==='valide'){
+    kind='ok';
+    detJ=(v.mode==='unique'?'Accès unique · fenêtre respectée':'Accès 30 j · jour ouvré');
+    if(v.mode==='unique'){v.statut='consomme';detJ+=' · entrée consommée (anti-rejeu actif)';}
+    v.present=true;v.entree=now();v.entreeAt=Date.now();v.exited=false;v.overstayAlerted=false;
+  }
+
+  journal.unshift({t:now(),nom:v.nom,agent:'SG-0417',ok:kind!=='no',out,det:detJ,deg:degraded,sec});
+  if(degraded&&kind!=='no')outageScans.push({v,kind});
+
+  if(kind==='ok'){
+    showVerdict('ok','ACCÈS AUTORISÉ',v.nom+' — '+v.ent,'Hôte : '+v.host+' · '+(v.mode==='unique'?'Accès unique':'Accès 30 jours'),'');
+    if(v.host==="K. N'Guessan")toast('Votre visiteur est arrivé',v.nom+' ('+v.ent+') — scan validé au Poste 1 à '+now());
+  } else {
+    showVerdict('no','ACCÈS REFUSÉ',v.nom+' — '+v.ent,'Diriger le visiteur vers le poste de garde',reason);
+  }
+  if(sec)toast('Événement de sécurité',detJ+' — '+v.nom,true);
+  render();
+}
+
+/* QR falsifié : la signature est vérifiable même hors ligne (clé publique embarquée) */
+function scanFake(){
+  scansToday++;bumpHour();
+  const detJ='Signature cryptographique invalide — contenu du QR altéré ou forgé'+(degraded?' (détecté hors ligne : la vérification de signature ne requiert pas le serveur)':'');
+  journal.unshift({t:now(),nom:'QR inconnu',agent:'SG-0417',ok:false,det:detJ,deg:degraded,sec:true});
+  showVerdict('no','QR INVALIDE','Signature non vérifiable','Diriger le porteur vers le poste de garde','SIGNATURE INVALIDE — QR ALTÉRÉ');
+  toast('Événement de sécurité',detJ,true);
+  render();
+}
+
+/* ============ mode dégradé ============ */
+function toggleDeg(on){
+  degraded=on;
+  document.getElementById('deg-banner').classList.toggle('on',on);
+  document.getElementById('net').classList.toggle('off',on);
+  document.getElementById('net-l').textContent=on?'HORS LIGNE':'EN LIGNE';
+  document.getElementById('foot-net').textContent=on?'injoignable — liste locale':'connecté';
+  document.getElementById('row-ttl').style.display=on?'flex':'none';
+  if(on){
+    outageScans=[];ttlExpired=false;
+    document.getElementById('ttl').textContent='3 h 42 min';
+    toast('Bascule en mode dégradé','Liste locale signée du 22/07 chargée — expire dans 3 h 42');
+  } else {
+    /* RESYNCHRONISATION : confrontation au registre central */
+    let conflicts=0;
+    outageScans.forEach(o=>{
+      if(o.v.revokedOffline){
+        conflicts++;
+        journal.unshift({t:now(),nom:o.v.nom,agent:'SYNC',ok:false,det:'CONFLIT détecté à la resynchronisation : QR révoqué pendant la coupure mais validé localement ('+(o.kind==='out'?'sortie':'entrée')+') — remonté au responsable sûreté',deg:false,sec:true});
+      }
+    });
+    visits.forEach(v=>{v.inList=v.inList||v.statut==='valide';v.revokedOffline=false;});
+    ttlExpired=false;
+    if(conflicts>0){
+      toast('Resynchronisation : '+conflicts+' conflit(s)','Validations hors ligne confrontées au registre central — conflit(s) remonté(s) en événement de sécurité',true);
+    } else {
+      toast('Resynchronisation terminée',outageScans.length+' validation(s) hors ligne confrontée(s) au registre central — aucun conflit détecté');
+    }
+    outageScans=[];
+    render();
+  }
+}
+function expireTTL(){
+  ttlExpired=true;
+  document.getElementById('ttl').textContent='EXPIRÉ';
+  toast('Liste locale expirée','TTL de 4 h dépassé : plus aucune validation hors ligne possible jusqu\u2019à reconnexion');
+}
+function toggleWE(on){
+  weekend=on;
+  toast(on?'Simulation week-end activée':'Retour en jour ouvré', on?'Les accès 30 jours seront refusés (jours ouvrés uniquement)':'Les accès 30 jours sont à nouveau valables');
+}
+
+/* ============ révocation / sortie manuelle ============ */
+function revoke(id,par){
+  const v=visits.find(x=>x.id===id);
+  v.statut='revoque';
+  if(degraded){
+    v.revokedOffline=true;
+    journal.unshift({t:now(),nom:v.nom,agent:'—',ok:false,det:'QR révoqué par '+par+' PENDANT la coupure — le poste hors ligne ne le sait pas encore : prise d\u2019effet locale à la resynchronisation (REQ-SEC-06.e)',deg:false,sec:false});
+    toast('QR révoqué (coupure en cours)',v.nom+' — le poste de contrôle hors ligne appliquera la révocation à la reconnexion');
+  } else {
+    journal.unshift({t:now(),nom:v.nom,agent:'—',ok:false,det:'QR révoqué par '+par,deg:false,sec:false});
+    toast('QR révoqué',v.nom+' — '+v.id+' ne permet plus aucun accès');
+  }
+  render();
+}
+function sortie(id){const v=visits.find(x=>x.id===id);
+  const _od=overdueMin(v); /* calculé AVANT de clore la présence */
+  v.present=false;v.overstayAlerted=false;v.overstayLevel=0;
+  if(v.mode==='unique')v.exited=true;
+  journal.unshift({t:now(),nom:v.nom,agent:'—',ok:true,out:true,det:'Sortie enregistrée manuellement par la sûreté · présence : '+durSince(v.entree)+(_od>0?' · dépassement +'+_od+' min':''),deg:false,sec:false});
+  render();}
+
+/* ============ formulaire hôte ============ */
+function visitCount(nom){return visits.filter(x=>x.nom.toLowerCase()===nom.toLowerCase()).length;}
+function openForm(prefilled){
+  if(!prefilled){
+    ['f-nom','f-ent','f-motif','f-mail','f-tel'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('h-nom').textContent='';
+    const d=new Date();
+    document.getElementById('f-date').value=d.toISOString().slice(0,10);
+    const nx=new Date(d.getTime()+(30-(d.getMinutes()%30))*60000);
+    document.getElementById('f-heure').value=String(nx.getHours()).padStart(2,'0')+':'+(nx.getMinutes()<30?'00':'30');
+    document.getElementById('f-dur').value='60';
+    selMode('u');const r=document.querySelector('input[name="mode"][value="unique"]');if(r)r.checked=true;
+  }
+  /* annuaire des visiteurs connus pour l'autocomplétion */
+  const seen={}; 
+  document.getElementById('dl-visiteurs').innerHTML=visits.filter(v=>{const k=v.nom.toLowerCase();if(seen[k])return false;seen[k]=1;return true;})
+    .map(v=>'<option value="'+v.nom.replace(/"/g,'')+'">'+v.ent+'</option>').join('');
+  document.getElementById('ov-form').classList.add('on');
+}
+/* visiteur connu : l'application pré-remplit à la place de l'hôte */
+function prefillKnown(){
+  const nom=document.getElementById('f-nom').value.trim().toLowerCase();
+  const known=visits.find(v=>v.nom.toLowerCase()===nom);
+  const hint=document.getElementById('h-nom');
+  if(known){
+    document.getElementById('f-ent').value=known.ent;
+    if(known.motif&&!document.getElementById('f-motif').value)document.getElementById('f-motif').value=known.motif;
+    if(known.dur)document.getElementById('f-dur').value=String(known.dur);
+    hint.textContent='Visiteur connu ('+visitCount(known.nom)+' visite'+(visitCount(known.nom)>1?'s':'')+') — informations pré-remplies automatiquement';
+    hint.style.color='#0F8A3D';
+  } else { hint.textContent=''; }
+}
+/* ré-inviter en un clic depuis une demande close */
+function reinvite(id){
+  const v=visits.find(x=>x.id===id);
+  openForm(false);
+  document.getElementById('f-nom').value=v.nom;
+  document.getElementById('f-ent').value=v.ent;
+  document.getElementById('f-motif').value=v.motif||'';
+  document.getElementById('f-dur').value=String(v.dur||60);
+  if(v.mode==='30j'){selMode('30');const r=document.querySelector('input[name="mode"][value="30j"]');if(r)r.checked=true;}
+  document.getElementById('h-nom').textContent='Nouvelle invitation pré-remplie depuis '+v.id+' — vérifiez la date et validez';
+  document.getElementById('h-nom').style.color='#0F8A3D';
+  openForm(true);
+}
+function closeOv(id){document.getElementById(id).classList.remove('on');}
+function selMode(m){document.getElementById('mo-u').classList.toggle('sel',m==='u');document.getElementById('mo-30').classList.toggle('sel',m==='30');}
+function submitForm(){
+  const nom=document.getElementById('f-nom').value.trim()||'Aya Koné';
+  const ent=document.getElementById('f-ent').value.trim()||'CFAO Motors';
+  const mode=document.querySelector('input[name="mode"]:checked').value;
+  const dv=document.getElementById('f-date').value, hv=document.getElementById('f-heure').value;
+  let rdvAt=Date.now()+5*MIN;
+  if(dv&&hv){const cand=new Date(dv+'T'+hv).getTime();if(!isNaN(cand))rdvAt=cand;}
+  const dup=visits.find(x=>x.nom.toLowerCase()===nom.toLowerCase() && (x.present || (x.statut==='valide' && !(x.mode==='unique'&&windowState(x)==='late'))));
+  if(dup){
+    toast('Demande déjà active','Un QR actif existe déjà pour '+nom+' ('+dup.id+'). Révoquez-le ou utilisez-le plutôt que d\u2019en créer un second.',true);
+    return;
+  }
+  const id='NV-2207-0'+(seq++);
+  visits.unshift({id,nom,ent,host:"K. N'Guessan",motif:document.getElementById('f-motif').value,mode,rdvAt,dur:parseInt(document.getElementById('f-dur').value,10)||60,statut:'valide',present:false,inList:!degraded});
+  closeOv('ov-form');render();showQR(id);
+  toast('Demande validée','QR '+id+' généré et transmis à '+nom+(degraded?' — émis pendant une coupure : hors liste locale des postes déconnectés jusqu\u2019à resynchronisation':''));
+}
+function showQR(id){
+  const v=visits.find(x=>x.id===id);
+  document.getElementById('q-nom').textContent=v.nom;
+  document.getElementById('q-ent').textContent=v.ent;
+  document.getElementById('q-meta').innerHTML='ID visite : '+v.id+' · signé Ed25519 · '+(v.mode==='unique'?('fenêtre '+fmt(v.rdvAt-20*MIN)+' → '+fmt(v.rdvAt+15*MIN)+' (RDV '+fmt(v.rdvAt)+')'):'30 jours ouvrés')+'<br>payload : eyJ2aXNpdCI6IjhmM2Ei… (chiffré — aucune donnée personnelle)';
+  drawQR(document.getElementById('q-canvas'),v.id,180);
+  document.getElementById('ov-qr').classList.add('on');
+}
+
+/* ============ toasts / horloge ============ */
+function toast(t,s,sec){
+  const el=document.createElement('div');el.className='toast'+(sec?' sec':'');
+  el.innerHTML='<b>'+t+'</b>'+s+'<br><small>'+now()+' · NOVACCÈS</small>';
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>el.remove(),7000);
+}
+/* export CSV réel du journal — fichier téléchargé, pas une promesse */
+function exportCSV(){
+  const rows=[['Heure','Visiteur','Agent','Resultat','Mode degrade','Evenement securite','Detail']]
+    .concat(journal.map(j=>[j.t,j.nom,j.agent,(j.out?'Sortie':(j.ok?'Autorise':'Refuse')),j.deg?'oui':'non',j.sec?'oui':'non',(j.det||'').replace(/[\r\n;]/g,' ')]));
+  const csv='\uFEFF'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='journal_scans_novacces_20260722.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  toast('Export CSV téléchargé','journal_scans_novacces_20260722.csv — '+journal.length+' lignes');
+}
+/* activité horaire (amorçage réaliste + incrément en direct) */
+const hourData={7:2,8:6,9:9,10:7};
+function bumpHour(){const hh=new Date().getHours();hourData[hh]=(hourData[hh]||0)+1;}
+function renderAdmin(){
+  const presLoc=visits.filter(v=>v.present).length;
+  const secLoc=journal.filter(j=>j.sec).length;
+  const el=(i)=>document.getElementById(i);
+  if(el('a-visit'))el('a-visit').textContent=presLoc+5; /* + sites statiques */
+  if(el('a-sec'))el('a-sec').textContent=secLoc+1;
+  const rows=[
+   {n:'SICOPA',l:'Zone ind. Vridi, Abidjan',p:presLoc,s:scansToday,e:secLoc,po:'2/2',st:degraded?'<span class="pill pi-deg">Poste 1 dégradé</span>':'<span class="pill pi-ok">En ligne</span>'},
+   {n:'Terminal Céréalier',l:'Port d\u2019Abidjan',p:4,s:31,e:1,po:'3/3',st:'<span class="pill pi-ok">En ligne</span>'},
+   {n:'AgroPlus CI',l:'San Pedro',p:1,s:9,e:0,po:'1/1',st:'<span class="pill pi-ok">En ligne</span>'}
+  ];
+  if(el('a-rows'))el('a-rows').innerHTML=rows.map(r=>'<tr><td><b>'+r.n+'</b></td><td>'+r.l+'</td><td>'+r.p+'</td><td>'+r.s+'</td><td>'+(r.e>0?'<span class="pill pi-sec">'+r.e+'</span>':'0')+'</td><td class="mono">'+r.po+'</td><td>'+r.st+'</td></tr>').join('');
+}
+/* synthèse générée automatiquement : le système analyse, l'humain décide */
+function renderBrief(){
+  const el=document.getElementById('brief');if(!el)return;
+  const refus=journal.filter(j=>!j.ok&&!j.warn).length, total=journal.filter(j=>!j.warn).length;
+  const secs=journal.filter(j=>j.sec), degs=journal.filter(j=>j.deg).length;
+  const over=journal.filter(j=>j.warn).length, pres=visits.filter(v=>v.present).length;
+  let peak=7,pv=0;Object.keys(hourData).forEach(k=>{if(hourData[k]>pv){pv=hourData[k];peak=k;}});
+  const taux=total?Math.round(100*refus/total):0;
+  const pts=[];
+  pts.push('<b>'+scansToday+' scans</b> traités aujourd\u2019hui, pic d\u2019affluence à <b>'+peak+' h</b> ('+pv+' scans). Taux de refus : <b>'+taux+' %</b>'+(taux>25?' — inhabituel, à surveiller':' — dans la normale')+'.');
+  pts.push(secs.length?('<b style="color:var(--no)">'+secs.length+' événement(s) de sécurité</b> : '+(secs[0]?('dernier en date — «\u00A0'+secs[0].det.substring(0,90)+'…\u00A0» à '+secs[0].t):'')+'. Vérification recommandée.'):'<b style="color:var(--ok)">Aucun événement de sécurité</b> en cours.');
+  pts.push(pres?('<b>'+pres+' visiteur(s) actuellement sur site</b>'+(over?', dont présence(s) en dépassement — relances automatiques actives.':'.')):'Aucun visiteur sur site actuellement.');
+  if(degs)pts.push('<b style="color:var(--amber-ink)">'+degs+' validation(s) en mode dégradé</b> — toutes confrontées au registre central à la reconnexion.');
+  pts.push('<span style="color:var(--muted)">Recommandation : '+(secs.length>=2?'renforcer la vigilance au poste 1 et examiner les événements du journal.':(over?'faire vérifier la présence en dépassement par un agent.':'aucune action requise, situation nominale.'))+'</span>');
+  el.innerHTML=pts.map(p=>'<div style="margin-bottom:8px;padding-left:14px;border-left:3px solid var(--line)">'+p+'</div>').join('');
+}
+function drawChart(){
+  const cv=document.getElementById('chart-h');
+  const c=cv&&cv.getContext?cv.getContext('2d'):null;if(!c)return;
+  const W=cv.width,H=cv.height;c.clearRect(0,0,W,H);
+  const hs=[];for(let hh=7;hh<=Math.max(18,new Date().getHours());hh++)hs.push(hh);
+  const max=Math.max(4,...hs.map(x=>hourData[x]||0));
+  const bw=Math.floor((W-10)/hs.length)-6;
+  hs.forEach((hh,i)=>{
+    const val=hourData[hh]||0,bh=Math.round((H-26)*val/max),x=6+i*(bw+6),y=H-20-bh;
+    c.fillStyle=hh===new Date().getHours()?'#F5A300':'#0E2A3A';
+    if(c.roundRect){c.beginPath();c.roundRect(x,y,bw,bh,3);c.fill();}else{c.fillRect(x,y,bw,bh);}
+    if(val>0){c.fillStyle='#5E6B77';c.font='10px IBM Plex Mono';c.textAlign='center';c.fillText(val,x+bw/2,y-4);}
+    c.fillStyle='#9AA7B2';c.font='9px IBM Plex Mono';c.textAlign='center';c.fillText(hh+'h',x+bw/2,H-6);
+  });
+}
+setInterval(()=>{document.getElementById('ph-clock').textContent=now();},1000);
+setInterval(checkOverstay,15000);
+setTimeout(checkOverstay,2500);
+document.getElementById('ph-clock').textContent=now();
+render();
+</script>
+</body>
+</html>

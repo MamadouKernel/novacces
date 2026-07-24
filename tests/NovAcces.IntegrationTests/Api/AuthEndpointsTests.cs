@@ -13,7 +13,8 @@ namespace NovAcces.IntegrationTests.Api;
 /// contre l'API réelle démarrée en mémoire. Verrouillent les garanties de
 /// sécurité les plus critiques contre toute régression future.
 /// </summary>
-public sealed class AuthEndpointsTests : IClassFixture<NovAccesApiFactory>
+[Collection(ApiCollection.Name)]
+public sealed class AuthEndpointsTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly NovAccesApiFactory _factory;

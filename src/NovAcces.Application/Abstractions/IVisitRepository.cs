@@ -18,11 +18,18 @@ public interface IVisitRepository
     /// <summary>Visites valides du jour, pour la génération de la liste hors ligne signée.</summary>
     Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct);
 
+    /// <summary>Visiteurs actuellement sur site (entrés, pas encore sortis) — dashboard sûreté.</summary>
+    Task<IReadOnlyCollection<Visit>> GetOnSiteAsync(CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }
 
 public interface IScanLogRepository
 {
     Task AddAsync(ScanLogEntry entry, CancellationToken ct);
+
+    /// <summary>Derniers scans journalisés (les plus récents d'abord) — dashboard sûreté.</summary>
+    Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }

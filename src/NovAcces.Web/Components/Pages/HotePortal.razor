@@ -10,6 +10,10 @@
         <div>
             <h1>Nouvelle demande de visite</h1>
             <p class="muted">Site : <strong>@(Auth.SiteId ?? "—")</strong> · Connecté : @Auth.DisplayName</p>
+            @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+            {
+                <div class="nav-links"><a href="/surete">→ Dashboard sûreté</a></div>
+            }
         </div>
         <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>

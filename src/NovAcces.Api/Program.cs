@@ -95,6 +95,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset
 app.MapAuthEndpoints();
 app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
+app.MapDashboardEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
 
 app.Run();

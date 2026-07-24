@@ -14,6 +14,10 @@ l'authentification, du RBAC et du cloisonnement multi-tenant.
 - **Portail hôte** (`/hote`, rôle Hôte) : création d'une demande de visite
   (`POST /api/visits`, le site venant du claim du jeton) et **affichage du QR
   signé** généré (rendu via QRCoder). Déconnexion.
+- **Dashboard sûreté** (`/surete`, policy Dashboard) : **flux des scans en temps
+  réel** (client SignalR connecté au hub `/hubs/scan` du site, message
+  `ScanRecorded`), liste des **présents sur site**, amorçage avec le journal
+  récent. Endpoints de lecture : `GET /api/dashboard/journal`, `/on-site`.
 
 Architecture : `Services/AuthState.cs` (état d'auth par circuit),
 `Services/NovAccesApiClient.cs` (client typé, joint le Bearer),

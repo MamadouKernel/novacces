@@ -74,6 +74,22 @@ public sealed class NovAccesApiClient
         return await response.Content.ReadFromJsonAsync<CreateVisitResponseDto>();
     }
 
+    /// <summary>Journal des derniers scans du site (dashboard sûreté).</summary>
+    public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 50)
+    {
+        var result = await CreateClient(true)
+            .GetFromJsonAsync<List<ScanJournalEntryDto>>($"/api/dashboard/journal?limit={limit}");
+        return result ?? new List<ScanJournalEntryDto>();
+    }
+
+    /// <summary>Visiteurs actuellement présents sur le site.</summary>
+    public async Task<IReadOnlyList<OnSiteVisitorDto>> GetOnSiteAsync()
+    {
+        var result = await CreateClient(true)
+            .GetFromJsonAsync<List<OnSiteVisitorDto>>("/api/dashboard/on-site");
+        return result ?? new List<OnSiteVisitorDto>();
+    }
+
     private static readonly System.Text.Json.JsonSerializerOptions WebJson =
         new(System.Text.Json.JsonSerializerDefaults.Web);
 

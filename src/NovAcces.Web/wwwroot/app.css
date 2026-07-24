@@ -94,3 +94,25 @@ body { background: var(--nv-bg); color:#1c2733; margin:0; }
 .qr-panel { text-align:center; }
 .qr { width:220px; height:220px; image-rendering:pixelated; border:1px solid var(--nv-border); border-radius:8px; padding:8px; background:#fff; }
 .qr-panel code { font-size:.8rem; }
+
+/* ---- Dashboard sûreté ---- */
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 .2rem; vertical-align:middle; }
+.dot-on { background:#27ae60; box-shadow:0 0 0 3px rgba(39,174,96,.2); }
+.dot-off { background:#c0392b; }
+
+.feed { list-style:none; margin:0; padding:0; max-height:460px; overflow-y:auto; }
+.feed-item { display:grid; grid-template-columns:auto 1fr auto auto; gap:.6rem; align-items:center;
+    padding:.55rem .6rem; border-left:4px solid #ccc; border-radius:6px; margin-bottom:.4rem; background:#fafbfc; }
+.feed-item.v-granted  { border-left-color:#27ae60; }
+.feed-item.v-denied   { border-left-color:#e67e22; }
+.feed-item.v-security { border-left-color:#c0392b; background:#fdf0ee; }
+.feed-time { font-variant-numeric:tabular-nums; color:#8894a0; font-size:.82rem; }
+.feed-name { font-weight:600; }
+.feed-verdict { font-size:.85rem; color:#41505e; }
+.feed-agent { font-size:.78rem; color:#8894a0; }
+
+.onsite { list-style:none; margin:0; padding:0; }
+.onsite li { padding:.5rem .2rem; border-bottom:1px solid var(--nv-border); }
+
+.nav-links { display:flex; gap:.6rem; margin-top:.4rem; }
+.nav-links a { font-size:.85rem; color:var(--nv-primary); text-decoration:none; }

@@ -1,0 +1,138 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
+using NovAcces.Shared.Dtos;
+using Xunit;
+
+namespace NovAcces.IntegrationTests.Api;
+
+/// <summary>
+/// Tests d'intégration du dashboard sûreté : lectures (journal, présents) sous
+/// policy RBAC, et surtout la DIFFUSION TEMPS RÉEL — un scan effectué à un poste
+/// doit parvenir en direct aux clients SignalR du même site (REQ-F-06).
+/// </summary>
+[Collection(ApiCollection.Name)]
+public sealed class DashboardTests
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private readonly NovAccesApiFactory _factory;
+
+    public DashboardTests(NovAccesApiFactory factory) => _factory = factory;
+
+    [SkippableFact]
+    public async Task Journal_RequiresDashboardRole()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Anonyme -> 401.
+        var anon = await _factory.CreateClient().GetAsync("/api/dashboard/journal");
+        Assert.Equal(HttpStatusCode.Unauthorized, anon.StatusCode);
+
+        // Terminal Agent (clé API) -> 403 : l'Agent n'est pas un rôle « Dashboard ».
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+        var agentResp = await agent.GetAsync("/api/dashboard/journal");
+        Assert.Equal(HttpStatusCode.Forbidden, agentResp.StatusCode);
+
+        // Sûreté -> 200.
+        var surete = await LoginNewUserAsync("Surete");
+        var ok = await surete.GetAsync("/api/dashboard/journal");
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task OnSite_ReflectsCheckedInVisitor()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var visitorName = $"Présent-{Guid.NewGuid():N}";
+        await CreateVisitAndCheckInAsync(visitorName);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var onSite = await surete.GetFromJsonAsync<List<OnSiteVisitorDto>>("/api/dashboard/on-site", Json);
+
+        Assert.Contains(onSite!, v => v.VisitorName == visitorName);
+    }
+
+    [SkippableFact]
+    public async Task Scan_BroadcastsLiveEvent_OverSignalR()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var sureteToken = await GetTokenAsync("Surete");
+
+        // Connexion au hub via le serveur de test (transport long-polling, fiable
+        // avec TestServer), sur le groupe du site sicopa.
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, $"hubs/scan?site={NovAccesApiFactory.TestSite}"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(sureteToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<ScanEventDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<ScanEventDto>("ScanRecorded", e => received.TrySetResult(e));
+        await hub.StartAsync();
+
+        // Un scan d'entrée : crée une visite (Hôte) puis scanne (Agent).
+        var visitorName = $"Live-{Guid.NewGuid():N}";
+        await CreateVisitAndCheckInAsync(visitorName);
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(visitorName, evt.VisitorName);
+        Assert.True(evt.IsGranted);
+        Assert.Equal("GRANTED", evt.VerdictCode);
+    }
+
+    // ---- Aides ----
+
+    private async Task CreateVisitAndCheckInAsync(string visitorName)
+    {
+        var hote = await LoginNewUserAsync("Hote");
+        var createResp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            visitorName, "ACME", "Test dashboard", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+        var scan = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(created!.SignedQrPayload, "Entry", "ignore"));
+        scan.EnsureSuccessStatusCode();
+    }
+
+    private async Task<HttpClient> LoginNewUserAsync(string role)
+    {
+        var token = await GetTokenAsync(role);
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    private async Task<string> GetTokenAsync(string role)
+    {
+        var admin = _factory.CreateClient();
+        var adminLogin = await admin.PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword));
+        adminLogin.EnsureSuccessStatusCode();
+        var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+        admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+        var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@sicopa.local";
+        const string password = "Test!Passw0rd2026";
+        var reg = await admin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(email, password, $"{role} Test", role, NovAccesApiFactory.TestSite));
+        reg.EnsureSuccessStatusCode();
+
+        var login = await _factory.CreateClient().PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(email, password));
+        login.EnsureSuccessStatusCode();
+        return (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+    }
+}

@@ -37,6 +37,8 @@ file sealed class FakeVisitRepository : IVisitRepository
     public Task AddAsync(Visit visit, CancellationToken ct) => Task.CompletedTask;
     public Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<Visit>> GetOnSiteAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -44,6 +46,8 @@ file sealed class FakeScanLogRepository : IScanLogRepository
 {
     public List<ScanLogEntry> Entries { get; } = new();
     public Task AddAsync(ScanLogEntry entry, CancellationToken ct) { Entries.Add(entry); return Task.CompletedTask; }
+    public Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 

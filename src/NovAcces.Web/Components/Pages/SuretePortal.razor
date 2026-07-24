@@ -1,0 +1,187 @@
+@page "/surete"
+@implements IAsyncDisposable
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
+
+<PageTitle>NovAcces — Dashboard sûreté</PageTitle>
+
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Dashboard sûreté</h1>
+            <p class="muted">
+                Site : <strong>@(Auth.SiteId ?? "—")</strong> ·
+                <span class="dot @(_connected ? "dot-on" : "dot-off")"></span>
+                @(_connected ? "Temps réel connecté" : "Hors ligne")
+            </p>
+            @if (Auth.IsInRole(NovAccesRoles.Hote))
+            {
+                <div class="nav-links"><a href="/hote">→ Portail hôte</a></div>
+            }
+        </div>
+        <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
+    </header>
+
+    <div class="grid">
+        <section class="card">
+            <h2>Flux des scans (temps réel)</h2>
+            @if (_feed.Count == 0)
+            {
+                <p class="muted">En attente de scans… Un passage à un poste s'affichera ici instantanément.</p>
+            }
+            else
+            {
+                <ul class="feed">
+                    @foreach (var e in _feed)
+                    {
+                        <li class="feed-item @VerdictClass(e)">
+                            <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                            <span class="feed-name">@e.VisitorName</span>
+                            <span class="feed-verdict">@Humanize(e)</span>
+                            <span class="feed-agent">@e.AgentId</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="card">
+            <h2>Présents sur site (@_onSite.Count)</h2>
+            @if (_onSite.Count == 0)
+            {
+                <p class="muted">Aucun visiteur actuellement sur site.</p>
+            }
+            else
+            {
+                <ul class="onsite">
+                    @foreach (var v in _onSite)
+                    {
+                        <li>
+                            <strong>@v.VisitorName</strong>
+                            <span class="muted"> — @v.VisitorCompany</span>
+                            @if (v.CheckedInAt is not null)
+                            {
+                                <span class="muted"> · entré à @v.CheckedInAt.Value.LocalDateTime.ToString("HH:mm")</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly List<ScanEventDto> _feed = new();
+    private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
+    private HubConnection? _hub;
+    private bool _connected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated
+            || !(Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin)))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        // État initial : présents sur site + amorçage du flux avec le journal récent.
+        await RefreshOnSiteAsync();
+        var journal = await Api.GetJournalAsync(20);
+        foreach (var j in journal)
+            _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+
+        await ConnectHubAsync();
+    }
+
+    private async Task ConnectHubAsync()
+    {
+        var apiBase = Config["Api:BaseUrl"]!;
+        var site = Auth.SiteId ?? "";
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{apiBase}/hubs/scan?site={Uri.EscapeDataString(site)}", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+
+                // Dev : l'API expose un certificat auto-signé — accepté UNIQUEMENT
+                // en développement (connexion serveur-à-serveur).
+                if (Env.IsDevelopment())
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler h)
+                            h.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        return handler;
+                    };
+                    options.WebSocketConfiguration = conf =>
+                        conf.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                }
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<ScanEventDto>("ScanRecorded", async scan =>
+        {
+            _feed.Insert(0, scan);
+            if (_feed.Count > 50) _feed.RemoveRange(50, _feed.Count - 50);
+            await RefreshOnSiteAsync();          // un scan change souvent les présents
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.Reconnected += _ => { _connected = true; return InvokeAsync(StateHasChanged); };
+        _hub.Closed += _ => { _connected = false; return InvokeAsync(StateHasChanged); };
+
+        try
+        {
+            await _hub.StartAsync();
+            _connected = true;
+        }
+        catch
+        {
+            _connected = false;
+        }
+    }
+
+    private async Task RefreshOnSiteAsync()
+    {
+        try { _onSite = await Api.GetOnSiteAsync(); } catch { /* best-effort */ }
+    }
+
+    private static string VerdictFrom(ScanJournalEntryDto j) =>
+        j switch
+        {
+            { WasCheckOut: true } => "CHECKED_OUT",
+            { WasGranted: true } => "GRANTED",
+            { IsSecurityEvent: true } => "SECURITY",
+            _ => "DENIED"
+        };
+
+    private static string Humanize(ScanEventDto e) =>
+        e switch
+        {
+            { IsCheckOut: true } => "Sortie",
+            { IsGranted: true } => "Entrée autorisée",
+            { IsSecurityEvent: true } => "⚠ Événement de sécurité",
+            _ => "Refusé"
+        };
+
+    private static string VerdictClass(ScanEventDto e) =>
+        e.IsSecurityEvent ? "v-security" : e.IsGranted ? "v-granted" : "v-denied";
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
+}

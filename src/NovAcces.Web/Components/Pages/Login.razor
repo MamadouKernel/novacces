@@ -55,8 +55,12 @@
     protected override void OnInitialized()
     {
         if (Auth.IsAuthenticated)
-            Nav.NavigateTo("/hote");
+            Nav.NavigateTo(LandingPage());
     }
+
+    // Sûreté -> dashboard ; sinon (Hôte/Admin) -> portail hôte.
+    private string LandingPage() =>
+        Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote) ? "/surete" : "/hote";
 
     private async Task SubmitPasswordAsync()
     {
@@ -65,7 +69,7 @@
         try
         {
             var outcome = await Api.LoginAsync(_email.Trim(), _password);
-            if (outcome.Success) { Nav.NavigateTo("/hote"); return; }
+            if (outcome.Success) { Nav.NavigateTo(LandingPage()); return; }
             if (outcome.RequiresTwoFactor) { _twoFactorRequired = true; return; }
             _error = outcome.Error;
         }
@@ -80,7 +84,7 @@
         try
         {
             var outcome = await Api.LoginTwoFactorAsync(_email.Trim(), _password, _code.Trim());
-            if (outcome.Success) { Nav.NavigateTo("/hote"); return; }
+            if (outcome.Success) { Nav.NavigateTo(LandingPage()); return; }
             _error = outcome.Error ?? "Code invalide.";
         }
         catch { _error = "Impossible de joindre le service d'authentification."; }

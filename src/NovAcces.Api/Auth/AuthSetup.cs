@@ -1,7 +1,10 @@
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NovAcces.Infrastructure.Auth;
+using NovAcces.Infrastructure.Identity;
 using NovAcces.Shared.Auth;
 
 namespace NovAcces.Api.Auth;
@@ -21,10 +24,6 @@ public static class AuthSetup
     {
         const string smartScheme = "smart";
 
-        var signingKey = configuration["Jwt:SigningKey"]
-            ?? throw new InvalidOperationException(
-                "Jwt:SigningKey manquant (user-secrets en dev, variable d'environnement en prod).");
-
         services.AddAuthentication(options =>
             {
                 options.DefaultScheme = smartScheme;
@@ -37,23 +36,37 @@ public static class AuthSetup
                         ? ApiKeyOptions.Scheme
                         : JwtBearerDefaults.AuthenticationScheme;
             })
-            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, _ => { })
+            .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+                ApiKeyOptions.Scheme, _ => { });
+
+        // Configuration LAZY du JwtBearer à partir de JwtOptions — MÊME source que
+        // l'émission des jetons (JwtTokenService). Lire la clé « eagerly » à
+        // l'enregistrement exposait à un décalage signe/valide si la configuration
+        // était complétée après coup (cas des tests via WebApplicationFactory).
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IOptions<JwtOptions>>((bearer, jwtOptions) =>
             {
-                options.TokenValidationParameters = new TokenValidationParameters
+                var jwt = jwtOptions.Value;
+                if (string.IsNullOrWhiteSpace(jwt.SigningKey))
+                    throw new InvalidOperationException(
+                        "Jwt:SigningKey manquant (user-secrets en dev, variable d'environnement en prod).");
+
+                bearer.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
-                    ValidIssuer = configuration["Jwt:Issuer"] ?? "NovAcces",
+                    ValidIssuer = jwt.Issuer,
                     ValidateAudience = true,
-                    ValidAudience = configuration["Jwt:Audience"] ?? "NovAcces",
+                    ValidAudience = jwt.Audience,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
                     ClockSkew = TimeSpan.FromSeconds(30),
                 };
 
                 // SignalR (WebSocket) ne peut pas porter d'en-tête Authorization :
                 // le jeton arrive alors en query string "access_token" pour /hubs.
-                options.Events = new JwtBearerEvents
+                bearer.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = context =>
                     {
@@ -66,9 +79,7 @@ public static class AuthSetup
                         return Task.CompletedTask;
                     }
                 };
-            })
-            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-                ApiKeyOptions.Scheme, _ => { });
+            });
 
         return services;
     }

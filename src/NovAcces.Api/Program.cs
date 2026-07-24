@@ -78,7 +78,10 @@ if (app.Environment.IsDevelopment())
     await app.EnsureIdentityReadyAsync();
 }
 
-app.UseHttpsRedirection();
+// Désactivable en test d'intégration (TestServer tourne en HTTP, la redirection
+// produirait des 307 parasites). Toujours actif en dev/prod.
+if (!app.Configuration.GetValue<bool>("DisableHttpsRedirection"))
+    app.UseHttpsRedirection();
 
 // L'authentification DOIT précéder la résolution de tenant : celle-ci lit le
 // claim SiteId du principal authentifié.
@@ -97,3 +100,6 @@ app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
 app.Run();
 
 return 0;
+
+// Rendu accessible aux tests d'intégration (WebApplicationFactory<Program>).
+public partial class Program;

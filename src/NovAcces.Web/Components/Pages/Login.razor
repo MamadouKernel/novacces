@@ -7,42 +7,106 @@
 
 <PageTitle>NovAcces — Connexion</PageTitle>
 
-<div class="login-card">
-    <h1>NovAcces</h1>
-    <p class="subtitle">Portail de gestion des visiteurs</p>
+<div class="min-h-screen grid lg:grid-cols-2">
 
-    @if (!_twoFactorRequired)
-    {
-        <div class="field">
-            <label>Email</label>
-            <input type="email" @bind="_email" @bind:event="oninput" autocomplete="username" />
-        </div>
-        <div class="field">
-            <label>Mot de passe</label>
-            <input type="password" @bind="_password" @bind:event="oninput" autocomplete="current-password"
-                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitPasswordAsync(); })" />
-        </div>
-        <button class="btn-primary" @onclick="SubmitPasswordAsync" disabled="@_busy">
-            @(_busy ? "Connexion…" : "Se connecter")
-        </button>
-    }
-    else
-    {
-        <p class="info">Un second facteur est requis. Saisissez le code de votre application d'authentification.</p>
-        <div class="field">
-            <label>Code à 6 chiffres</label>
-            <input type="text" inputmode="numeric" @bind="_code" @bind:event="oninput"
-                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitTwoFactorAsync(); })" />
-        </div>
-        <button class="btn-primary" @onclick="SubmitTwoFactorAsync" disabled="@_busy">
-            @(_busy ? "Vérification…" : "Valider")
-        </button>
-    }
+    @* ---- Panneau de marque (identité produit) — visible dès lg ---- *@
+    <aside class="relative hidden overflow-hidden bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+        <div class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/10 blur-2xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-brand-400/20 blur-2xl"></div>
 
-    @if (_error is not null)
-    {
-        <p class="error">@_error</p>
-    }
+        <div class="relative flex items-center gap-3">
+            <span class="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+                @QrMark("h-6 w-6 text-white")
+            </span>
+            <span class="text-xl font-bold tracking-tight">NovAcces</span>
+        </div>
+
+        <div class="relative max-w-md">
+            <h1 class="text-3xl font-bold leading-tight tracking-tight text-white xl:text-4xl">
+                Le contrôle d'accès par QR Code, sécurisé.
+            </h1>
+            <p class="mt-4 text-brand-100/90">
+                Gestion des visiteurs et contrôle des accès physiques sur sites sensibles —
+                chaque scan ouvre une porte, sous la responsabilité de la sûreté.
+            </p>
+
+            <ul class="mt-8 space-y-3 text-sm text-brand-50">
+                <li class="flex items-center gap-3">@Check() Fenêtre de validité calculée côté serveur</li>
+                <li class="flex items-center gap-3">@Check() Anti-copie et anti-rejeu du QR</li>
+                <li class="flex items-center gap-3">@Check() Journal des accès inaltérable</li>
+                <li class="flex items-center gap-3">@Check() Supervision temps réel des postes</li>
+            </ul>
+        </div>
+
+        <p class="relative text-xs text-brand-200/80">
+            Opéré par Sigasécurité · Agrément n° 344 MI
+        </p>
+    </aside>
+
+    @* ---- Formulaire ---- *@
+    <main class="flex items-center justify-center bg-slate-100 p-6 sm:p-10">
+        <div class="w-full max-w-sm animate-fade-in-up">
+
+            @* En-tête de marque compact (mobile uniquement) *@
+            <div class="mb-8 flex items-center gap-3 lg:hidden">
+                <span class="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-white shadow-card">
+                    @QrMark("h-6 w-6")
+                </span>
+                <div>
+                    <div class="text-lg font-bold tracking-tight text-slate-900">NovAcces</div>
+                    <div class="text-xs text-slate-500">Contrôle d'accès par QR Code</div>
+                </div>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200/70 bg-white p-7 shadow-card sm:p-8">
+                <h2 class="text-xl font-semibold tracking-tight text-slate-900">
+                    @(_twoFactorRequired ? "Vérification en deux étapes" : "Connexion au portail")
+                </h2>
+                <p class="mb-6 mt-1 text-sm text-slate-500">
+                    @(_twoFactorRequired
+                        ? "Saisissez le code de votre application d'authentification."
+                        : "Accès réservé au personnel autorisé.")
+                </p>
+
+                @if (!_twoFactorRequired)
+                {
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" @bind="_email" @bind:event="oninput" autocomplete="username"
+                               placeholder="prenom@site.local" />
+                    </div>
+
+                    <PasswordBox @bind-Value="_password" Label="Mot de passe"
+                                 Autocomplete="current-password" OnEnter="SubmitPasswordAsync" />
+
+                    <button class="btn-primary mt-2" @onclick="SubmitPasswordAsync" disabled="@_busy">
+                        @if (_busy) { <span>Connexion…</span> } else { <span>Se connecter</span> }
+                    </button>
+                }
+                else
+                {
+                    <div class="field">
+                        <label>Code à 6 chiffres</label>
+                        <input type="text" inputmode="numeric" class="tracking-[0.4em] text-center text-lg"
+                               @bind="_code" @bind:event="oninput"
+                               @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitTwoFactorAsync(); })" />
+                    </div>
+                    <button class="btn-primary mt-2" @onclick="SubmitTwoFactorAsync" disabled="@_busy">
+                        @(_busy ? "Vérification…" : "Valider")
+                    </button>
+                }
+
+                @if (_error is not null)
+                {
+                    <p class="error">@_error</p>
+                }
+            </div>
+
+            <p class="mt-6 text-center text-xs text-slate-400">
+                © @DateTime.Now.Year NovAcces — Sigasécurité
+            </p>
+        </div>
+    </main>
 </div>
 
 @code {
@@ -55,7 +119,6 @@
 
     protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
 
-    // Si une session persistée est restaurée (ou déjà active), on quitte le login.
     protected override void OnAfterRender(bool firstRender)
     {
         if (Auth.Initialized && Auth.IsAuthenticated)
@@ -65,14 +128,6 @@
     private void OnAuthChanged() => InvokeAsync(StateHasChanged);
 
     public void Dispose() => Auth.Changed -= OnAuthChanged;
-
-    // Redirection selon le rôle : Admin -> console ; Sûreté -> dashboard ; sinon -> portail hôte.
-    private string LandingPage()
-    {
-        if (Auth.IsInRole(NovAccesRoles.Admin) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/admin";
-        if (Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/surete";
-        return "/hote";
-    }
 
     private async Task SubmitPasswordAsync()
     {
@@ -102,4 +157,30 @@
         catch { _error = "Impossible de joindre le service d'authentification."; }
         finally { _busy = false; }
     }
+
+    // Redirection selon le rôle : Admin -> console ; Sûreté -> dashboard ; sinon -> portail hôte.
+    private string LandingPage()
+    {
+        if (Auth.IsInRole(NovAccesRoles.Admin) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/admin";
+        if (Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/surete";
+        return "/hote";
+    }
+
+    // Marque QR (logo) et puce de validation, en SVG inline (aucune dépendance).
+    private static RenderFragment QrMark(string cls) => builder =>
+    {
+        builder.AddMarkupContent(0, $@"<svg viewBox='0 0 24 24' fill='currentColor' class='{cls}' xmlns='http://www.w3.org/2000/svg'>
+            <path d='M3 3h7v7H3V3zm2 2v3h3V5H5z'/><path d='M14 3h7v7h-7V3zm2 2v3h3V5h-3z'/>
+            <path d='M3 14h7v7H3v-7zm2 2v3h3v-3H5z'/>
+            <rect x='13' y='13' width='2.4' height='2.4'/><rect x='18.6' y='13' width='2.4' height='2.4'/>
+            <rect x='13' y='18.6' width='2.4' height='2.4'/><rect x='15.8' y='15.8' width='2.4' height='2.4'/>
+            <rect x='18.6' y='18.6' width='2.4' height='2.4'/></svg>");
+    };
+
+    private static RenderFragment Check() => builder =>
+    {
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'
+            class='h-5 w-5 shrink-0 text-brand-300' stroke-linecap='round' stroke-linejoin='round'>
+            <path d='M20 6L9 17l-5-5'/></svg>");
+    };
 }

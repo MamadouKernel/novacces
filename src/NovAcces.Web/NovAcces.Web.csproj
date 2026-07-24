@@ -13,6 +13,16 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Ne jamais aspirer node_modules ni les sources front dans le build .NET. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);node_modules\**;Styles\**;package.json;package-lock.json;tailwind.config.js</DefaultItemExcludes>
   </PropertyGroup>
+
+  <!-- Régénère le CSS Tailwind avant le build si Tailwind (npm) est installé.
+       Le CSS compilé (wwwroot/app.css) est aussi versionné : l'app fonctionne
+       sans npm ; ce target ne fait que le rafraîchir si on a modifié des classes. -->
+  <Target Name="BuildTailwindCss" BeforeTargets="Build"
+          Condition="Exists('$(MSBuildProjectDirectory)\node_modules\.bin\tailwindcss.cmd')">
+    <Exec Command="npm run css:build" WorkingDirectory="$(MSBuildProjectDirectory)" ContinueOnError="true" />
+  </Target>
 
 </Project>

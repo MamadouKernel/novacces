@@ -21,3 +21,6 @@ secrets.json
 /*.docx
 /*.pdf
 /*.zip
+
+## Front-end (Tailwind)
+node_modules/

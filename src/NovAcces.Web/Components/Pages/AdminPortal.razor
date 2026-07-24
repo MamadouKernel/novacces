@@ -39,7 +39,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
             <h2>Créer un compte</h2>
             <div class="field"><label>Email</label><input type="email" @bind="_newUser.Email" /></div>
             <div class="field"><label>Nom affiché</label><input @bind="_newUser.DisplayName" /></div>
-            <div class="field"><label>Mot de passe</label><input type="password" @bind="_newUser.Password" /></div>
+            <PasswordBox @bind-Value="_newUser.Password" Label="Mot de passe" Autocomplete="new-password" />
             <div class="row">
                 <div class="field"><label>Rôle</label>
                     <select @bind="_newUser.Role">

@@ -14,19 +14,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Bleu « sûreté » — confiant, sobre, professionnel.
+        // Bleu nuit « sûreté » — autorité, confiance, sérieux institutionnel.
+        // Registre visuel des forces de sûreté ; ne concurrence pas les
+        // couleurs d'état (vert accordé / ambre refus / rouge incident).
         brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
-          950: "#172554",
+          50: "#eef3ff",
+          100: "#dbe4fe",
+          200: "#bccdfc",
+          300: "#90aaf8",
+          400: "#5f7ff0",
+          500: "#3b5be2",
+          600: "#2544ad",
+          700: "#1e3a8a",
+          800: "#1b3172",
+          900: "#16265a",
+          950: "#0e1836",
         },
       },
       fontFamily: {

@@ -48,8 +48,10 @@
   }
   .card h2 { @apply mb-4 text-base font-semibold text-slate-900; }
 
-  .grid { display: grid; @apply grid-cols-1 gap-5 lg:grid-cols-2; }
-  .row  { display: grid; @apply grid-cols-1 gap-4 sm:grid-cols-2; }
+  /* Conteneurs sémantiques — NE PAS nommer « .grid » : « grid » est un
+     utilitaire Tailwind natif (display:grid) utilisé en ligne ailleurs. */
+  .cards { display: grid; @apply grid-cols-1 gap-5 lg:grid-cols-2; }
+  .row   { display: grid; @apply grid-cols-1 gap-4 sm:grid-cols-2; }
 
   /* ---- Champs de formulaire ---- */
   .field { @apply mb-4 flex flex-col; }

@@ -169,12 +169,23 @@
     // Marque QR (logo) et puce de validation, en SVG inline (aucune dépendance).
     private static RenderFragment QrMark(string cls) => builder =>
     {
-        builder.AddMarkupContent(0, $@"<svg viewBox='0 0 24 24' fill='currentColor' class='{cls}' xmlns='http://www.w3.org/2000/svg'>
-            <path d='M3 3h7v7H3V3zm2 2v3h3V5H5z'/><path d='M14 3h7v7h-7V3zm2 2v3h3V5h-3z'/>
-            <path d='M3 14h7v7H3v-7zm2 2v3h3v-3H5z'/>
-            <rect x='13' y='13' width='2.4' height='2.4'/><rect x='18.6' y='13' width='2.4' height='2.4'/>
-            <rect x='13' y='18.6' width='2.4' height='2.4'/><rect x='15.8' y='15.8' width='2.4' height='2.4'/>
-            <rect x='18.6' y='18.6' width='2.4' height='2.4'/></svg>");
+        // Glyphe QR équilibré : 3 repères d'angle (contour + centre plein) et
+        // un bloc de données en bas-droite, centré symétriquement dans 0..24.
+        builder.AddMarkupContent(0, $@"<svg viewBox='0 0 24 24' class='{cls}' xmlns='http://www.w3.org/2000/svg'>
+            <g fill='none' stroke='currentColor' stroke-width='2'>
+                <rect x='3'  y='3'  width='6' height='6' rx='1.5'/>
+                <rect x='15' y='3'  width='6' height='6' rx='1.5'/>
+                <rect x='3'  y='15' width='6' height='6' rx='1.5'/>
+            </g>
+            <g fill='currentColor'>
+                <rect x='5'  y='5'  width='2' height='2' rx='.5'/>
+                <rect x='17' y='5'  width='2' height='2' rx='.5'/>
+                <rect x='5'  y='17' width='2' height='2' rx='.5'/>
+                <rect x='15'   y='15'   width='2.4' height='2.4' rx='.5'/>
+                <rect x='18.6' y='15'   width='2.4' height='2.4' rx='.5'/>
+                <rect x='15'   y='18.6' width='2.4' height='2.4' rx='.5'/>
+                <rect x='18.6' y='18.6' width='2.4' height='2.4' rx='.5'/>
+            </g></svg>");
     };
 
     private static RenderFragment Check() => builder =>

@@ -34,6 +34,28 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// --- Commande d'administration hors-ligne : provisionnement d'un site ---
+//   dotnet run -- provision-site <siteId>
+// Crée le schéma PostgreSQL du site, applique le modèle de données et rend le
+// journal des scans append-only. Volontairement une commande CLI et NON un
+// endpoint HTTP : le provisionnement exécute du DDL sensible et ne doit pas
+// être exposé sur le réseau (a fortiori tant que l'authentification/RBAC du
+// Jalon 2 n'est pas en place).
+if (args.Length >= 1 && args[0] == "provision-site")
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage : dotnet run -- provision-site <siteId>");
+        return 1;
+    }
+
+    using var scope = app.Services.CreateScope();
+    var provisioner = scope.ServiceProvider.GetRequiredService<ITenantProvisioningService>();
+    await provisioner.ProvisionAsync(args[1]);
+    Console.WriteLine($"Site '{args[1]}' provisionné : schéma, modèle de données et journal append-only.");
+    return 0;
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -51,3 +73,5 @@ app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapHub<ScanEventsHub>("/hubs/scan");
 
 app.Run();
+
+return 0;

@@ -44,12 +44,18 @@ public class Es256QrSigningServiceTests
         var service = CreateService(out _);
         var signed = service.SignVisitToken(Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddMinutes(15));
 
-        // Falsification déterministe : on inverse le dernier caractère alphabétique
-        // du JSON (jamais un caractère structurel {, }, ", :, ,), ce qui corrompt
-        // à coup sûr soit le payload soit la signature encodés en Base64Url.
+        // Falsification déterministe : on inverse le PREMIER caractère Base64Url
+        // de la signature. Il faut viser le premier (et non le dernier) caractère :
+        // une signature ECDSA P-256 fait 64 octets, or 64 mod 3 = 1, donc le
+        // dernier groupe Base64 code 1 octet sur 2 caractères et les 4 bits de
+        // poids faible du DERNIER caractère sont ignorés au décodage — inverser
+        // ce caractère-là peut être un no-op (la signature décodée reste
+        // identique), ce qui rendait ce test non déterministe. Le premier
+        // caractère d'un champ Base64, lui, porte des bits toujours significatifs.
+        const string marker = "\"SignatureB64Url\":\"";
+        var sigStart = signed.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
         var chars = signed.ToCharArray();
-        var lastLetterIndex = Array.FindLastIndex(chars, char.IsLetter);
-        chars[lastLetterIndex] = chars[lastLetterIndex] == 'A' ? 'B' : 'A';
+        chars[sigStart] = chars[sigStart] == 'A' ? 'B' : 'A';
         var tampered = new string(chars);
 
         var result = service.VerifySignedToken(tampered);

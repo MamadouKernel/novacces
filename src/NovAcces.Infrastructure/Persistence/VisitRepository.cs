@@ -12,33 +12,38 @@ public sealed class VisitRepository : IVisitRepository
 
     public async Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct)
     {
-        await _db.EnsureTenantSchemaAppliedAsync(ct);
+        await _db.EnsureTenantResolvedAsync(ct);
 
         // FOR UPDATE : verrou pessimiste au niveau ligne. Garantit qu'en cas de
         // deux scans strictement simultanés du même QR (deux postes de contrôle),
         // le second attend la libération du verrou et voit l'état déjà consommé
         // par le premier — c'est la garantie réelle derrière REQ-SEC-03,
         // au-delà de la contrainte unique posée en ceinture de sécurité.
+        //
+        // La colonne est référencée entre guillemets ("VisitToken") : EF Core +
+        // Npgsql conservent la casse PascalCase des noms de propriétés comme noms
+        // de colonnes. Sans guillemets, PostgreSQL replierait l'identifiant en
+        // minuscules (visit_token) — colonne inexistante, la requête échouerait.
         return await _db.Visits
-            .FromSqlInterpolated($"SELECT * FROM visits WHERE visit_token = {visitToken} FOR UPDATE")
+            .FromSqlInterpolated($"SELECT * FROM visits WHERE \"VisitToken\" = {visitToken} FOR UPDATE")
             .SingleOrDefaultAsync(ct);
     }
 
     public async Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct)
     {
-        await _db.EnsureTenantSchemaAppliedAsync(ct);
+        await _db.EnsureTenantResolvedAsync(ct);
         return await _db.Visits.SingleOrDefaultAsync(v => v.Id == visitId, ct);
     }
 
     public async Task AddAsync(Visit visit, CancellationToken ct)
     {
-        await _db.EnsureTenantSchemaAppliedAsync(ct);
+        await _db.EnsureTenantResolvedAsync(ct);
         await _db.Visits.AddAsync(visit, ct);
     }
 
     public async Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct)
     {
-        await _db.EnsureTenantSchemaAppliedAsync(ct);
+        await _db.EnsureTenantResolvedAsync(ct);
         var startOfDay = new DateTimeOffset(today.Date, today.Offset);
         var endOfDay = startOfDay.AddDays(1);
 
@@ -60,7 +65,7 @@ public sealed class ScanLogRepository : IScanLogRepository
 
     public async Task AddAsync(ScanLogEntry entry, CancellationToken ct)
     {
-        await _db.EnsureTenantSchemaAppliedAsync(ct);
+        await _db.EnsureTenantResolvedAsync(ct);
         await _db.ScanLogs.AddAsync(entry, ct);
     }
 

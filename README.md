@@ -77,16 +77,20 @@ docker run --name novacces-pg -e POSTGRES_PASSWORD=devpassword \
 Mets à jour `ConnectionStrings:Postgres` dans `appsettings.Development.json`
 avec ce mot de passe.
 
-### 6. Créer le schéma d'un premier site (le pilote)
-Le multi-tenant repose sur un schéma PostgreSQL par site. Pour le pilote :
-```sql
-CREATE SCHEMA site_sicopa;
+### 6. Provisionner un site (le pilote)
+Le multi-tenant repose sur un schéma PostgreSQL par site. Le provisionnement
+est automatisé par une commande d'administration qui, en une étape idempotente,
+crée le schéma, applique le modèle de données EF Core **dans ce schéma**, et
+rend le journal des scans append-only (INSERT-only, cf. CLAUDE.md §7.4) :
+```bash
+cd src/NovAcces.Api
+dotnet run -- provision-site sicopa
 ```
-Puis générer et appliquer la première migration EF Core **contre ce schéma**
-(la génération de migrations schema-aware est un point à valider ensemble
-au démarrage du jalon 2 — EF Core ne gère pas nativement le multi-schéma
-dynamique, une stratégie de migration manuelle ou un outil dédié sera
-nécessaire).
+C'est une commande CLI (et non un endpoint HTTP) : le provisionnement exécute
+du DDL sensible et ne doit pas être exposé sur le réseau. La logique est dans
+`Infrastructure/Persistence/Tenancy/TenantProvisioningService.cs` et couverte
+par des tests d'intégration (`tests/NovAcces.IntegrationTests` : cloisonnement
+inter-tenant + inaltérabilité du journal).
 
 ### 7. Lancer l'API
 ```bash

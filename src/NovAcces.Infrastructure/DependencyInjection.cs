@@ -16,11 +16,6 @@ public static class DependencyInjection
     public static IServiceCollection AddNovAccesInfrastructure(
         this IServiceCollection services, IConfiguration configuration)
     {
-        // --- Base de données : un DbContext, schéma résolu dynamiquement par requête ---
-        services.AddDbContext<NovAccesDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("Postgres")
-                ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
-
         // --- Tenant courant : une instance par requête HTTP (scoped) ---
         // Enregistré à la fois comme type concret (pour que le middleware
         // puisse appeler Resolve()) et comme interface en lecture seule
@@ -28,6 +23,27 @@ public static class DependencyInjection
         // la même instance scoped.
         services.AddScoped<CurrentTenant>();
         services.AddScoped<ICurrentTenant>(sp => sp.GetRequiredService<CurrentTenant>());
+
+        // Provisionnement d'un site (schéma + modèle + journal append-only).
+        // Opération d'administration hors requête ; construit ses propres
+        // connexions brutes, d'où l'injection directe de la chaîne de connexion.
+        services.AddScoped<ITenantProvisioningService>(sp =>
+            new TenantProvisioningService(
+                configuration.GetConnectionString("Postgres")
+                    ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
+
+        // Intercepteur qui positionne le search_path sur le schéma du tenant à
+        // chaque ouverture de connexion (cloisonnement multi-tenant robuste au
+        // pooling Npgsql — voir TenantSchemaConnectionInterceptor). Scoped car
+        // il dépend du tenant de la requête courante.
+        services.AddScoped<TenantSchemaConnectionInterceptor>();
+
+        // --- Base de données : un DbContext, schéma résolu dynamiquement par requête ---
+        // L'overload (sp, options) permet d'injecter l'intercepteur scoped ci-dessus.
+        services.AddDbContext<NovAccesDbContext>((sp, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("Postgres")
+                    ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante."))
+                .AddInterceptors(sp.GetRequiredService<TenantSchemaConnectionInterceptor>()));
 
         // --- Dépôts ---
         services.AddScoped<IVisitRepository, VisitRepository>();

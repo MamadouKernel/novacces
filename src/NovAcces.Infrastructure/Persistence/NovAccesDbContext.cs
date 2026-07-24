@@ -38,18 +38,22 @@ public sealed class NovAccesDbContext : DbContext
     }
 
     /// <summary>
-    /// Positionne le search_path PostgreSQL sur le schéma du tenant résolu.
-    /// Appelé explicitement par TenantSchemaInterceptor avant toute requête —
-    /// voir DependencyInjection.cs. Le nom de schéma est validé et assaini
-    /// dans CurrentTenant.Resolve() (whitelist alphanumérique) : la construction
-    /// de commande ci-dessous n'est donc jamais exposée à une injection SQL
-    /// provenant d'une entrée utilisateur non contrôlée.
+    /// Garde-fou : refuse toute opération sur les données tant que le tenant
+    /// n'est pas résolu (défense en profondeur, en plus du middleware qui
+    /// rejette déjà en 400 toute requête HTTP sans site — voir CLAUDE.md §7.3).
+    ///
+    /// C'est ici que le search_path ÉTAIT positionné, mais un simple "SET" ne
+    /// survit pas au pooling de connexions Npgsql (état de session réinitialisé
+    /// au retour au pool). L'application effective du schéma est désormais faite
+    /// par TenantSchemaConnectionInterceptor, à chaque ouverture de connexion —
+    /// robuste au pooling. Cette méthode ne fait donc plus qu'un contrôle
+    /// d'invariant, sans aller-retour base.
     /// </summary>
-    public async Task EnsureTenantSchemaAppliedAsync(CancellationToken ct = default)
+    public Task EnsureTenantResolvedAsync(CancellationToken ct = default)
     {
         if (!_tenant.IsResolved)
             throw new InvalidOperationException("Impossible d'exécuter une requête sans tenant résolu.");
 
-        await Database.ExecuteSqlRawAsync($"SET search_path TO {_tenant.SchemaName}, public", ct);
+        return Task.CompletedTask;
     }
 }

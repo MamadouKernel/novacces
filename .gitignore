@@ -7,6 +7,16 @@ obj/
 *.dll
 *.pdb
 
+## Secrets & clés cryptographiques — NE JAMAIS committer
+## (les clés ES256 vivent dans dotnet user-secrets ou un secret manager)
+*.pem
+*.key
+*.pfx
+*.p12
+appsettings.*.Local.json
+appsettings.Development.json
+secrets.json
+
 ## Documents commerciaux bruts (hors dépôt — équivalents texte dans docs/*.md)
 /*.docx
 /*.pdf

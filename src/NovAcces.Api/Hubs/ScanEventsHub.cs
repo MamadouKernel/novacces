@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using NovAcces.Infrastructure.Persistence.Tenancy;
 
 namespace NovAcces.Api.Hubs;
 
@@ -10,9 +11,9 @@ namespace NovAcces.Api.Hubs;
 /// HTTP initiale de négociation) ne survit pas à la durée de vie de la
 /// connexion WebSocket : chaque client indique donc explicitement son site
 /// via le paramètre de requête "site" à la connexion, revalidé ici avec la
-/// même règle que CurrentTenant.Resolve (whitelist alphanumérique) — jamais
-/// fait confiance à une valeur non revalidée, même si le middleware a déjà
-/// vérifié une requête HTTP précédente.
+/// même règle que CurrentTenant.Resolve (CurrentTenant.IsValidSiteId) —
+/// jamais fait confiance à une valeur non revalidée, même si le middleware a
+/// déjà vérifié une requête HTTP précédente.
 /// </summary>
 public sealed class ScanEventsHub : Hub
 {
@@ -20,13 +21,13 @@ public sealed class ScanEventsHub : Hub
     {
         var siteId = Context.GetHttpContext()?.Request.Query["site"].ToString();
 
-        if (string.IsNullOrWhiteSpace(siteId) || !siteId.All(c => char.IsLetterOrDigit(c) || c == '_'))
+        if (!CurrentTenant.IsValidSiteId(siteId))
         {
             Context.Abort();
             return;
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, siteId.ToLowerInvariant());
+        await Groups.AddToGroupAsync(Context.ConnectionId, siteId!.ToLowerInvariant());
         await base.OnConnectedAsync();
     }
 }

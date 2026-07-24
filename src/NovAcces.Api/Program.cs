@@ -1,14 +1,22 @@
 using Microsoft.AspNetCore.RateLimiting;
+using NovAcces.Api.Auth;
 using NovAcces.Api.Endpoints;
 using NovAcces.Api.Hubs;
 using NovAcces.Api.Middleware;
 using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure;
+using NovAcces.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Services ---
 builder.Services.AddNovAccesInfrastructure(builder.Configuration);
+
+// Identité (schéma partagé), JWT, clés API terminaux, puis schémas d'auth + RBAC.
+builder.Services.AddNovAccesIdentity(builder.Configuration);
+builder.Services.AddNovAccesAuthentication(builder.Configuration);
+builder.Services.AddNovAccesAuthorization();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -29,8 +37,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// TODO jalon 2 : builder.Services.AddAuthentication() + AddIdentity<>() avec 2FA TOTP
-// (ASP.NET Core Identity, comptes Hôte / Sûreté / Admin, RBAC par policy).
+// TODO jalon 2 (incrément 2) : 2FA TOTP (Sûreté/Admin), gestion de session/refresh.
 
 var app = builder.Build();
 
@@ -60,17 +67,29 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    // Applique le schéma Identity (schéma partagé) et amorce rôles + Admin de
+    // développement, pour que la connexion soit testable immédiatement. En
+    // production, migration et création du premier Admin sont des gestes
+    // d'exploitation explicites, pas un effet de bord du démarrage.
+    await app.EnsureIdentityReadyAsync();
 }
 
 app.UseHttpsRedirection();
+
+// L'authentification DOIT précéder la résolution de tenant : celle-ci lit le
+// claim SiteId du principal authentifié.
+app.UseAuthentication();
 app.UseTenantResolution();
 app.UseRateLimiter();
+app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow }));
 
+app.MapAuthEndpoints();
 app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
-app.MapHub<ScanEventsHub>("/hubs/scan");
+app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
 
 app.Run();
 

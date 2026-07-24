@@ -9,17 +9,20 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NovAcces.Application\NovAcces.Application.csproj" />
+    <ProjectReference Include="..\NovAcces.Shared\NovAcces.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Versions à ajuster à la sortie de `dotnet restore` selon les dernières
          versions stables disponibles au moment du clonage. -->
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.10" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.1.2" />
   </ItemGroup>
 
 </Project>

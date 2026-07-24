@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Enums;
+using NovAcces.Shared.Auth;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
@@ -12,6 +14,7 @@ public static class VisitEndpoints
 
         group.MapPost("/", async (
             CreateVisitRequestDto request,
+            ClaimsPrincipal user,
             CreateVisitHandler handler,
             CancellationToken ct) =>
         {
@@ -24,7 +27,7 @@ public static class VisitEndpoints
 
             var command = new CreateVisitCommand(
                 request.VisitorName, request.VisitorCompany, request.Motif,
-                HostUserId: "TODO-jalon2-depuis-authentification", // remplacé par l'identité de l'hôte connecté
+                HostUserId: user.HostIdentifier(), // hôte authentifié (claim), plus de valeur en dur
                 mode, request.ScheduledAt, request.PlannedDurationMinutes,
                 request.VisitorPhone, request.VisitorEmail);
 
@@ -32,29 +35,44 @@ public static class VisitEndpoints
 
             return Results.Ok(new CreateVisitResponseDto(result.VisitId, result.SignedQrPayload, result.ExpiresAt));
         })
+        .RequireAuthorization(NovAccesRoles.Hote)
         .WithName("CreateVisit")
         .WithSummary("Crée une demande de visite et génère le QR signé.");
 
         // REQ-F-09 : révocation manuelle par l'hôte ou la sûreté, à tout moment.
         group.MapPost("/{visitId:guid}/revoke", async (
             Guid visitId,
+            ClaimsPrincipal user,
             RevokeVisitHandler handler,
             CancellationToken ct) =>
         {
-            // TODO Jalon 2 : remplacer "TODO-jalon2" par l'identité réelle de
-            // l'utilisateur authentifié (hôte propriétaire de la visite, ou
-            // responsable sûreté) une fois Identity + RBAC en place. Vérifier
-            // aussi qu'un hôte ne peut révoquer QUE ses propres demandes
-            // (principe du moindre privilège, section 8.5 du CDC).
-            var result = await handler.HandleAsync(new RevokeVisitCommand(visitId, RevokedBy: "TODO-jalon2"), ct);
+            // TODO Jalon 2 (suite) : vérifier qu'un Hôte ne peut révoquer QUE ses
+            // propres demandes (le rôle est déjà contrôlé par la policy ; reste à
+            // comparer HostUserId de la visite à l'identité — moindre privilège,
+            // section 8.5 du CDC). Sûreté/Admin peuvent révoquer tout QR du site.
+            var result = await handler.HandleAsync(
+                new RevokeVisitCommand(visitId, RevokedBy: user.HostIdentifier()), ct);
 
             return result.Success
                 ? Results.Ok(new { message = "QR révoqué." })
                 : Results.NotFound(new { error = result.Error });
         })
+        .RequireAuthorization("RevokeVisit")
         .WithName("RevokeVisit")
         .WithSummary("Révoque un QR à tout moment (REQ-F-09).");
 
         return group;
     }
+}
+
+internal static class ClaimsPrincipalExtensions
+{
+    /// <summary>
+    /// Identifiant stable de l'utilisateur pour journalisation/propriété
+    /// (sub du JWT, à défaut le nom). Jamais une valeur fournie par le client.
+    /// </summary>
+    public static string HostIdentifier(this ClaimsPrincipal user) =>
+        user.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? user.FindFirstValue(ClaimTypes.Name)
+        ?? "inconnu";
 }

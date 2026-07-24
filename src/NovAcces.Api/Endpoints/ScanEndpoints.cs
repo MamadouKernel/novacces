@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Enums;
+using NovAcces.Shared.Auth;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
@@ -12,6 +14,7 @@ public static class ScanEndpoints
 
         group.MapPost("/", async (
             ScanRequestDto request,
+            ClaimsPrincipal user,
             ScanQrHandler handler,
             CancellationToken ct) =>
         {
@@ -20,11 +23,14 @@ public static class ScanEndpoints
 
             // Jalon 2 : IsBusinessDayOverride sera calculé par un IBusinessDayService
             // (jours fériés ivoiriens paramétrables par site) plutôt que codé en dur.
-            var isBusinessDay = request.Direction is not null
-                && DateTimeOffset.UtcNow.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            var isBusinessDay = DateTimeOffset.UtcNow.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+
+            // L'agent est identifié par le terminal enrôlé (claim), pas par une
+            // valeur du corps de requête : traçabilité fiable du poste de contrôle.
+            var agentId = user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
 
             var command = new ScanQrCommand(
-                request.SignedQrPayload, direction, request.AgentId,
+                request.SignedQrPayload, direction, agentId,
                 IsDegradedMode: false, // en jalon 2 : distinction scan temps réel / resynchronisation différée
                 isBusinessDay);
 
@@ -36,6 +42,7 @@ public static class ScanEndpoints
 
             return Results.Ok(response);
         })
+        .RequireAuthorization(NovAccesRoles.Agent)
         .WithName("ScanQr")
         .WithSummary("Scanne un QR au poste de contrôle (entrée ou sortie).");
 

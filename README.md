@@ -97,8 +97,24 @@ inter-tenant + inaltérabilité du journal).
 cd src/NovAcces.Api
 dotnet run
 ```
-Puis teste avec un en-tête `X-Site-Id: sicopa` (Swagger disponible en
-développement sur `/swagger`).
+En développement, le démarrage amorce automatiquement le schéma Identity, les
+rôles, et un compte Admin de dev (`admin@novacces.local`, mot de passe par
+défaut à changer — voir le log au démarrage). Swagger disponible sur `/swagger`.
+
+### 8. Authentification (Jalon 2, incrément 1)
+Les endpoints métier sont désormais protégés (RBAC) :
+- **Web (Hôte / Sûreté / Admin)** : `POST /api/auth/login` renvoie un JWT à
+  présenter en `Authorization: Bearer <token>`. Le site (tenant) est porté par
+  le claim du jeton — plus besoin d'en-tête `X-Site-Id`, et un jeton d'un site
+  ne peut pas en viser un autre.
+- **Agents (app MAUI)** : en-tête `X-Api-Key: <clé>` d'un terminal enrôlé
+  (section `ApiKeys` de la configuration, hors dépôt). Le terminal porte son
+  propre site.
+- Secrets à définir via user-secrets/variable d'environnement : `Jwt:SigningKey`
+  (≥ 32 caractères) et les clés `ApiKeys:Terminals`.
+
+Reste pour l'incrément 2 : 2FA TOTP (Sûreté/Admin), rafraîchissement de session,
+et restriction « un Hôte ne révoque que ses propres QR ».
 
 ## Pour continuer avec Claude Code
 
@@ -193,8 +209,8 @@ déploiement, pas du code, et ne sont pas listées ici).
 | REQ-SEC-05 | Tentatives journalisées comme événements de sécurité | ✅ Implémenté (`IsSecurityEvent`) |
 | REQ-SEC-06 (proposition) | Mode dégradé sécurisé | 🟡 Signature de liste hors ligne implémentée ; app MAUI = Jalon 2 |
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
-| 8.2 | 2FA, gestion de session | ❌ Non commencé — Jalon 2 (Identity) |
-| 8.5 | RBAC par profil | ❌ Non commencé — Jalon 2 (Identity + policies) |
+| 8.2 | Authentification, gestion de session | 🟡 JWT (web) + clé API (agents), endpoints protégés ; 2FA TOTP = Jalon 2 incrément 2 |
+| 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Implémenté (policies ASP.NET Core + rôles Identity) |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)
 

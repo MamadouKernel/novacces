@@ -104,6 +104,39 @@ public sealed class NovAccesApiClient
         return result ?? new List<OnSiteVisitorDto>();
     }
 
+    // ---- Administration ----
+
+    public async Task<IReadOnlyList<AdminUserDto>> GetUsersAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users");
+        return result ?? new List<AdminUserDto>();
+    }
+
+    public async Task<(bool Success, string? Error)> RegisterUserAsync(RegisterUserRequestDto request)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/auth/register", request);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    public async Task<(bool Success, string? Error)> ProvisionSiteAsync(string siteId)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var raw = await response.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+                return err.GetString() ?? "Échec.";
+        }
+        catch { /* corps non JSON */ }
+        return $"Échec ({(int)response.StatusCode}).";
+    }
+
     private static readonly System.Text.Json.JsonSerializerOptions WebJson =
         new(System.Text.Json.JsonSerializerDefaults.Web);
 

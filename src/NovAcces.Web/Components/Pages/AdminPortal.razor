@@ -1,0 +1,135 @@
+@page "/admin"
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>NovAcces — Administration</PageTitle>
+
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Administration</h1>
+            <p class="muted">Connecté : @Auth.DisplayName (Admin Sigasécurité)</p>
+        </div>
+        <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
+    </header>
+
+    <div class="grid">
+        <section class="card">
+            <h2>Créer un compte</h2>
+            <div class="field"><label>Email</label><input type="email" @bind="_newUser.Email" /></div>
+            <div class="field"><label>Nom affiché</label><input @bind="_newUser.DisplayName" /></div>
+            <div class="field"><label>Mot de passe</label><input type="password" @bind="_newUser.Password" /></div>
+            <div class="row">
+                <div class="field"><label>Rôle</label>
+                    <select @bind="_newUser.Role">
+                        <option value="Hote">Hôte</option>
+                        <option value="Surete">Sûreté</option>
+                        <option value="Admin">Admin (global)</option>
+                    </select>
+                </div>
+                <div class="field"><label>Site (sauf Admin)</label><input @bind="_newUser.SiteId" placeholder="sicopa" /></div>
+            </div>
+            <button class="btn-primary" @onclick="CreateUserAsync" disabled="@_busy">Créer le compte</button>
+            @if (_userMsg is not null) { <p class="@(_userOk ? "info" : "error")">@_userMsg</p> }
+        </section>
+
+        <section class="card">
+            <h2>Provisionner un site</h2>
+            <p class="muted">Crée le schéma, le modèle de données et le journal append-only.</p>
+            <div class="field"><label>Identifiant du site</label>
+                <input @bind="_siteId" placeholder="ex. sipra" /></div>
+            <button class="btn-primary" @onclick="ProvisionAsync" disabled="@_busy">Provisionner</button>
+            @if (_siteMsg is not null) { <p class="@(_siteOk ? "info" : "error")">@_siteMsg</p> }
+        </section>
+    </div>
+
+    <section class="card" style="margin-top:1.2rem;">
+        <h2>Comptes (@_users.Count)</h2>
+        <table class="visits">
+            <thead><tr><th>Email</th><th>Nom</th><th>Rôles</th><th>Site</th><th>2FA</th></tr></thead>
+            <tbody>
+                @foreach (var u in _users)
+                {
+                    <tr>
+                        <td>@u.Email</td>
+                        <td class="muted">@u.DisplayName</td>
+                        <td>@string.Join(", ", u.Roles)</td>
+                        <td>@(u.SiteId ?? "—")</td>
+                        <td>@(u.TwoFactorEnabled ? "✅" : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
+
+@code {
+    private sealed class NewUser
+    {
+        public string Email = "";
+        public string DisplayName = "";
+        public string Password = "";
+        public string Role = "Hote";
+        public string SiteId = "";
+    }
+
+    private readonly NewUser _newUser = new();
+    private string _siteId = "";
+    private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
+    private bool _busy;
+    private string? _userMsg; private bool _userOk;
+    private string? _siteMsg; private bool _siteOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole(NovAccesRoles.Admin))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await RefreshUsersAsync();
+    }
+
+    private async Task RefreshUsersAsync()
+    {
+        try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        _busy = true; _userMsg = null;
+        try
+        {
+            var siteId = _newUser.Role == NovAccesRoles.Admin ? null
+                : string.IsNullOrWhiteSpace(_newUser.SiteId) ? null : _newUser.SiteId.Trim();
+
+            var (ok, error) = await Api.RegisterUserAsync(new RegisterUserRequestDto(
+                _newUser.Email.Trim(), _newUser.Password, _newUser.DisplayName.Trim(), _newUser.Role, siteId));
+
+            _userOk = ok;
+            _userMsg = ok ? "Compte créé." : error;
+            if (ok) { _newUser.Email = _newUser.DisplayName = _newUser.Password = _newUser.SiteId = ""; await RefreshUsersAsync(); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ProvisionAsync()
+    {
+        _busy = true; _siteMsg = null;
+        try
+        {
+            var (ok, error) = await Api.ProvisionSiteAsync(_siteId.Trim());
+            _siteOk = ok;
+            _siteMsg = ok ? $"Site '{_siteId.Trim()}' provisionné." : error;
+            if (ok) _siteId = "";
+        }
+        finally { _busy = false; }
+    }
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+}

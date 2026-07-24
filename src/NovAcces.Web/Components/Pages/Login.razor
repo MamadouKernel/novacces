@@ -58,9 +58,13 @@
             Nav.NavigateTo(LandingPage());
     }
 
-    // Sûreté -> dashboard ; sinon (Hôte/Admin) -> portail hôte.
-    private string LandingPage() =>
-        Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote) ? "/surete" : "/hote";
+    // Redirection selon le rôle : Admin -> console ; Sûreté -> dashboard ; sinon -> portail hôte.
+    private string LandingPage()
+    {
+        if (Auth.IsInRole(NovAccesRoles.Admin) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/admin";
+        if (Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote)) return "/surete";
+        return "/hote";
+    }
 
     private async Task SubmitPasswordAsync()
     {

@@ -52,3 +52,12 @@ public sealed record DisableTwoFactorRequestDto(string Password);
 /// Second facteur au login. Code = TOTP à 6 chiffres OU code de récupération.
 /// </summary>
 public sealed record TwoFactorLoginRequestDto(string Email, string Password, string Code);
+
+// ---- Administration ----
+
+/// <summary>Compte tel qu'affiché dans la console d'administration.</summary>
+public sealed record AdminUserDto(
+    Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, string? SiteId, bool TwoFactorEnabled);
+
+/// <summary>Provisionnement d'un site (schéma + modèle + journal append-only).</summary>
+public sealed record ProvisionSiteRequestDto(string SiteId);

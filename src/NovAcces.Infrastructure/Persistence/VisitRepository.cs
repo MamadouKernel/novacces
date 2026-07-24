@@ -84,6 +84,14 @@ public sealed class VisitRepository : IVisitRepository
             .ToListAsync(ct);
     }
 
+    public async Task<bool> HasActiveVisitForVisitorAsync(string visitorName, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var name = visitorName.Trim();
+        return await _db.Visits.AnyAsync(
+            v => v.Status == Domain.Enums.VisitStatus.Valid && v.VisitorName.ToLower() == name.ToLower(), ct);
+    }
+
     public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
 }
 

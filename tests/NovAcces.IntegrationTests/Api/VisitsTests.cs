@@ -79,6 +79,22 @@ public sealed class VisitsTests
         Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
     }
 
+    [SkippableFact]
+    public async Task CreatingSecondActiveVisit_ForSameVisitor_Is409()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var name = $"Doublon-{Guid.NewGuid():N}";
+
+        await CreateVisitAsync(hote, name); // 1re demande active : OK
+
+        var second = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static async Task<Guid> CreateVisitAsync(HttpClient hote, string visitorName)

@@ -46,15 +46,20 @@ public static class VisitEndpoints
         group.MapPost("/", async (
             CreateVisitRequestDto request,
             ClaimsPrincipal user,
+            IVisitRepository visits,
             CreateVisitHandler handler,
             CancellationToken ct) =>
         {
             if (!Enum.TryParse<AccessMode>(request.Mode, ignoreCase: true, out var mode))
                 return Results.BadRequest(new { error = "Mode invalide : 'Unique' ou 'ThirtyDays' attendu." });
 
-            // Jalon 2 : garde-fou anti-doublon (une seule demande active par
-            // visiteur, cf. maquette de démonstration) à appliquer ici avant
-            // l'appel au handler, via une requête de vérification dédiée.
+            if (string.IsNullOrWhiteSpace(request.VisitorName))
+                return Results.BadRequest(new { error = "Nom du visiteur requis." });
+
+            // Garde-fou anti-doublon (maquette du 22/07/2026) : une seule demande
+            // active par visiteur sur le site.
+            if (await visits.HasActiveVisitForVisitorAsync(request.VisitorName, ct))
+                return Results.Conflict(new { error = "Une demande active existe déjà pour ce visiteur." });
 
             var command = new CreateVisitCommand(
                 request.VisitorName, request.VisitorCompany, request.Motif,

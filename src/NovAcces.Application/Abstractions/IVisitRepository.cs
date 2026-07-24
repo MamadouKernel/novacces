@@ -27,6 +27,13 @@ public interface IVisitRepository
     /// <summary>Noms de visiteurs déjà connus du site (autocomplétion, REQ maquette).</summary>
     Task<IReadOnlyCollection<string>> GetKnownVisitorNamesAsync(int limit, CancellationToken ct);
 
+    /// <summary>
+    /// Vrai s'il existe déjà une demande ACTIVE (statut Valid) pour ce visiteur —
+    /// garde-fou anti-doublon à la création (une seule demande active par visiteur,
+    /// cf. maquette du 22/07/2026).
+    /// </summary>
+    Task<bool> HasActiveVisitForVisitorAsync(string visitorName, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }
 

@@ -40,17 +40,13 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// TODO jalon 2 (incrément 2) : 2FA TOTP (Sûreté/Admin), gestion de session/refresh.
-
 var app = builder.Build();
 
 // --- Commande d'administration hors-ligne : provisionnement d'un site ---
 //   dotnet run -- provision-site <siteId>
 // Crée le schéma PostgreSQL du site, applique le modèle de données et rend le
-// journal des scans append-only. Volontairement une commande CLI et NON un
-// endpoint HTTP : le provisionnement exécute du DDL sensible et ne doit pas
-// être exposé sur le réseau (a fortiori tant que l'authentification/RBAC du
-// Jalon 2 n'est pas en place).
+// journal des scans append-only. Disponible aussi en CLI pour l'exploitation ;
+// l'équivalent HTTP réservé à l'Admin existe (POST /api/admin/sites).
 if (args.Length >= 1 && args[0] == "provision-site")
 {
     if (args.Length < 2)

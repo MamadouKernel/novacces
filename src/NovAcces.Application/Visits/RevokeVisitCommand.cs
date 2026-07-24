@@ -19,8 +19,13 @@ public sealed record RevokeVisitResult(bool Success, string? Error, bool Forbidd
 public sealed class RevokeVisitHandler
 {
     private readonly IVisitRepository _visits;
+    private readonly IDateTimeProvider _clock;
 
-    public RevokeVisitHandler(IVisitRepository visits) => _visits = visits;
+    public RevokeVisitHandler(IVisitRepository visits, IDateTimeProvider clock)
+    {
+        _visits = visits;
+        _clock = clock;
+    }
 
     public async Task<RevokeVisitResult> HandleAsync(RevokeVisitCommand command, CancellationToken ct)
     {
@@ -33,12 +38,10 @@ public sealed class RevokeVisitHandler
         if (!command.CanRevokeAny && visit.HostUserId != command.RequestedByHostId)
             return new RevokeVisitResult(false, "Vous ne pouvez révoquer que vos propres demandes.", Forbidden: true);
 
-        visit.Revoke();
+        // Audit persistant de l'action (qui, quand) porté par la visite elle-même
+        // — traçabilité §8.5 sans table d'audit séparée.
+        visit.Revoke(command.RevokedBy, _clock.UtcNow);
         await _visits.SaveChangesAsync(ct);
-
-        // Jalon 2 : journaliser explicitement l'action de révocation elle-même
-        // (qui a révoqué, quand) dans un journal d'audit des actions
-        // d'administration distinct du journal des scans (section 8.5 du CDC).
 
         return new RevokeVisitResult(true, null);
     }

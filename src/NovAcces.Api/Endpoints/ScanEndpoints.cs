@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Enums;
 using NovAcces.Shared.Auth;
@@ -16,14 +17,15 @@ public static class ScanEndpoints
             ScanRequestDto request,
             ClaimsPrincipal user,
             ScanQrHandler handler,
+            IBusinessDayService businessDays,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             if (!Enum.TryParse<CheckpointDirection>(request.Direction, ignoreCase: true, out var direction))
                 return Results.BadRequest(new { error = "Direction invalide : 'Entry' ou 'Exit' attendu." });
 
-            // Jalon 2 : IsBusinessDayOverride sera calculé par un IBusinessDayService
-            // (jours fériés ivoiriens paramétrables par site) plutôt que codé en dur.
-            var isBusinessDay = DateTimeOffset.UtcNow.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            // Jour ouvré (REQ-F-05) : week-end + jours fériés du site.
+            var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
 
             // L'agent est identifié par le terminal enrôlé (claim), pas par une
             // valeur du corps de requête : traçabilité fiable du poste de contrôle.

@@ -54,6 +54,10 @@ public static class DependencyInjection
         // --- Horloge & signature cryptographique ---
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 
+        // Jours ouvrés (REQ-F-05) : week-ends + jours fériés paramétrables.
+        services.Configure<BusinessDayOptions>(configuration.GetSection("BusinessDays"));
+        services.AddSingleton<IBusinessDayService, BusinessDayService>();
+
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
 

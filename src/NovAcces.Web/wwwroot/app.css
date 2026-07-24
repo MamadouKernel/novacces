@@ -142,3 +142,9 @@ body { background: var(--nv-bg); color:#1c2733; margin:0; }
 .overstay-banner { display:flex; flex-direction:column; gap:.4rem; margin-bottom:1rem; }
 .overstay-item { padding:.55rem .8rem; border-radius:8px; border-left:4px solid #e67e22; background:#fff7ef; font-size:.9rem; }
 .overstay-item.v-security { border-left-color:#c0392b; background:#fdf0ee; }
+
+/* ---- Synthèse & recherche ---- */
+.synthese { margin:0 0 1rem; padding:.6rem .9rem; background:#eef4fb; border-radius:8px; font-size:.9rem; color:#31465c; }
+.search { flex:1; min-width:240px; padding:.5rem .7rem; border:1px solid var(--nv-border); border-radius:8px; font-size:.9rem; }
+.toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
+.row-security { background:#fdf0ee; }

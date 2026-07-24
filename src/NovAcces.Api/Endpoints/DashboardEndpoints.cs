@@ -18,10 +18,10 @@ public static class DashboardEndpoints
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard")
             .RequireAuthorization("Dashboard");
 
-        group.MapGet("/journal", async (IScanLogRepository logs, int? limit, CancellationToken ct) =>
+        group.MapGet("/journal", async (IScanLogRepository logs, int? limit, string? q, CancellationToken ct) =>
         {
             var take = Math.Clamp(limit ?? 50, 1, 200);
-            var entries = await logs.GetRecentAsync(take, ct);
+            var entries = await logs.GetRecentAsync(take, q, ct);
 
             var dto = entries.Select(e => new ScanJournalEntryDto(
                 e.Timestamp, e.VisitorName, e.AgentId, e.Direction.ToString(),
@@ -30,7 +30,7 @@ public static class DashboardEndpoints
             return Results.Ok(dto);
         })
         .WithName("ScanJournal")
-        .WithSummary("Derniers scans journalisés du site.");
+        .WithSummary("Derniers scans journalisés du site (recherche via 'q').");
 
         group.MapGet("/on-site", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {
@@ -53,13 +53,40 @@ public static class DashboardEndpoints
             var today = await logs.GetSinceAsync(dayStart, ct);
             var onSite = await visits.GetOnSiteAsync(ct);
 
+            var scans = today.Count;
+            var denied = today.Count(e => !e.WasGranted);
+            var securityEvents = today.Count(e => e.IsSecurityEvent);
+            var overstays = onSite.Count(v => v.OverstayLevel > 0);
+
+            // Pic d'affluence : heure locale la plus chargée du jour.
+            int? peakHour = today.Count > 0
+                ? today.GroupBy(e => e.Timestamp.ToLocalTime().Hour)
+                       .OrderByDescending(g => g.Count()).First().Key
+                : null;
+
+            // Appréciation du taux de refus (heuristique simple, ajustable).
+            var refusalRate = scans > 0 ? (double)denied / scans : 0;
+            var appreciation = scans < 10 ? "activité faible"
+                : refusalRate <= 0.15 ? "dans la normale"
+                : "inhabituel, à surveiller";
+
+            // Recommandation textuelle adaptée à la situation.
+            var recommendation =
+                securityEvents > 0 ? "Événements de sécurité détectés : consulter le journal et vérifier les présences signalées."
+                : overstays > 0 ? "Des visiteurs dépassent leur durée prévue : vérifier leur présence."
+                : refusalRate > 0.15 ? "Taux de refus inhabituel : renforcer la vigilance aux postes."
+                : "Aucune action requise.";
+
             var summary = new DashboardSummaryDto(
-                ScansToday: today.Count,
+                ScansToday: scans,
                 EntriesGranted: today.Count(e => e is { WasGranted: true, WasCheckOut: false }),
                 Exits: today.Count(e => e.WasCheckOut),
-                Denied: today.Count(e => !e.WasGranted),
-                SecurityEvents: today.Count(e => e.IsSecurityEvent),
-                OnSite: onSite.Count);
+                Denied: denied,
+                SecurityEvents: securityEvents,
+                OnSite: onSite.Count,
+                PeakHour: peakHour,
+                RefusalAppreciation: appreciation,
+                Recommendation: recommendation);
 
             return Results.Ok(summary);
         })
@@ -69,7 +96,7 @@ public static class DashboardEndpoints
         group.MapGet("/journal.csv", async (IScanLogRepository logs, int? limit, CancellationToken ct) =>
         {
             var take = Math.Clamp(limit ?? 200, 1, 2000);
-            var entries = await logs.GetRecentAsync(take, ct);
+            var entries = await logs.GetRecentAsync(take, null, ct);
             var csv = BuildCsv(entries);
             return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", "journal-scans.csv");
         })

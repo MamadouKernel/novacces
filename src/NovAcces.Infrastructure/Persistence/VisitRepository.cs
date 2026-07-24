@@ -107,13 +107,20 @@ public sealed class ScanLogRepository : IScanLogRepository
         await _db.ScanLogs.AddAsync(entry, ct);
     }
 
-    public async Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct)
+    public async Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
-        return await _db.ScanLogs
-            .OrderByDescending(e => e.Timestamp)
-            .Take(limit)
-            .ToListAsync(ct);
+
+        IQueryable<ScanLogEntry> q = _db.ScanLogs;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var term = query.Trim().ToLower();
+            q = q.Where(e => e.VisitorName.ToLower().Contains(term)
+                          || e.AgentId.ToLower().Contains(term)
+                          || e.Detail.ToLower().Contains(term));
+        }
+
+        return await q.OrderByDescending(e => e.Timestamp).Take(limit).ToListAsync(ct);
     }
 
     public async Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct)

@@ -41,8 +41,11 @@ public interface IScanLogRepository
 {
     Task AddAsync(ScanLogEntry entry, CancellationToken ct);
 
-    /// <summary>Derniers scans journalisés (les plus récents d'abord) — dashboard sûreté.</summary>
-    Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct);
+    /// <summary>
+    /// Derniers scans journalisés (les plus récents d'abord), avec recherche
+    /// optionnelle sur nom de visiteur / agent / détail — dashboard sûreté.
+    /// </summary>
+    Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct);
 
     /// <summary>Scans depuis un instant donné (synthèse quotidienne).</summary>
     Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct);

@@ -52,7 +52,7 @@ file sealed class FakeScanLogRepository : IScanLogRepository
 {
     public List<ScanLogEntry> Entries { get; } = new();
     public Task AddAsync(ScanLogEntry entry, CancellationToken ct) { Entries.Add(entry); return Task.CompletedTask; }
-    public Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct)
+    public Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
     public Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());

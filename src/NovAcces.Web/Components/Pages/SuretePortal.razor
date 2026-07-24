@@ -42,11 +42,44 @@ else if (CanViewDashboard)
             <div class="tile tile-alert"><span class="tile-n">@_summary.SecurityEvents</span><span class="tile-l">Événements sécu.</span></div>
             <div class="tile"><span class="tile-n">@_summary.OnSite</span><span class="tile-l">Présents</span></div>
         </div>
+        <p class="synthese">
+            Taux de refus : <strong>@_summary.RefusalAppreciation</strong>@(_summary.PeakHour is int h ? $" · pic d'affluence vers {h}h" : "")
+            — @_summary.Recommendation
+        </p>
     }
 
     <div class="toolbar">
+        <input class="search" placeholder="Rechercher dans le journal (nom, agent, détail)…"
+               @bind="_searchTerm" @bind:event="oninput"
+               @onkeydown="@(e => { if (e.Key == "Enter") _ = SearchJournalAsync(); })" />
+        <button class="btn-ghost" @onclick="SearchJournalAsync">Rechercher</button>
+        @if (_searchResults is not null)
+        {
+            <button class="btn-ghost" @onclick="ClearSearch">Effacer</button>
+        }
         <button class="btn-ghost" @onclick="ExportCsvAsync">⬇ Exporter le journal (CSV)</button>
     </div>
+
+    @if (_searchResults is not null)
+    {
+        <section class="card" style="margin-bottom:1rem;">
+            <h2>Résultats de recherche (@_searchResults.Count)</h2>
+            <table class="visits">
+                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Détail</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _searchResults)
+                    {
+                        <tr class="@(r.IsSecurityEvent ? "row-security" : "")">
+                            <td class="muted">@r.Timestamp.LocalDateTime.ToString("dd/MM HH:mm:ss")</td>
+                            <td>@r.VisitorName</td>
+                            <td class="muted">@r.AgentId</td>
+                            <td class="muted">@r.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
 
     @if (_overstayAlerts.Count > 0)
     {
@@ -154,6 +187,8 @@ else if (CanViewDashboard)
     private DashboardSummaryDto? _summary;
     private readonly List<OverstayAlertDto> _overstayAlerts = new();
     private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
+    private string _searchTerm = "";
+    private IReadOnlyList<ScanJournalEntryDto>? _searchResults;
     private string _exclName = "";
     private string _exclReason = "";
     private bool _exclBusy;
@@ -294,6 +329,18 @@ else if (CanViewDashboard)
     private async Task RefreshSummaryAsync()
     {
         try { _summary = await Api.GetSummaryAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task SearchJournalAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_searchTerm)) { _searchResults = null; return; }
+        try { _searchResults = await Api.GetJournalAsync(100, _searchTerm); } catch { /* best-effort */ }
+    }
+
+    private void ClearSearch()
+    {
+        _searchTerm = "";
+        _searchResults = null;
     }
 
     private async Task ExportCsvAsync()

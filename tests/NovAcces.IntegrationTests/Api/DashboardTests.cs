@@ -98,11 +98,14 @@ public sealed class DashboardTests
         await CreateVisitAndCheckInAsync($"Synth-{Guid.NewGuid():N}");
         var surete = await LoginNewUserAsync("Surete");
 
-        // Synthèse : au moins le scan que l'on vient de produire aujourd'hui.
+        // Synthèse : au moins le scan que l'on vient de produire aujourd'hui,
+        // avec appréciation et recommandation renseignées.
         var summary = await surete.GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary", Json);
         Assert.NotNull(summary);
         Assert.True(summary!.ScansToday >= 1);
         Assert.True(summary.EntriesGranted >= 1);
+        Assert.False(string.IsNullOrWhiteSpace(summary.RefusalAppreciation));
+        Assert.False(string.IsNullOrWhiteSpace(summary.Recommendation));
 
         // Export CSV : type et en-tête attendus.
         var csvResp = await surete.GetAsync("/api/dashboard/journal.csv");
@@ -110,6 +113,22 @@ public sealed class DashboardTests
         Assert.Equal("text/csv", csvResp.Content.Headers.ContentType!.MediaType);
         var csv = await csvResp.Content.ReadAsStringAsync();
         Assert.StartsWith("Horodatage;Visiteur;Agent;Direction", csv);
+    }
+
+    [SkippableFact]
+    public async Task Journal_Search_FiltersByVisitorName()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var unique = $"Cherchable{Guid.NewGuid():N}";
+        await CreateVisitAndCheckInAsync(unique);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var results = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?q={unique}", Json);
+
+        Assert.NotEmpty(results!);
+        Assert.All(results!, r => Assert.Contains(unique, r.VisitorName));
     }
 
     // ---- Aides ----

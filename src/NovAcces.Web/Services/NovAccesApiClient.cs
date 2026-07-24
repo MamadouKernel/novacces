@@ -95,11 +95,13 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode;
     }
 
-    /// <summary>Journal des derniers scans du site (dashboard sûreté).</summary>
-    public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 50)
+    /// <summary>Journal des derniers scans du site, avec recherche optionnelle.</summary>
+    public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 50, string? query = null)
     {
-        var result = await CreateClient(true)
-            .GetFromJsonAsync<List<ScanJournalEntryDto>>($"/api/dashboard/journal?limit={limit}");
+        var url = $"/api/dashboard/journal?limit={limit}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&q={Uri.EscapeDataString(query.Trim())}";
+        var result = await CreateClient(true).GetFromJsonAsync<List<ScanJournalEntryDto>>(url);
         return result ?? new List<ScanJournalEntryDto>();
     }
 

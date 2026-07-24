@@ -47,14 +47,17 @@ public sealed record OverstayAlertDto(
     bool IsSecurityEvent,
     DateTimeOffset OccurredAt);
 
-/// <summary>Synthèse du jour (dashboard sûreté).</summary>
+/// <summary>Synthèse du jour (dashboard sûreté), avec appréciation et recommandation.</summary>
 public sealed record DashboardSummaryDto(
     int ScansToday,
     int EntriesGranted,
     int Exits,
     int Denied,
     int SecurityEvents,
-    int OnSite);
+    int OnSite,
+    int? PeakHour,
+    string RefusalAppreciation,
+    string Recommendation);
 
 /// <summary>Entrée de la liste d'exclusion (vue sûreté, motif inclus).</summary>
 public sealed record ExclusionDto(

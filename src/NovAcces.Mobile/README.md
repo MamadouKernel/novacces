@@ -23,16 +23,60 @@ mode dégradé, poste directionnel entrée/sortie, liste des attendus du jour.
 
 ## Étapes de construction (sur ta machine)
 
+> **Important** : les fichiers `.cs`/`.xaml` déjà présents dans ce dossier
+> (Services/, ViewModels/, Pages/, MauiProgram.cs) ont été **écrits mais NON
+> compilés** dans l'environnement de développement (pas de workload MAUI ni de
+> terminal). Ils sont à intégrer dans le projet que TU scaffoldes ci-dessous, puis
+> à compiler/tester chez toi. Le cœur logique et cryptographique qu'ils appellent
+> (NovAcces.Shared/Offline) est, lui, **testé** (12 tests).
+
 ```bash
 dotnet workload install maui        # si absent
 cd src
-dotnet new maui -n NovAcces.Mobile -o NovAcces.Mobile --force
-cd NovAcces.Mobile
-dotnet add reference ../NovAcces.Shared/NovAcces.Shared.csproj
-dotnet add package ZXing.Net.MAUI              # scan caméra
-dotnet add package sqlite-net-pcl              # stockage local mode dégradé
-dotnet sln ../../NovAcces.sln add NovAcces.Mobile.csproj
+# Scaffolde le shell dans un dossier temporaire (App, csproj, Platforms générés
+# correctement pour ton workload), puis récupère ce shell dans NovAcces.Mobile.
+dotnet new maui -n NovAcces.Mobile -o NovAcces.Mobile.shell
 ```
+
+### Intégration des fichiers fournis
+1. Copier depuis le shell généré : `App.xaml(.cs)`, `NovAcces.Mobile.csproj`,
+   `Platforms/`, `Resources/` vers ce dossier (garder mes `Services/`,
+   `ViewModels/`, `Pages/`, `MauiProgram.cs`).
+2. Références et packages :
+   ```bash
+   dotnet add reference ../NovAcces.Shared/NovAcces.Shared.csproj
+   dotnet add package ZXing.Net.MAUI
+   dotnet add package sqlite-net-pcl          # persistance mode dégradé (voir §TODO)
+   dotnet sln ../../NovAcces.sln add NovAcces.Mobile.csproj
+   ```
+3. Dans `App.xaml.cs` (généré), afficher la page de scan via l'injection :
+   ```csharp
+   public App(IServiceProvider services)
+   {
+       InitializeComponent();
+       MainPage = new NavigationPage(services.GetRequiredService<Pages.ScanPage>());
+   }
+   ```
+   (En .NET MAUI 9, utiliser `CreateWindow` selon le template — adapter.)
+4. **Permission caméra Android** : dans `Platforms/Android/AndroidManifest.xml`,
+   ajouter `<uses-permission android:name="android.permission.CAMERA" />` et
+   demander la permission runtime au lancement de `ScanPage`.
+5. Renseigner `AgentConfig` (URL API, clé API du terminal, clé PUBLIQUE ES256)
+   dans `MauiProgram.cs` — à externaliser en stockage sécurisé à l'enrôlement.
+
+### Fichiers déjà fournis (à compiler chez toi)
+- `Services/AgentConfig.cs`, `Services/AgentApiClient.cs`, `Services/AgentSession.cs`
+- `ViewModels/ScanViewModel.cs` (online → API ; offline → OfflineScanEvaluator)
+- `Pages/ScanPage.xaml(.cs)` (caméra ZXing + verdict plein écran + bascule Entrée/Sortie + vibration)
+- `MauiProgram.cs` (câblage DI, à fusionner)
+
+### TODO à finir sur terminal
+- **Persister `AgentSession.PendingOfflineScans` en SQLite** (sqlite-net-pcl) :
+  actuellement en mémoire ; doit survivre à un redémarrage pendant une coupure.
+- Charger `RefreshOfflineListAsync` au démarrage + périodiquement (en ligne).
+- Écran « attendus du jour » (consomme `GetExpectedTodayAsync`) et resync à la
+  reconnexion (afficher les conflits).
+- Signal **sonore** au verdict (en plus de la vibration déjà câblée).
 
 ## Points d'attention (au-delà de la logique déjà testée dans Domain/Shared)
 

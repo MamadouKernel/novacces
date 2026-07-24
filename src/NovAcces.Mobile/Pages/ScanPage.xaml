@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
+             x:Class="NovAcces.Mobile.Pages.ScanPage"
+             Title="NovAcces — Poste de contrôle"
+             BackgroundColor="Black">
+
+    <Grid>
+        <!-- Caméra plein écran -->
+        <zxing:CameraBarcodeReaderView x:Name="Camera"
+                                       BarcodesDetected="OnBarcodesDetected" />
+
+        <!-- Bandeau supérieur : sens du poste (toujours visible) + connectivité -->
+        <Grid VerticalOptions="Start" Padding="16,40,16,16" ColumnDefinitions="*,Auto">
+            <Label x:Name="ConnectivityLabel" Text="● en ligne"
+                   TextColor="White" FontSize="14" VerticalOptions="Center" />
+            <Button x:Name="DirectionButton" Grid.Column="1"
+                    Text="Poste : ENTRÉE" Clicked="OnToggleDirection"
+                    BackgroundColor="#1B6EC2" TextColor="White" CornerRadius="8" />
+        </Grid>
+
+        <!-- Overlay de verdict plein écran (masqué au repos) -->
+        <Grid x:Name="VerdictOverlay" IsVisible="False" BackgroundColor="#1E7E45">
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="12" Padding="24">
+                <Label x:Name="VerdictTitle" Text="" TextColor="White"
+                       FontSize="34" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                <Label x:Name="VerdictSubtitle" Text="" TextColor="White"
+                       FontSize="18" HorizontalTextAlignment="Center" />
+                <Label Text="Toucher pour continuer" TextColor="White" Opacity="0.8"
+                       FontSize="14" HorizontalTextAlignment="Center" Margin="0,20,0,0" />
+            </VerticalStackLayout>
+            <Grid.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnDismissVerdict" />
+            </Grid.GestureRecognizers>
+        </Grid>
+    </Grid>
+</ContentPage>

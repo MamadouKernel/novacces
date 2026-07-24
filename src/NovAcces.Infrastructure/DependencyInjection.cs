@@ -63,6 +63,9 @@ public static class DependencyInjection
         services.Configure<Overstay.OverstayOptions>(configuration.GetSection("Overstay"));
         services.AddSingleton<IOverstayScanner, Overstay.OverstayScanner>();
 
+        // Vue consolidée multi-sites (§10).
+        services.AddScoped<ISiteOverviewService, SiteOverviewService>();
+
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
 

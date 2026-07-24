@@ -81,11 +81,11 @@ public sealed class NovAccesApiClient
         return result ?? new List<HostVisitDto>();
     }
 
-    /// <summary>Visiteurs déjà connus du site (autocomplétion).</summary>
-    public async Task<IReadOnlyList<string>> GetKnownVisitorsAsync()
+    /// <summary>Visiteurs déjà connus du site (autocomplétion + pré-remplissage).</summary>
+    public async Task<IReadOnlyList<KnownVisitorDto>> GetKnownVisitorsAsync()
     {
-        var result = await CreateClient(true).GetFromJsonAsync<List<string>>("/api/visits/known-visitors");
-        return result ?? new List<string>();
+        var result = await CreateClient(true).GetFromJsonAsync<List<KnownVisitorDto>>("/api/visits/known-visitors");
+        return result ?? new List<KnownVisitorDto>();
     }
 
     /// <summary>Révoque une demande (REQ-F-09). Vrai si la révocation a réussi.</summary>
@@ -148,6 +148,12 @@ public sealed class NovAccesApiClient
     {
         var result = await CreateClient(true).GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users");
         return result ?? new List<AdminUserDto>();
+    }
+
+    public async Task<IReadOnlyList<AdminSiteOverviewDto>> GetSiteOverviewAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<AdminSiteOverviewDto>>("/api/admin/overview");
+        return result ?? new List<AdminSiteOverviewDto>();
     }
 
     public async Task<(bool Success, string? Error)> RegisterUserAsync(RegisterUserRequestDto request)

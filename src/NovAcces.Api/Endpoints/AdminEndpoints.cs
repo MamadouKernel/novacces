@@ -19,6 +19,15 @@ public static class AdminEndpoints
         var group = app.MapGroup("/api/admin").WithTags("Admin")
             .RequireAuthorization(NovAccesRoles.Admin);
 
+        group.MapGet("/overview", async (ISiteOverviewService overview, CancellationToken ct) =>
+        {
+            var sites = await overview.GetAsync(ct);
+            var dto = sites.Select(s => new AdminSiteOverviewDto(s.SiteId, s.OnSite, s.ScansToday)).ToList();
+            return Results.Ok(dto);
+        })
+        .WithName("AdminOverview")
+        .WithSummary("Vue consolidée multi-sites : présents et scans du jour par site.");
+
         group.MapGet("/users", async (UserManager<ApplicationUser> users, CancellationToken ct) =>
         {
             var all = await users.Users.OrderBy(u => u.Email).ToListAsync(ct);

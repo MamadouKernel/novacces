@@ -95,6 +95,28 @@ public sealed class VisitsTests
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
+    [SkippableFact]
+    public async Task KnownVisitors_ReturnsPrefillData()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var name = $"Connu-{Guid.NewGuid():N}";
+        var company = $"Sté-{Guid.NewGuid():N}";
+
+        var create = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, company, "Motif habituel", "Unique", DateTimeOffset.UtcNow, 90, null, null));
+        create.EnsureSuccessStatusCode();
+
+        var known = await hote.GetFromJsonAsync<List<KnownVisitorDto>>("/api/visits/known-visitors", Json);
+        var entry = known!.FirstOrDefault(k => k.Name == name);
+
+        Assert.NotNull(entry);
+        Assert.Equal(company, entry!.Company);
+        Assert.Equal("Motif habituel", entry.Motif);
+        Assert.Equal(90, entry.PlannedDurationMinutes);
+    }
+
     // ---- Aides ----
 
     private static async Task<Guid> CreateVisitAsync(HttpClient hote, string visitorName)

@@ -29,9 +29,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         <section class="card">
             <h2>Visiteur</h2>
             <div class="field"><label>Nom du visiteur</label>
-                <input @bind="_form.VisitorName" list="knownVisitors" />
+                <input @bind="_form.VisitorName" @bind:after="PrefillFromKnown" list="knownVisitors" />
                 <datalist id="knownVisitors">
-                    @foreach (var name in _knownVisitors) { <option value="@name" /> }
+                    @foreach (var kv in _knownVisitors) { <option value="@kv.Name" /> }
                 </datalist>
             </div>
             <div class="field"><label>Société</label>
@@ -111,6 +111,10 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                 {
                                     <button class="btn-danger" @onclick="() => RevokeAsync(v.VisitId)" disabled="@_revoking">Révoquer</button>
                                 }
+                                else
+                                {
+                                    <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
+                                }
                             </td>
                         </tr>
                     }
@@ -139,7 +143,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private DateTime _scheduledAt = DateTime.Now;
     private CreateVisitResponseDto? _result;
     private IReadOnlyList<HostVisitDto> _myVisits = Array.Empty<HostVisitDto>();
-    private IReadOnlyList<string> _knownVisitors = Array.Empty<string>();
+    private IReadOnlyList<KnownVisitorDto> _knownVisitors = Array.Empty<KnownVisitorDto>();
     private bool _busy;
     private bool _revoking;
     private string? _error;
@@ -174,6 +178,30 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private async Task RefreshMyVisitsAsync()
     {
         try { _myVisits = await Api.GetMyVisitsAsync(); } catch { /* best-effort */ }
+    }
+
+    // Pré-remplit entreprise/motif/durée quand le nom saisi correspond à un
+    // visiteur déjà connu (§8 maquette).
+    private void PrefillFromKnown()
+    {
+        var match = _knownVisitors.FirstOrDefault(
+            k => string.Equals(k.Name, _form.VisitorName?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (match is null) return;
+
+        _form.VisitorCompany = match.Company;
+        _form.Motif = match.Motif;
+        if (match.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = match.PlannedDurationMinutes;
+    }
+
+    // Ré-invitation : pré-remplit le formulaire à partir d'une demande close.
+    private void ReInvite(HostVisitDto v)
+    {
+        _form.VisitorName = v.VisitorName;
+        _form.VisitorCompany = v.VisitorCompany;
+        _form.Motif = v.Motif;
+        if (v.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = v.PlannedDurationMinutes;
+        _result = null;
+        _error = null;
     }
 
     private async Task RevokeAsync(Guid visitId)

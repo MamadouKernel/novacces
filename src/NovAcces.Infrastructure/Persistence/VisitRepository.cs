@@ -73,15 +73,25 @@ public sealed class VisitRepository : IVisitRepository
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyCollection<string>> GetKnownVisitorNamesAsync(int limit, CancellationToken ct)
+    public async Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
-        return await _db.Visits
-            .Select(v => v.VisitorName)
-            .Distinct()
-            .OrderBy(n => n)
-            .Take(limit)
+
+        // On récupère les visites récentes puis on garde, par nom, la plus
+        // récente (regroupement en mémoire — volume modéré par site).
+        var recent = await _db.Visits
+            .OrderByDescending(v => v.CreatedAt)
+            .Select(v => new { v.VisitorName, v.VisitorCompany, v.Motif, v.PlannedDurationMinutes })
+            .Take(1000)
             .ToListAsync(ct);
+
+        return recent
+            .GroupBy(v => v.VisitorName)
+            .Select(g => g.First())
+            .OrderBy(v => v.VisitorName)
+            .Take(limit)
+            .Select(v => new KnownVisitor(v.VisitorName, v.VisitorCompany, v.Motif, v.PlannedDurationMinutes))
+            .ToList();
     }
 
     public async Task<bool> HasActiveVisitForVisitorAsync(string visitorName, CancellationToken ct)

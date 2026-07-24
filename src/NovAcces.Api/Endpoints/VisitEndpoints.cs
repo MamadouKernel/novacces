@@ -24,8 +24,8 @@ public static class VisitEndpoints
             var mine = await visits.GetByHostAsync(user.HostIdentifier(), take, ct);
 
             var dto = mine.Select(v => new HostVisitDto(
-                v.Id, v.VisitorName, v.VisitorCompany, v.Mode.ToString(), v.Status.ToString(),
-                v.ScheduledAt, v.IsOnSite, v.CreatedAt)).ToList();
+                v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), v.Status.ToString(),
+                v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CreatedAt)).ToList();
 
             return Results.Ok(dto);
         })
@@ -33,11 +33,13 @@ public static class VisitEndpoints
         .WithName("MyVisits")
         .WithSummary("Liste les demandes de visite créées par l'hôte connecté.");
 
-        // Autocomplétion des visiteurs déjà connus du site (maquette du 22/07/2026).
+        // Autocomplétion des visiteurs déjà connus du site (maquette du 22/07/2026),
+        // avec pré-remplissage entreprise/motif/durée.
         group.MapGet("/known-visitors", async (IVisitRepository visits, CancellationToken ct) =>
         {
-            var names = await visits.GetKnownVisitorNamesAsync(500, ct);
-            return Results.Ok(names);
+            var known = await visits.GetKnownVisitorsAsync(500, ct);
+            var dto = known.Select(k => new KnownVisitorDto(k.Name, k.Company, k.Motif, k.PlannedDurationMinutes)).ToList();
+            return Results.Ok(dto);
         })
         .RequireAuthorization(NovAccesRoles.Hote)
         .WithName("KnownVisitors")

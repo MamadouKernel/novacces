@@ -2,6 +2,9 @@ using NovAcces.Domain.Entities;
 
 namespace NovAcces.Application.Abstractions;
 
+/// <summary>Visiteur connu et ses dernières valeurs (pré-remplissage).</summary>
+public sealed record KnownVisitor(string Name, string Company, string Motif, int PlannedDurationMinutes);
+
 public interface IVisitRepository
 {
     /// <summary>
@@ -24,8 +27,11 @@ public interface IVisitRepository
     /// <summary>Demandes créées par un hôte (les plus récentes d'abord) — portail hôte.</summary>
     Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct);
 
-    /// <summary>Noms de visiteurs déjà connus du site (autocomplétion, REQ maquette).</summary>
-    Task<IReadOnlyCollection<string>> GetKnownVisitorNamesAsync(int limit, CancellationToken ct);
+    /// <summary>
+    /// Visiteurs déjà connus du site, avec leurs dernières valeurs (entreprise,
+    /// motif, durée) pour le pré-remplissage à l'autocomplétion (§8 maquette).
+    /// </summary>
+    Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct);
 
     /// <summary>
     /// Vrai s'il existe déjà une demande ACTIVE (statut Valid) pour ce visiteur —

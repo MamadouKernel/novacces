@@ -61,3 +61,6 @@ public sealed record AdminUserDto(
 
 /// <summary>Provisionnement d'un site (schéma + modèle + journal append-only).</summary>
 public sealed record ProvisionSiteRequestDto(string SiteId);
+
+/// <summary>Ligne de la vue consolidée multi-sites (§10).</summary>
+public sealed record AdminSiteOverviewDto(string SiteId, int OnSite, int ScansToday);

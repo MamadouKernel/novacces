@@ -57,6 +57,20 @@ public sealed class AdminTests
     }
 
     [SkippableFact]
+    public async Task Overview_ListsSites_ForbiddenForNonAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var overview = await admin.GetFromJsonAsync<List<AdminSiteOverviewDto>>("/api/admin/overview", Json);
+        Assert.Contains(overview!, s => s.SiteId == NovAccesApiFactory.TestSite);
+
+        var surete = await NewUserClientAsync("Surete");
+        var forbidden = await surete.GetAsync("/api/admin/overview");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
+    [SkippableFact]
     public async Task ProvisionSite_ForbiddenForNonAdmin()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

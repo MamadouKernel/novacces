@@ -21,6 +21,19 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>
 
+    <section class="card" style="margin-bottom:1.2rem;">
+        <h2>Vue consolidée multi-sites (@_overview.Count)</h2>
+        <table class="visits">
+            <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
+            <tbody>
+                @foreach (var s in _overview)
+                {
+                    <tr><td><strong>@s.SiteId</strong></td><td>@s.OnSite</td><td>@s.ScansToday</td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
     <div class="grid">
         <section class="card">
             <h2>Créer un compte</h2>
@@ -87,6 +100,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
     private readonly NewUser _newUser = new();
     private string _siteId = "";
     private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
     private bool _busy;
     private string? _userMsg; private bool _userOk;
     private string? _siteMsg; private bool _siteOk;
@@ -118,6 +132,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
     private async Task RefreshUsersAsync()
     {
         try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
     }
 
     private async Task CreateUserAsync()

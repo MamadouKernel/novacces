@@ -96,6 +96,7 @@ app.MapAuthEndpoints();
 app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapDashboardEndpoints();
+app.MapExclusionEndpoints();
 app.MapAdminEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
 

@@ -100,7 +100,11 @@ public static class AuthSetup
                 NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin))
             // Dashboard temps réel (REQ-F-06) : Sûreté, Hôte ou Admin.
             .AddPolicy("Dashboard", p => p.RequireRole(
-                NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin));
+                NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin))
+            // Liste d'exclusion (REQ-F-11) : gestion réservée à la Sûreté et l'Admin
+            // (le motif ne doit pas être exposé aux hôtes — moindre privilège).
+            .AddPolicy("ManageExclusions", p => p.RequireRole(
+                NovAccesRoles.Surete, NovAccesRoles.Admin));
 
         return services;
     }

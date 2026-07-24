@@ -119,6 +119,27 @@ public sealed class NovAccesApiClient
     public async Task<string> GetJournalCsvAsync()
         => await CreateClient(true).GetStringAsync("/api/dashboard/journal.csv");
 
+    // ---- Liste d'exclusion (Sûreté/Admin) ----
+
+    public async Task<IReadOnlyList<ExclusionDto>> GetExclusionsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<ExclusionDto>>("/api/exclusions");
+        return result ?? new List<ExclusionDto>();
+    }
+
+    public async Task<bool> AddExclusionAsync(string displayName, string reason)
+    {
+        var response = await CreateClient(true)
+            .PostAsJsonAsync("/api/exclusions", new AddExclusionRequestDto(displayName, reason));
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> RemoveExclusionAsync(Guid id)
+    {
+        var response = await CreateClient(true).DeleteAsync($"/api/exclusions/{id}");
+        return response.IsSuccessStatusCode;
+    }
+
     // ---- Administration ----
 
     public async Task<IReadOnlyList<AdminUserDto>> GetUsersAsync()

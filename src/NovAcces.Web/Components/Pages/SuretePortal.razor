@@ -95,6 +95,38 @@ else if (CanViewDashboard)
             }
         </section>
     </div>
+
+    @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+    {
+        <section class="card" style="margin-top:1.2rem;">
+            <h2>Liste d'exclusion (@_exclusions.Count)</h2>
+            <p class="muted">Ces personnes se voient refuser toute nouvelle demande. Le motif reste interne à la sûreté.</p>
+            <div class="row">
+                <div class="field"><label>Nom</label><input @bind="_exclName" /></div>
+                <div class="field"><label>Motif (interne)</label><input @bind="_exclReason" /></div>
+            </div>
+            <button class="btn-primary" @onclick="AddExclusionAsync" disabled="@_exclBusy" style="max-width:220px;">Ajouter à l'exclusion</button>
+
+            @if (_exclusions.Count > 0)
+            {
+                <table class="visits" style="margin-top:1rem;">
+                    <thead><tr><th>Nom</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var e in _exclusions)
+                        {
+                            <tr>
+                                <td>@e.DisplayName</td>
+                                <td class="muted">@e.Reason</td>
+                                <td class="muted">@e.AddedBy</td>
+                                <td class="muted">@e.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
+                                <td><button class="btn-danger" @onclick="() => RemoveExclusionAsync(e.Id)" disabled="@_exclBusy">Retirer</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
 </div>
 }
 
@@ -102,6 +134,10 @@ else if (CanViewDashboard)
     private readonly List<ScanEventDto> _feed = new();
     private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
     private DashboardSummaryDto? _summary;
+    private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
+    private string _exclName = "";
+    private string _exclReason = "";
+    private bool _exclBusy;
     private HubConnection? _hub;
     private bool _connected;
     private bool _loaded;
@@ -133,8 +169,42 @@ else if (CanViewDashboard)
                 _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
 
             await ConnectHubAsync();
+            if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+                await RefreshExclusionsAsync();
             StateHasChanged();
         }
+    }
+
+    private async Task RefreshExclusionsAsync()
+    {
+        try { _exclusions = await Api.GetExclusionsAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task AddExclusionAsync()
+    {
+        if (_exclBusy || string.IsNullOrWhiteSpace(_exclName) || string.IsNullOrWhiteSpace(_exclReason)) return;
+        _exclBusy = true;
+        try
+        {
+            if (await Api.AddExclusionAsync(_exclName.Trim(), _exclReason.Trim()))
+            {
+                _exclName = _exclReason = "";
+                await RefreshExclusionsAsync();
+            }
+        }
+        finally { _exclBusy = false; }
+    }
+
+    private async Task RemoveExclusionAsync(Guid id)
+    {
+        if (_exclBusy) return;
+        _exclBusy = true;
+        try
+        {
+            await Api.RemoveExclusionAsync(id);
+            await RefreshExclusionsAsync();
+        }
+        finally { _exclBusy = false; }
     }
 
     private void OnAuthChanged() => InvokeAsync(StateHasChanged);

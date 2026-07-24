@@ -41,3 +41,10 @@ public sealed record DashboardSummaryDto(
     int Denied,
     int SecurityEvents,
     int OnSite);
+
+/// <summary>Entrée de la liste d'exclusion (vue sûreté, motif inclus).</summary>
+public sealed record ExclusionDto(
+    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt);
+
+/// <summary>Ajout à la liste d'exclusion.</summary>
+public sealed record AddExclusionRequestDto(string DisplayName, string Reason);

@@ -24,6 +24,7 @@ public sealed class NovAccesDbContext : DbContext
 
     public DbSet<Visit> Visits => Set<Visit>();
     public DbSet<ScanLogEntry> ScanLogs => Set<ScanLogEntry>();
+    public DbSet<ExclusionEntry> ExclusionEntries => Set<ExclusionEntry>();
 
     public NovAccesDbContext(DbContextOptions<NovAccesDbContext> options, ICurrentTenant tenant)
         : base(options)
@@ -35,6 +36,7 @@ public sealed class NovAccesDbContext : DbContext
     {
         modelBuilder.ApplyConfiguration(new VisitConfiguration());
         modelBuilder.ApplyConfiguration(new ScanLogEntryConfiguration());
+        modelBuilder.ApplyConfiguration(new ExclusionEntryConfiguration());
     }
 
     /// <summary>

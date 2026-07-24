@@ -90,8 +90,22 @@ public sealed class CreateVisitHandler
     }
 }
 
-/// <summary>Vérification de la liste d'exclusion du site (REQ-F-11) — implémentation Infrastructure.</summary>
+/// <summary>
+/// Liste d'exclusion du site (REQ-F-11) — implémentation Infrastructure.
+/// La vérification (IsExcludedAsync) est utilisée à la création d'une visite ;
+/// la gestion (liste/ajout/retrait) est réservée à la sûreté (moindre privilège).
+/// </summary>
 public interface IExclusionListService
 {
     Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct);
+
+    Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct);
+
+    Task AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
+
+    Task<bool> RemoveAsync(Guid id, CancellationToken ct);
 }
+
+/// <summary>Projection d'une entrée d'exclusion pour la sûreté (motif inclus).</summary>
+public sealed record ExclusionEntryView(
+    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt);

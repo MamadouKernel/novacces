@@ -1,5 +1,6 @@
 @page "/"
 @page "/login"
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
@@ -52,11 +53,18 @@
     private bool _busy;
     private string? _error;
 
-    protected override void OnInitialized()
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    // Si une session persistée est restaurée (ou déjà active), on quitte le login.
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (Auth.IsAuthenticated)
+        if (Auth.Initialized && Auth.IsAuthenticated)
             Nav.NavigateTo(LandingPage());
     }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
 
     // Redirection selon le rôle : Admin -> console ; Sûreté -> dashboard ; sinon -> portail hôte.
     private string LandingPage()

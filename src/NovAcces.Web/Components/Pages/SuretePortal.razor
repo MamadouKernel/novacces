@@ -9,6 +9,12 @@
 
 <PageTitle>NovAcces — Dashboard sûreté</PageTitle>
 
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (CanViewDashboard)
+{
 <div class="portal">
     <header class="portal-header">
         <div>
@@ -90,6 +96,7 @@
         </section>
     </div>
 </div>
+}
 
 @code {
     private readonly List<ScanEventDto> _feed = new();
@@ -97,25 +104,40 @@
     private DashboardSummaryDto? _summary;
     private HubConnection? _hub;
     private bool _connected;
+    private bool _loaded;
 
-    protected override async Task OnInitializedAsync()
+    private bool CanViewDashboard =>
+        Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin);
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Auth.IsAuthenticated
-            || !(Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin)))
+        if (!Auth.Initialized) return;
+
+        if (!CanViewDashboard)
         {
             Nav.NavigateTo("/login");
             return;
         }
 
-        // État initial : synthèse + présents + amorçage du flux avec le journal récent.
-        await RefreshSummaryAsync();
-        await RefreshOnSiteAsync();
-        var journal = await Api.GetJournalAsync(20);
-        foreach (var j in journal)
-            _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+        if (!_loaded)
+        {
+            _loaded = true;
 
-        await ConnectHubAsync();
+            // État initial : synthèse + présents + amorçage du flux avec le journal récent.
+            await RefreshSummaryAsync();
+            await RefreshOnSiteAsync();
+            var journal = await Api.GetJournalAsync(20);
+            foreach (var j in journal)
+                _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+
+            await ConnectHubAsync();
+            StateHasChanged();
+        }
     }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
 
     private async Task ConnectHubAsync()
     {
@@ -216,6 +238,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Auth.Changed -= OnAuthChanged;
         if (_hub is not null)
             await _hub.DisposeAsync();
     }

@@ -1,10 +1,17 @@
 @page "/admin"
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
 <PageTitle>NovAcces — Administration</PageTitle>
 
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (Auth.IsInRole(NovAccesRoles.Admin))
+{
 <div class="portal">
     <header class="portal-header">
         <div>
@@ -63,8 +70,11 @@
         </table>
     </section>
 </div>
+}
 
 @code {
+    private bool _loaded;
+
     private sealed class NewUser
     {
         public string Email = "";
@@ -81,15 +91,29 @@
     private string? _userMsg; private bool _userOk;
     private string? _siteMsg; private bool _siteOk;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Auth.IsAuthenticated || !Auth.IsInRole(NovAccesRoles.Admin))
+        if (!Auth.Initialized) return;
+
+        if (!Auth.IsInRole(NovAccesRoles.Admin))
         {
             Nav.NavigateTo("/login");
             return;
         }
-        await RefreshUsersAsync();
+
+        if (!_loaded)
+        {
+            _loaded = true;
+            await RefreshUsersAsync();
+            StateHasChanged();
+        }
     }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
 
     private async Task RefreshUsersAsync()
     {

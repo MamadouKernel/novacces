@@ -1,10 +1,17 @@
 @page "/hote"
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
 <PageTitle>NovAcces — Portail hôte</PageTitle>
 
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (Auth.IsInRole(NovAccesRoles.Hote))
+{
 <div class="portal">
     <header class="portal-header">
         <div>
@@ -112,8 +119,11 @@
         }
     </section>
 </div>
+}
 
 @code {
+    private bool _loaded;
+
     private sealed class VisitForm
     {
         public string VisitorName = "";
@@ -134,16 +144,32 @@
     private bool _revoking;
     private string? _error;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    // On décide APRÈS que la session ait été restaurée (Auth.Initialized) :
+    // redirection si non autorisé, chargement des données sinon.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Auth.IsAuthenticated || !Auth.IsInRole(NovAccesRoles.Hote))
+        if (!Auth.Initialized) return;
+
+        if (!Auth.IsInRole(NovAccesRoles.Hote))
         {
             Nav.NavigateTo("/login");
             return;
         }
-        await RefreshMyVisitsAsync();
-        try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
+
+        if (!_loaded)
+        {
+            _loaded = true;
+            await RefreshMyVisitsAsync();
+            try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
+            StateHasChanged();
+        }
     }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
 
     private async Task RefreshMyVisitsAsync()
     {

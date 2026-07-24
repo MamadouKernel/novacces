@@ -15,14 +15,24 @@ public static class IdentityServiceCollectionExtensions
     /// des terminaux agents). L'ajout des SCHÉMAS d'authentification et des
     /// policies RBAC reste côté hôte web (voir NovAcces.Api).
     /// </summary>
-    public static IServiceCollection AddNovAccesIdentity(
+    /// <returns>
+    /// L'IdentityBuilder, pour que l'hôte web ajoute les fournisseurs de jetons
+    /// (AddDefaultTokenProviders) — ceux-ci vivent dans l'assembly ASP.NET Core
+    /// Identity (dépendance DataProtection) et ne sont pas référençables depuis
+    /// cette couche Infrastructure, volontairement dépourvue du framework web.
+    /// </returns>
+    public static IdentityBuilder AddNovAccesIdentity(
         this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDbContext<NovAccesIdentityDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("Postgres")
                 ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
 
-        services.AddIdentityCore<ApplicationUser>(options =>
+        services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
+        services.Configure<ApiKeyOptions>(configuration.GetSection("ApiKeys"));
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        return services.AddIdentityCore<ApplicationUser>(options =>
             {
                 // Politique de mot de passe — durcie (système de sûreté).
                 options.Password.RequiredLength = 12;
@@ -39,11 +49,7 @@ public static class IdentityServiceCollectionExtensions
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<NovAccesIdentityDbContext>();
-
-        services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
-        services.Configure<ApiKeyOptions>(configuration.GetSection("ApiKeys"));
-        services.AddScoped<IJwtTokenService, JwtTokenService>();
-
-        return services;
+        // Les fournisseurs de jetons (2FA TOTP, codes de récupération) sont
+        // ajoutés par l'hôte web via .AddDefaultTokenProviders() — voir Program.cs.
     }
 }

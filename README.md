@@ -113,8 +113,19 @@ Les endpoints métier sont désormais protégés (RBAC) :
 - Secrets à définir via user-secrets/variable d'environnement : `Jwt:SigningKey`
   (≥ 32 caractères) et les clés `ApiKeys:Terminals`.
 
-Reste pour l'incrément 2 : 2FA TOTP (Sûreté/Admin), rafraîchissement de session,
-et restriction « un Hôte ne révoque que ses propres QR ».
+**2FA TOTP** (application d'authentification, ex. Google/Microsoft Authenticator) :
+- `POST /api/auth/2fa/setup` (authentifié) → clé partagée + URI `otpauth://` à
+  scanner ; `POST /api/auth/2fa/enable` (code) → active + renvoie 10 codes de
+  récupération ; `POST /api/auth/2fa/disable` (mot de passe).
+- Login en deux temps : `POST /api/auth/login` renvoie `requiresTwoFactor` si le
+  2FA est actif, puis `POST /api/auth/login/2fa` (email + mot de passe + code
+  TOTP **ou** code de récupération) délivre le JWT.
+- Choix TOTP (et non SMS) : natif ASP.NET Core Identity, zéro dépendance externe,
+  hors-ligne, conforme au contrat (« PAS de SMS »).
+
+Reste comme follow-up : enrôlement 2FA **obligatoire** pour Sûreté/Admin,
+rafraîchissement de session, restriction « un Hôte ne révoque que ses propres QR »,
+et tests d'intégration HTTP de l'auth (WebApplicationFactory).
 
 ## Pour continuer avec Claude Code
 
@@ -209,7 +220,7 @@ déploiement, pas du code, et ne sont pas listées ici).
 | REQ-SEC-05 | Tentatives journalisées comme événements de sécurité | ✅ Implémenté (`IsSecurityEvent`) |
 | REQ-SEC-06 (proposition) | Mode dégradé sécurisé | 🟡 Signature de liste hors ligne implémentée ; app MAUI = Jalon 2 |
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
-| 8.2 | Authentification, gestion de session | 🟡 JWT (web) + clé API (agents), endpoints protégés ; 2FA TOTP = Jalon 2 incrément 2 |
+| 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (opt-in, codes de récupération) ; enrôlement obligatoire Sûreté/Admin = follow-up |
 | 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Implémenté (policies ASP.NET Core + rôles Identity) |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)

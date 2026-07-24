@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using NovAcces.Api.Auth;
 using NovAcces.Api.Endpoints;
@@ -13,7 +14,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddNovAccesInfrastructure(builder.Configuration);
 
 // Identité (schéma partagé), JWT, clés API terminaux, puis schémas d'auth + RBAC.
-builder.Services.AddNovAccesIdentity(builder.Configuration);
+// AddDefaultTokenProviders (2FA TOTP + codes de récupération) est ajouté ici,
+// côté hôte web, car il dépend de l'assembly ASP.NET Core Identity.
+builder.Services.AddNovAccesIdentity(builder.Configuration).AddDefaultTokenProviders();
 builder.Services.AddNovAccesAuthentication(builder.Configuration);
 builder.Services.AddNovAccesAuthorization();
 

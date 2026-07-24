@@ -81,6 +81,13 @@ public sealed class NovAccesApiClient
         return result ?? new List<HostVisitDto>();
     }
 
+    /// <summary>Visiteurs déjà connus du site (autocomplétion).</summary>
+    public async Task<IReadOnlyList<string>> GetKnownVisitorsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<string>>("/api/visits/known-visitors");
+        return result ?? new List<string>();
+    }
+
     /// <summary>Révoque une demande (REQ-F-09). Vrai si la révocation a réussi.</summary>
     public async Task<bool> RevokeVisitAsync(Guid visitId)
     {
@@ -103,6 +110,14 @@ public sealed class NovAccesApiClient
             .GetFromJsonAsync<List<OnSiteVisitorDto>>("/api/dashboard/on-site");
         return result ?? new List<OnSiteVisitorDto>();
     }
+
+    /// <summary>Synthèse du jour (dashboard sûreté).</summary>
+    public async Task<DashboardSummaryDto?> GetSummaryAsync()
+        => await CreateClient(true).GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary");
+
+    /// <summary>Contenu CSV du journal (pour export/téléchargement).</summary>
+    public async Task<string> GetJournalCsvAsync()
+        => await CreateClient(true).GetStringAsync("/api/dashboard/journal.csv");
 
     // ---- Administration ----
 

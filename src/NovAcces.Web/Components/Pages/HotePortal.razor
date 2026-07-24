@@ -22,7 +22,11 @@
         <section class="card">
             <h2>Visiteur</h2>
             <div class="field"><label>Nom du visiteur</label>
-                <input @bind="_form.VisitorName" /></div>
+                <input @bind="_form.VisitorName" list="knownVisitors" />
+                <datalist id="knownVisitors">
+                    @foreach (var name in _knownVisitors) { <option value="@name" /> }
+                </datalist>
+            </div>
             <div class="field"><label>Société</label>
                 <input @bind="_form.VisitorCompany" /></div>
             <div class="field"><label>Motif</label>
@@ -125,6 +129,7 @@
     private DateTime _scheduledAt = DateTime.Now;
     private CreateVisitResponseDto? _result;
     private IReadOnlyList<HostVisitDto> _myVisits = Array.Empty<HostVisitDto>();
+    private IReadOnlyList<string> _knownVisitors = Array.Empty<string>();
     private bool _busy;
     private bool _revoking;
     private string? _error;
@@ -137,6 +142,7 @@
             return;
         }
         await RefreshMyVisitsAsync();
+        try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
     }
 
     private async Task RefreshMyVisitsAsync()

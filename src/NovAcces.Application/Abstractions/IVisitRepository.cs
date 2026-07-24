@@ -24,6 +24,9 @@ public interface IVisitRepository
     /// <summary>Demandes créées par un hôte (les plus récentes d'abord) — portail hôte.</summary>
     Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct);
 
+    /// <summary>Noms de visiteurs déjà connus du site (autocomplétion, REQ maquette).</summary>
+    Task<IReadOnlyCollection<string>> GetKnownVisitorNamesAsync(int limit, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }
 
@@ -33,6 +36,9 @@ public interface IScanLogRepository
 
     /// <summary>Derniers scans journalisés (les plus récents d'abord) — dashboard sûreté.</summary>
     Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, CancellationToken ct);
+
+    /// <summary>Scans depuis un instant donné (synthèse quotidienne).</summary>
+    Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct);
 
     Task SaveChangesAsync(CancellationToken ct);
 }

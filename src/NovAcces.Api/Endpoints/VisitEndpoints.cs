@@ -33,6 +33,16 @@ public static class VisitEndpoints
         .WithName("MyVisits")
         .WithSummary("Liste les demandes de visite créées par l'hôte connecté.");
 
+        // Autocomplétion des visiteurs déjà connus du site (maquette du 22/07/2026).
+        group.MapGet("/known-visitors", async (IVisitRepository visits, CancellationToken ct) =>
+        {
+            var names = await visits.GetKnownVisitorNamesAsync(500, ct);
+            return Results.Ok(names);
+        })
+        .RequireAuthorization(NovAccesRoles.Hote)
+        .WithName("KnownVisitors")
+        .WithSummary("Noms de visiteurs déjà connus du site (autocomplétion).");
+
         group.MapPost("/", async (
             CreateVisitRequestDto request,
             ClaimsPrincipal user,

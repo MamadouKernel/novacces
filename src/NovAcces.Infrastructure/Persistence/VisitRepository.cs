@@ -73,6 +73,17 @@ public sealed class VisitRepository : IVisitRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyCollection<string>> GetKnownVisitorNamesAsync(int limit, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.Visits
+            .Select(v => v.VisitorName)
+            .Distinct()
+            .OrderBy(n => n)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
+
     public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
 }
 
@@ -94,6 +105,15 @@ public sealed class ScanLogRepository : IScanLogRepository
         return await _db.ScanLogs
             .OrderByDescending(e => e.Timestamp)
             .Take(limit)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.ScanLogs
+            .Where(e => e.Timestamp >= sinceUtc)
+            .OrderByDescending(e => e.Timestamp)
             .ToListAsync(ct);
     }
 

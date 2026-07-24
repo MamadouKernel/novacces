@@ -32,3 +32,12 @@ public sealed record OnSiteVisitorDto(
     string VisitorName,
     string VisitorCompany,
     DateTimeOffset? CheckedInAt);
+
+/// <summary>Synthèse du jour (dashboard sûreté).</summary>
+public sealed record DashboardSummaryDto(
+    int ScansToday,
+    int EntriesGranted,
+    int Exits,
+    int Denied,
+    int SecurityEvents,
+    int OnSite);

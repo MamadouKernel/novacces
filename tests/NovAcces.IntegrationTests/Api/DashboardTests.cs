@@ -90,6 +90,28 @@ public sealed class DashboardTests
         Assert.Equal("GRANTED", evt.VerdictCode);
     }
 
+    [SkippableFact]
+    public async Task Summary_And_CsvExport_Work()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        await CreateVisitAndCheckInAsync($"Synth-{Guid.NewGuid():N}");
+        var surete = await LoginNewUserAsync("Surete");
+
+        // Synthèse : au moins le scan que l'on vient de produire aujourd'hui.
+        var summary = await surete.GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary", Json);
+        Assert.NotNull(summary);
+        Assert.True(summary!.ScansToday >= 1);
+        Assert.True(summary.EntriesGranted >= 1);
+
+        // Export CSV : type et en-tête attendus.
+        var csvResp = await surete.GetAsync("/api/dashboard/journal.csv");
+        Assert.Equal(HttpStatusCode.OK, csvResp.StatusCode);
+        Assert.Equal("text/csv", csvResp.Content.Headers.ContentType!.MediaType);
+        var csv = await csvResp.Content.ReadAsStringAsync();
+        Assert.StartsWith("Horodatage;Visiteur;Agent;Direction", csv);
+    }
+
     // ---- Aides ----
 
     private async Task CreateVisitAndCheckInAsync(string visitorName)

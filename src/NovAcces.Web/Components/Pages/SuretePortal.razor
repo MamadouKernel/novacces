@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @inject IConfiguration Config
 @inject IWebHostEnvironment Env
+@inject IJSRuntime JS
 
 <PageTitle>NovAcces — Dashboard sûreté</PageTitle>
 
@@ -24,6 +25,22 @@
         </div>
         <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>
+
+    @if (_summary is not null)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_summary.ScansToday</span><span class="tile-l">Scans aujourd'hui</span></div>
+            <div class="tile"><span class="tile-n">@_summary.EntriesGranted</span><span class="tile-l">Entrées</span></div>
+            <div class="tile"><span class="tile-n">@_summary.Exits</span><span class="tile-l">Sorties</span></div>
+            <div class="tile tile-warn"><span class="tile-n">@_summary.Denied</span><span class="tile-l">Refus</span></div>
+            <div class="tile tile-alert"><span class="tile-n">@_summary.SecurityEvents</span><span class="tile-l">Événements sécu.</span></div>
+            <div class="tile"><span class="tile-n">@_summary.OnSite</span><span class="tile-l">Présents</span></div>
+        </div>
+    }
+
+    <div class="toolbar">
+        <button class="btn-ghost" @onclick="ExportCsvAsync">⬇ Exporter le journal (CSV)</button>
+    </div>
 
     <div class="grid">
         <section class="card">
@@ -77,6 +94,7 @@
 @code {
     private readonly List<ScanEventDto> _feed = new();
     private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
+    private DashboardSummaryDto? _summary;
     private HubConnection? _hub;
     private bool _connected;
 
@@ -89,7 +107,8 @@
             return;
         }
 
-        // État initial : présents sur site + amorçage du flux avec le journal récent.
+        // État initial : synthèse + présents + amorçage du flux avec le journal récent.
+        await RefreshSummaryAsync();
         await RefreshOnSiteAsync();
         var journal = await Api.GetJournalAsync(20);
         foreach (var j in journal)
@@ -130,6 +149,7 @@
             _feed.Insert(0, scan);
             if (_feed.Count > 50) _feed.RemoveRange(50, _feed.Count - 50);
             await RefreshOnSiteAsync();          // un scan change souvent les présents
+            await RefreshSummaryAsync();
             await InvokeAsync(StateHasChanged);
         });
 
@@ -150,6 +170,21 @@
     private async Task RefreshOnSiteAsync()
     {
         try { _onSite = await Api.GetOnSiteAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task RefreshSummaryAsync()
+    {
+        try { _summary = await Api.GetSummaryAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            var csv = await Api.GetJournalCsvAsync();
+            await JS.InvokeVoidAsync("novaccesDownload", $"journal-{DateTime.Now:yyyyMMdd-HHmm}.csv", csv);
+        }
+        catch { /* best-effort */ }
     }
 
     private static string VerdictFrom(ScanJournalEntryDto j) =>

@@ -1,0 +1,89 @@
+@page "/"
+@page "/login"
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>NovAcces — Connexion</PageTitle>
+
+<div class="login-card">
+    <h1>NovAcces</h1>
+    <p class="subtitle">Portail de gestion des visiteurs</p>
+
+    @if (!_twoFactorRequired)
+    {
+        <div class="field">
+            <label>Email</label>
+            <input type="email" @bind="_email" @bind:event="oninput" autocomplete="username" />
+        </div>
+        <div class="field">
+            <label>Mot de passe</label>
+            <input type="password" @bind="_password" @bind:event="oninput" autocomplete="current-password"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitPasswordAsync(); })" />
+        </div>
+        <button class="btn-primary" @onclick="SubmitPasswordAsync" disabled="@_busy">
+            @(_busy ? "Connexion…" : "Se connecter")
+        </button>
+    }
+    else
+    {
+        <p class="info">Un second facteur est requis. Saisissez le code de votre application d'authentification.</p>
+        <div class="field">
+            <label>Code à 6 chiffres</label>
+            <input type="text" inputmode="numeric" @bind="_code" @bind:event="oninput"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitTwoFactorAsync(); })" />
+        </div>
+        <button class="btn-primary" @onclick="SubmitTwoFactorAsync" disabled="@_busy">
+            @(_busy ? "Vérification…" : "Valider")
+        </button>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private string _code = "";
+    private bool _twoFactorRequired;
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsAuthenticated)
+            Nav.NavigateTo("/hote");
+    }
+
+    private async Task SubmitPasswordAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var outcome = await Api.LoginAsync(_email.Trim(), _password);
+            if (outcome.Success) { Nav.NavigateTo("/hote"); return; }
+            if (outcome.RequiresTwoFactor) { _twoFactorRequired = true; return; }
+            _error = outcome.Error;
+        }
+        catch { _error = "Impossible de joindre le service d'authentification."; }
+        finally { _busy = false; }
+    }
+
+    private async Task SubmitTwoFactorAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var outcome = await Api.LoginTwoFactorAsync(_email.Trim(), _password, _code.Trim());
+            if (outcome.Success) { Nav.NavigateTo("/hote"); return; }
+            _error = outcome.Error ?? "Code invalide.";
+        }
+        catch { _error = "Impossible de joindre le service d'authentification."; }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,136 @@
+@page "/hote"
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>NovAcces — Portail hôte</PageTitle>
+
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Nouvelle demande de visite</h1>
+            <p class="muted">Site : <strong>@(Auth.SiteId ?? "—")</strong> · Connecté : @Auth.DisplayName</p>
+        </div>
+        <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
+    </header>
+
+    <div class="grid">
+        <section class="card">
+            <h2>Visiteur</h2>
+            <div class="field"><label>Nom du visiteur</label>
+                <input @bind="_form.VisitorName" /></div>
+            <div class="field"><label>Société</label>
+                <input @bind="_form.VisitorCompany" /></div>
+            <div class="field"><label>Motif</label>
+                <input @bind="_form.Motif" /></div>
+
+            <div class="row">
+                <div class="field"><label>Mode</label>
+                    <select @bind="_form.Mode">
+                        <option value="Unique">Passage unique (rendez-vous)</option>
+                        <option value="ThirtyDays">Accès 30 jours ouvrés</option>
+                    </select>
+                </div>
+                <div class="field"><label>Durée prévue (min)</label>
+                    <input type="number" min="15" step="15" @bind="_form.PlannedDurationMinutes" /></div>
+            </div>
+
+            @if (_form.Mode == "Unique")
+            {
+                <div class="field"><label>Rendez-vous</label>
+                    <input type="datetime-local" @bind="_scheduledAt" /></div>
+            }
+
+            <div class="row">
+                <div class="field"><label>Téléphone (WhatsApp)</label>
+                    <input @bind="_form.VisitorPhone" placeholder="+225…" /></div>
+                <div class="field"><label>Email (repli)</label>
+                    <input type="email" @bind="_form.VisitorEmail" /></div>
+            </div>
+
+            <button class="btn-primary" @onclick="CreateAsync" disabled="@_busy">
+                @(_busy ? "Génération…" : "Générer le QR")
+            </button>
+            @if (_error is not null) { <p class="error">@_error</p> }
+        </section>
+
+        <section class="card qr-panel">
+            <h2>QR généré</h2>
+            @if (_result is null)
+            {
+                <p class="muted">Le QR signé du visiteur s'affichera ici après génération.</p>
+            }
+            else
+            {
+                <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
+                <p class="muted">Visite <code>@_result.VisitId</code></p>
+                <p>Valide jusqu'à : <strong>@_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</strong></p>
+                <p class="hint">En production, ce QR est envoyé automatiquement au visiteur par WhatsApp (repli email).</p>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private sealed class VisitForm
+    {
+        public string VisitorName = "";
+        public string VisitorCompany = "";
+        public string Motif = "";
+        public string Mode = "Unique";
+        public int PlannedDurationMinutes = 60;
+        public string VisitorPhone = "";
+        public string VisitorEmail = "";
+    }
+
+    private readonly VisitForm _form = new();
+    private DateTime _scheduledAt = DateTime.Now;
+    private CreateVisitResponseDto? _result;
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole(NovAccesRoles.Hote))
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_form.VisitorName) || string.IsNullOrWhiteSpace(_form.VisitorCompany))
+        {
+            _error = "Nom du visiteur et société sont requis.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            DateTimeOffset? scheduled = _form.Mode == "Unique"
+                ? new DateTimeOffset(_scheduledAt.ToUniversalTime(), TimeSpan.Zero)
+                : null;
+
+            var request = new CreateVisitRequestDto(
+                _form.VisitorName.Trim(), _form.VisitorCompany.Trim(), _form.Motif.Trim(),
+                _form.Mode, scheduled, _form.PlannedDurationMinutes,
+                string.IsNullOrWhiteSpace(_form.VisitorPhone) ? null : _form.VisitorPhone.Trim(),
+                string.IsNullOrWhiteSpace(_form.VisitorEmail) ? null : _form.VisitorEmail.Trim());
+
+            _result = await Api.CreateVisitAsync(request);
+        }
+        catch
+        {
+            _error = "La génération a échoué (session expirée ou service indisponible).";
+        }
+        finally { _busy = false; }
+    }
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+}

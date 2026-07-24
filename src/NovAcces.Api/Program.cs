@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using NovAcces.Api;
 using NovAcces.Api.Auth;
 using NovAcces.Api.Endpoints;
 using NovAcces.Api.Hubs;
@@ -27,6 +28,9 @@ builder.Services.AddSwaggerGen();
 // il vit donc dans Api et non dans Infrastructure (Clean Architecture).
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IScanEventBroadcaster, ScanEventBroadcaster>();
+
+// Supervision des dépassements de durée (§7) : service de fond périodique.
+builder.Services.AddHostedService<OverstayMonitor>();
 
 // Rate limiting natif .NET 8 sur les endpoints sensibles (section 8.2 du CDC).
 // Politique nommée appliquée explicitement sur /api/scan et /api/visits ci-dessous.

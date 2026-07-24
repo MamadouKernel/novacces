@@ -48,6 +48,18 @@ else if (CanViewDashboard)
         <button class="btn-ghost" @onclick="ExportCsvAsync">⬇ Exporter le journal (CSV)</button>
     </div>
 
+    @if (_overstayAlerts.Count > 0)
+    {
+        <div class="overstay-banner">
+            @foreach (var a in _overstayAlerts)
+            {
+                <div class="overstay-item @(a.IsSecurityEvent ? "v-security" : "v-denied")">
+                    ⏱ <strong>@a.VisitorName</strong> — dépassement +@a.OverstayMinutes min (niveau @a.Level)@(a.IsSecurityEvent ? " · ⚠ vérification physique recommandée" : "")
+                </div>
+            }
+        </div>
+    }
+
     <div class="grid">
         <section class="card">
             <h2>Flux des scans (temps réel)</h2>
@@ -88,6 +100,12 @@ else if (CanViewDashboard)
                             @if (v.CheckedInAt is not null)
                             {
                                 <span class="muted"> · entré à @v.CheckedInAt.Value.LocalDateTime.ToString("HH:mm")</span>
+                            }
+                            @if (v.OverstayMinutes > 0)
+                            {
+                                <span class="badge @(v.OverstayLevel >= 3 ? "badge-revoked" : "badge-expired")">
+                                    ⏱ dépassement +@v.OverstayMinutes min@(v.OverstayLevel > 0 ? $" (niv. {v.OverstayLevel})" : "")
+                                </span>
                             }
                         </li>
                     }
@@ -134,6 +152,7 @@ else if (CanViewDashboard)
     private readonly List<ScanEventDto> _feed = new();
     private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
     private DashboardSummaryDto? _summary;
+    private readonly List<OverstayAlertDto> _overstayAlerts = new();
     private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
     private string _exclName = "";
     private string _exclReason = "";
@@ -242,6 +261,14 @@ else if (CanViewDashboard)
             if (_feed.Count > 50) _feed.RemoveRange(50, _feed.Count - 50);
             await RefreshOnSiteAsync();          // un scan change souvent les présents
             await RefreshSummaryAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<OverstayAlertDto>("OverstayAlert", async alert =>
+        {
+            _overstayAlerts.Insert(0, alert);
+            if (_overstayAlerts.Count > 6) _overstayAlerts.RemoveRange(6, _overstayAlerts.Count - 6);
+            await RefreshOnSiteAsync();          // met à jour les badges de dépassement
             await InvokeAsync(StateHasChanged);
         });
 

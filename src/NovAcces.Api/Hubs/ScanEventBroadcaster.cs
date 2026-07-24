@@ -27,4 +27,13 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster
 
         return _hub.Clients.Group(_tenant.SiteId).SendAsync("ScanRecorded", dto, ct);
     }
+
+    public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct)
+    {
+        var dto = new OverstayAlertDto(
+            overstay.VisitId, overstay.VisitorName, overstay.OverstayMinutes,
+            overstay.Level, overstay.IsSecurityEvent, overstay.OccurredAt);
+
+        return _hub.Clients.Group(_tenant.SiteId).SendAsync("OverstayAlert", dto, ct);
+    }
 }

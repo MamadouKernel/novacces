@@ -32,12 +32,14 @@ public static class DashboardEndpoints
         .WithName("ScanJournal")
         .WithSummary("Derniers scans journalisés du site.");
 
-        group.MapGet("/on-site", async (IVisitRepository visits, CancellationToken ct) =>
+        group.MapGet("/on-site", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {
+            var now = clock.UtcNow;
             var onSite = await visits.GetOnSiteAsync(ct);
 
             var dto = onSite.Select(v => new OnSiteVisitorDto(
-                v.Id, v.VisitorName, v.VisitorCompany, v.CheckedInAt)).ToList();
+                v.Id, v.VisitorName, v.VisitorCompany, v.CheckedInAt,
+                v.ComputeOverstayMinutes(now), v.OverstayLevel)).ToList();
 
             return Results.Ok(dto);
         })

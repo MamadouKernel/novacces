@@ -137,3 +137,8 @@ body { background: var(--nv-bg); color:#1c2733; margin:0; }
 .tile-warn .tile-n { color:#e67e22; }
 .tile-alert .tile-n { color:#c0392b; }
 .toolbar { margin-bottom:1rem; }
+
+/* ---- Alertes dépassement ---- */
+.overstay-banner { display:flex; flex-direction:column; gap:.4rem; margin-bottom:1rem; }
+.overstay-item { padding:.55rem .8rem; border-radius:8px; border-left:4px solid #e67e22; background:#fff7ef; font-size:.9rem; }
+.overstay-item.v-security { border-left-color:#c0392b; background:#fdf0ee; }

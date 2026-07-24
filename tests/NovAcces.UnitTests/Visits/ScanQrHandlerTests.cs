@@ -67,6 +67,7 @@ file sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
         LastBroadcast = scanEvent;
         return Task.CompletedTask;
     }
+    public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>

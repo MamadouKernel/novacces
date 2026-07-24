@@ -58,6 +58,11 @@ public static class DependencyInjection
         services.Configure<BusinessDayOptions>(configuration.GetSection("BusinessDays"));
         services.AddSingleton<IBusinessDayService, BusinessDayService>();
 
+        // Supervision des dépassements (§7) : catalogue de sites + scanner.
+        services.AddSingleton<ISiteCatalog, SiteCatalog>();
+        services.Configure<Overstay.OverstayOptions>(configuration.GetSection("Overstay"));
+        services.AddSingleton<IOverstayScanner, Overstay.OverstayScanner>();
+
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
 

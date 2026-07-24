@@ -26,12 +26,26 @@ public sealed record ScanJournalEntryDto(
     bool IsSecurityEvent,
     string Detail);
 
-/// <summary>Visiteur actuellement présent sur site.</summary>
+/// <summary>Visiteur actuellement présent sur site (avec état de dépassement).</summary>
 public sealed record OnSiteVisitorDto(
     Guid VisitId,
     string VisitorName,
     string VisitorCompany,
-    DateTimeOffset? CheckedInAt);
+    DateTimeOffset? CheckedInAt,
+    int OverstayMinutes,
+    int OverstayLevel);
+
+/// <summary>
+/// Alerte de dépassement de durée diffusée en temps réel au dashboard sûreté
+/// (SignalR, message « OverstayAlert »). À partir du niveau 3, IsSecurityEvent.
+/// </summary>
+public sealed record OverstayAlertDto(
+    Guid VisitId,
+    string VisitorName,
+    int OverstayMinutes,
+    int Level,
+    bool IsSecurityEvent,
+    DateTimeOffset OccurredAt);
 
 /// <summary>Synthèse du jour (dashboard sûreté).</summary>
 public sealed record DashboardSummaryDto(

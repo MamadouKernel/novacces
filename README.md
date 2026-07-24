@@ -205,14 +205,14 @@ déploiement, pas du code, et ne sont pas listées ici).
 
 | Exigence | Description | État |
 |---|---|---|
-| REQ-F-02 | Génération automatique du QR chiffré et signé | ✅ Implémenté (`CreateVisitHandler`) |
-| REQ-F-03 | Transmission par email/WhatsApp | ❌ Aucune interface — Jalon 2 |
-| REQ-F-05 | Fenêtre unique -20/+15 min ; 30 jours ouvrés avec expiration | ✅ Implémenté et corrigé (`Visit.Scan`) |
-| REQ-F-06 | Notification temps réel de l'hôte | ❌ Aucun hook — Jalon 2 (SignalR) |
-| REQ-F-07 | Journalisation de chaque tentative | ✅ Implémenté (`ScanLogEntry`) |
-| REQ-F-09 | Révocation manuelle à tout moment | ✅ Implémenté et corrigé (endpoint ajouté) |
-| REQ-F-10 | Architecture multi-tenant | ✅ Implémenté (schéma PostgreSQL par site) |
-| REQ-F-11 (proposition) | Liste d'exclusion | 🟡 Modélisé dans le Domain ; service réel = Jalon 2 |
+| REQ-F-02 | Génération automatique du QR chiffré et signé | ✅ Implémenté (`CreateVisitHandler`) ; anti-doublon (409) à la création |
+| REQ-F-03 | Transmission par email/WhatsApp | ✅ `INotificationService` + WhatsApp Cloud API (repli SMTP) ; QR affiché au portail hôte |
+| REQ-F-05 | Fenêtre unique -20/+15 min ; 30 jours ouvrés avec expiration | ✅ Implémenté (`Visit.Scan`) ; jours ouvrés = week-ends + fériés (`IBusinessDayService`) |
+| REQ-F-06 | Notification temps réel de l'hôte | ✅ SignalR (`/hubs/scan`) + dashboard sûreté temps réel |
+| REQ-F-07 | Journalisation de chaque tentative | ✅ Implémenté (`ScanLogEntry`) ; journal + export CSV côté sûreté |
+| REQ-F-09 | Révocation manuelle à tout moment | ✅ Endpoint + UI hôte ; moindre privilège + audit (qui/quand) |
+| REQ-F-10 | Architecture multi-tenant | ✅ Schéma PostgreSQL par site ; tenant dérivé du jeton (anti-évasion) |
+| REQ-F-11 (proposition) | Liste d'exclusion | ✅ Liste par site (comparaison normalisée), gestion réservée Sûreté/Admin |
 | REQ-SEC-01 | QR sans donnée personnelle en clair | ✅ Implémenté (payload = Guid + expiration uniquement) |
 | REQ-SEC-02 | Validation de fenêtre exclusivement serveur | ✅ Implémenté (`IDateTimeProvider`, jamais l'heure client) |
 | REQ-SEC-03 | Anti-rejeu atomique, scans simultanés | ✅ Implémenté (verrou `FOR UPDATE` + contrainte unique) |
@@ -220,10 +220,22 @@ déploiement, pas du code, et ne sont pas listées ici).
 | REQ-SEC-05 | Tentatives journalisées comme événements de sécurité | ✅ Implémenté (`IsSecurityEvent`) |
 | REQ-SEC-06 (proposition) | Mode dégradé sécurisé | 🟡 Signature de liste hors ligne implémentée ; app MAUI = Jalon 2 |
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
-| 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (opt-in, codes de récupération) ; enrôlement obligatoire Sûreté/Admin = follow-up |
-| 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Implémenté (policies ASP.NET Core + rôles Identity) |
+| 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (codes de récupération) ; persistance de session |
+| 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Policies ASP.NET Core + rôles Identity ; moindre privilège appliqué |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)
+
+### État Jalon 2 (mise à jour)
+
+- **API** : complète et testée (55 tests : 31 unitaires + 24 d'intégration, dont
+  auth/RBAC, cloisonnement, anti-rejeu concurrent, 2FA, dashboard temps réel,
+  exclusion). **REQ-SEC-06 (mode dégradé)** : la signature de liste hors ligne
+  est côté API ; la consommation hors-ligne relève de l'app agent MAUI.
+- **Web (`NovAcces.Web`, Blazor Server)** : portail hôte (création + QR + liste +
+  révocation + autocomplétion), dashboard sûreté (temps réel + présents + synthèse
+  + export CSV + liste d'exclusion), administration (comptes + provisionnement de
+  site), 2FA au login, persistance de session.
+- **Mobile (`NovAcces.Mobile`, MAUI)** : non commencé — prochaine étape.
 
 ## Correspondance avec les jalons de la proposition v4
 

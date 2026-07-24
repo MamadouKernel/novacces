@@ -45,10 +45,11 @@ public static class DependencyInjection
                     ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante."))
                 .AddInterceptors(sp.GetRequiredService<TenantSchemaConnectionInterceptor>()));
 
-        // --- Dépôts ---
+        // --- Dépôts & frontière transactionnelle ---
         services.AddScoped<IVisitRepository, VisitRepository>();
         services.AddScoped<IScanLogRepository, ScanLogRepository>();
         services.AddScoped<IExclusionListService, ExclusionListService>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // --- Horloge & signature cryptographique ---
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();

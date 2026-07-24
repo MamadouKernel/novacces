@@ -42,20 +42,22 @@ public sealed class TenantIsolationTests
             await ctxB.SaveChangesAsync();
         }
 
-        // Act + Assert : chaque tenant ne voit QUE sa propre visite.
+        // Act + Assert : chaque tenant voit SA propre visite et JAMAIS celle de
+        // l'autre. On raisonne sur des données précises (et non sur un compte
+        // exact) car la base d'intégration est partagée entre classes de test :
+        // ce qui doit rester invariant, c'est qu'aucune donnée ne franchit la
+        // frontière de tenant.
         await using (var readA = _fixture.CreateContext(PostgresTenantFixture.TenantA))
         {
             var visitsA = await readA.Visits.AsNoTracking().ToListAsync();
-            Assert.Single(visitsA);
-            Assert.Equal("Visiteur Alpha", visitsA[0].VisitorName);
+            Assert.Contains(visitsA, v => v.VisitorName == "Visiteur Alpha");
             Assert.DoesNotContain(visitsA, v => v.VisitorName == "Visiteur Beta");
         }
 
         await using (var readB = _fixture.CreateContext(PostgresTenantFixture.TenantB))
         {
             var visitsB = await readB.Visits.AsNoTracking().ToListAsync();
-            Assert.Single(visitsB);
-            Assert.Equal("Visiteur Beta", visitsB[0].VisitorName);
+            Assert.Contains(visitsB, v => v.VisitorName == "Visiteur Beta");
             Assert.DoesNotContain(visitsB, v => v.VisitorName == "Visiteur Alpha");
         }
     }

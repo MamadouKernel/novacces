@@ -37,6 +37,7 @@ public sealed class ScanQrHandler
     private readonly IScanLogRepository _logs;
     private readonly IDateTimeProvider _clock;
     private readonly IScanEventBroadcaster _broadcaster;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ScanQrHandler> _logger;
 
     public ScanQrHandler(
@@ -45,6 +46,7 @@ public sealed class ScanQrHandler
         IScanLogRepository logs,
         IDateTimeProvider clock,
         IScanEventBroadcaster broadcaster,
+        IUnitOfWork unitOfWork,
         ILogger<ScanQrHandler> logger)
     {
         _signing = signing;
@@ -52,6 +54,7 @@ public sealed class ScanQrHandler
         _logs = logs;
         _clock = clock;
         _broadcaster = broadcaster;
+        _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
@@ -78,56 +81,72 @@ public sealed class ScanQrHandler
             return new ScanQrResult(false, false, true, "INVALID_SIGNATURE", null, null);
         }
 
-        // 2. Chargement AVEC VERROU PESSIMISTE — c'est ici que l'anti-rejeu se
-        //    joue réellement en cas de scans concurrents (REQ-SEC-03).
-        var visit = await _visits.GetForUpdateAsync(verification.VisitToken.Value, ct);
-        if (visit is null)
+        // 2-4. Section critique de l'anti-rejeu (REQ-SEC-03) enveloppée dans UNE
+        //    transaction : le verrou pessimiste posé par GetForUpdateAsync
+        //    (SELECT … FOR UPDATE) doit être tenu jusqu'à la sauvegarde incluse,
+        //    sinon deux scans simultanés du même QR pourraient passer tous les
+        //    deux. La diffusion temps réel se fait APRÈS le commit (voir plus bas)
+        //    pour ne jamais annoncer un scan qui aurait été annulé (rollback).
+        ScanBroadcastEvent? broadcast = null;
+
+        var result = await _unitOfWork.ExecuteInTransactionAsync(async token =>
         {
-            await LogInvalidSignatureAsync(command, now, ct);
-            return new ScanQrResult(false, false, true, "INVALID_SIGNATURE", null, null);
+            // 2. Chargement AVEC VERROU PESSIMISTE, tenu pour toute la transaction.
+            var visit = await _visits.GetForUpdateAsync(verification.VisitToken.Value, token);
+            if (visit is null)
+            {
+                await LogInvalidSignatureAsync(command, now, token);
+                return new ScanQrResult(false, false, true, "INVALID_SIGNATURE", null, null);
+            }
+
+            // 3. Application de la règle métier (Domain) — jamais dupliquée ici.
+            var outcome = visit.Scan(command.Direction, command.IsBusinessDayOverride, now);
+
+            // 4. Journalisation inaltérable, y compris pour les refus. Le dépôt de
+            //    scans partage le même DbContext : un seul SaveChanges persiste
+            //    atomiquement la mutation de la visite ET l'entrée de journal.
+            var logEntry = ScanLogEntry.Create(
+                visit.Id, visit.VisitorName, command.AgentId, command.Direction,
+                outcome, command.IsDegradedMode, BuildDetail(outcome), now);
+
+            await _logs.AddAsync(logEntry, token);
+            await _visits.SaveChangesAsync(token);
+
+            var verdictCode = outcome switch
+            {
+                { IsGranted: true, IsCheckOut: true } => "CHECKED_OUT",
+                { IsGranted: true } => "GRANTED",
+                _ => $"DENIED_{outcome.DenialReason}"
+            };
+
+            broadcast = new ScanBroadcastEvent(
+                visit.Id, visit.VisitorName, verdictCode,
+                outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
+                command.AgentId, now);
+
+            return new ScanQrResult(
+                outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
+                verdictCode, visit.VisitorName,
+                outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null);
+        }, ct);
+
+        // REQ-F-06 : diffusion temps réel (dashboard sûreté / portail hôte), une
+        // fois le scan COMMITÉ. Best-effort — une panne de diffusion ne doit
+        // jamais invalider un scan déjà journalisé.
+        if (broadcast is not null)
+        {
+            try
+            {
+                await _broadcaster.BroadcastAsync(broadcast, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Échec de diffusion temps réel du scan pour la visite {VisitId}.", broadcast.VisitId);
+            }
         }
 
-        // 3. Application de la règle métier (Domain) — jamais dupliquée ici.
-        var outcome = visit.Scan(command.Direction, command.IsBusinessDayOverride, now);
-
-        // 4. Journalisation inaltérable, y compris pour les refus.
-        var logEntry = ScanLogEntry.Create(
-            visit.Id, visit.VisitorName, command.AgentId, command.Direction,
-            outcome, command.IsDegradedMode, BuildDetail(outcome), now);
-
-        await _logs.AddAsync(logEntry, ct);
-        await _visits.SaveChangesAsync(ct);
-        await _logs.SaveChangesAsync(ct);
-
-        var verdict = outcome switch
-        {
-            { IsGranted: true, IsCheckOut: true } => "CHECKED_OUT",
-            { IsGranted: true } => "GRANTED",
-            _ => $"DENIED_{outcome.DenialReason}"
-        };
-
-        // REQ-F-06 : diffusion temps réel (dashboard sûreté / portail hôte).
-        // Best-effort — une panne de diffusion ne doit jamais invalider un
-        // scan déjà journalisé.
-        try
-        {
-            await _broadcaster.BroadcastAsync(
-                new ScanBroadcastEvent(
-                    visit.Id, visit.VisitorName, verdict,
-                    outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
-                    command.AgentId, now),
-                ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Échec de diffusion temps réel du scan pour la visite {VisitId}.", visit.Id);
-        }
-
-        return new ScanQrResult(
-            outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
-            verdict, visit.VisitorName,
-            outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null);
+        return result;
     }
 
     private async Task LogInvalidSignatureAsync(ScanQrCommand command, DateTimeOffset now, CancellationToken ct)

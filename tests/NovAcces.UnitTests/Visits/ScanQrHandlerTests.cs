@@ -57,6 +57,17 @@ file sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
     }
 }
 
+/// <summary>
+/// Doublure de transaction : exécute l'opération directement (pas de base en
+/// test unitaire). La vraie sémantique transactionnelle/verrou est couverte par
+/// NovAcces.IntegrationTests (test de concurrence anti-rejeu).
+/// </summary>
+file sealed class FakeUnitOfWork : IUnitOfWork
+{
+    public Task<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> operation, CancellationToken ct = default) => operation(ct);
+}
+
 public class ScanQrHandlerTests
 {
     [Fact]
@@ -78,7 +89,7 @@ public class ScanQrHandlerTests
         var logs = new FakeScanLogRepository();
         var handler = new ScanQrHandler(
             signing, visits, logs, clock,
-            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
+            new FakeScanEventBroadcaster(), new FakeUnitOfWork(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),
@@ -105,7 +116,7 @@ public class ScanQrHandlerTests
         var logs = new FakeScanLogRepository();
         var handler = new ScanQrHandler(
             signing, visits, logs, clock,
-            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
+            new FakeScanEventBroadcaster(), new FakeUnitOfWork(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),

@@ -74,6 +74,20 @@ public sealed class NovAccesApiClient
         return await response.Content.ReadFromJsonAsync<CreateVisitResponseDto>();
     }
 
+    /// <summary>Demandes de visite de l'hôte connecté.</summary>
+    public async Task<IReadOnlyList<HostVisitDto>> GetMyVisitsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<HostVisitDto>>("/api/visits/mine");
+        return result ?? new List<HostVisitDto>();
+    }
+
+    /// <summary>Révoque une demande (REQ-F-09). Vrai si la révocation a réussi.</summary>
+    public async Task<bool> RevokeVisitAsync(Guid visitId)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/visits/{visitId}/revoke", null);
+        return response.IsSuccessStatusCode;
+    }
+
     /// <summary>Journal des derniers scans du site (dashboard sûreté).</summary>
     public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 50)
     {

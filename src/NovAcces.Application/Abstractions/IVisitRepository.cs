@@ -21,6 +21,9 @@ public interface IVisitRepository
     /// <summary>Visiteurs actuellement sur site (entrés, pas encore sortis) — dashboard sûreté.</summary>
     Task<IReadOnlyCollection<Visit>> GetOnSiteAsync(CancellationToken ct);
 
+    /// <summary>Demandes créées par un hôte (les plus récentes d'abord) — portail hôte.</summary>
+    Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }
 

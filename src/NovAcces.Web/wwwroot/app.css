@@ -116,3 +116,14 @@ body { background: var(--nv-bg); color:#1c2733; margin:0; }
 
 .nav-links { display:flex; gap:.6rem; margin-top:.4rem; }
 .nav-links a { font-size:.85rem; color:var(--nv-primary); text-decoration:none; }
+
+/* ---- Tables & badges ---- */
+.visits { width:100%; border-collapse:collapse; font-size:.9rem; }
+.visits th { text-align:left; color:#8894a0; font-weight:600; font-size:.78rem; padding:.4rem .5rem; border-bottom:1px solid var(--nv-border); }
+.visits td { padding:.5rem .5rem; border-bottom:1px solid #eef1f4; }
+.badge { padding:.15rem .5rem; border-radius:20px; font-size:.75rem; font-weight:600; }
+.badge-valid   { background:#e5f6ec; color:#1e7e45; }
+.badge-revoked { background:#fdecec; color:#c0392b; }
+.badge-expired { background:#f0f0f0; color:#7b8794; }
+.btn-danger { padding:.35rem .7rem; border:none; border-radius:6px; background:#c0392b; color:#fff; font-size:.82rem; cursor:pointer; }
+.btn-danger:disabled { opacity:.6; }

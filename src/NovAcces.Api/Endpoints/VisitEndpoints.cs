@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Enums;
 using NovAcces.Shared.Auth;
@@ -11,6 +12,26 @@ public static class VisitEndpoints
     public static RouteGroupBuilder MapVisitEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/visits").WithTags("Visits");
+
+        // Liste des demandes de l'hôte connecté (REQ-F-09 : support de la révocation).
+        group.MapGet("/mine", async (
+            ClaimsPrincipal user,
+            IVisitRepository visits,
+            int? limit,
+            CancellationToken ct) =>
+        {
+            var take = Math.Clamp(limit ?? 50, 1, 200);
+            var mine = await visits.GetByHostAsync(user.HostIdentifier(), take, ct);
+
+            var dto = mine.Select(v => new HostVisitDto(
+                v.Id, v.VisitorName, v.VisitorCompany, v.Mode.ToString(), v.Status.ToString(),
+                v.ScheduledAt, v.IsOnSite, v.CreatedAt)).ToList();
+
+            return Results.Ok(dto);
+        })
+        .RequireAuthorization(NovAccesRoles.Hote)
+        .WithName("MyVisits")
+        .WithSummary("Liste les demandes de visite créées par l'hôte connecté.");
 
         group.MapPost("/", async (
             CreateVisitRequestDto request,
@@ -46,12 +67,15 @@ public static class VisitEndpoints
             RevokeVisitHandler handler,
             CancellationToken ct) =>
         {
-            // TODO Jalon 2 (suite) : vérifier qu'un Hôte ne peut révoquer QUE ses
-            // propres demandes (le rôle est déjà contrôlé par la policy ; reste à
-            // comparer HostUserId de la visite à l'identité — moindre privilège,
-            // section 8.5 du CDC). Sûreté/Admin peuvent révoquer tout QR du site.
+            // Moindre privilège (section 8.5) : Sûreté/Admin révoquent tout QR du
+            // site ; un Hôte uniquement ses propres demandes (vérifié dans le handler).
+            var canRevokeAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin);
+
             var result = await handler.HandleAsync(
-                new RevokeVisitCommand(visitId, RevokedBy: user.HostIdentifier()), ct);
+                new RevokeVisitCommand(visitId, user.HostIdentifier(), user.HostIdentifier(), canRevokeAny), ct);
+
+            if (result.Forbidden)
+                return Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status403Forbidden);
 
             return result.Success
                 ? Results.Ok(new { message = "QR révoqué." })

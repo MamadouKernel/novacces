@@ -63,6 +63,16 @@ public sealed class VisitRepository : IVisitRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.Visits
+            .Where(v => v.HostUserId == hostUserId)
+            .OrderByDescending(v => v.CreatedAt)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
+
     public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
 }
 

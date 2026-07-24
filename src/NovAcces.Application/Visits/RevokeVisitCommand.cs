@@ -2,9 +2,12 @@ using NovAcces.Application.Abstractions;
 
 namespace NovAcces.Application.Visits;
 
-public sealed record RevokeVisitCommand(Guid VisitId, string RevokedBy);
+/// <param name="RequestedByHostId">Identité de l'appelant (pour le moindre privilège).</param>
+/// <param name="CanRevokeAny">Vrai pour Sûreté/Admin ; un Hôte ne peut révoquer que ses propres demandes.</param>
+public sealed record RevokeVisitCommand(
+    Guid VisitId, string RevokedBy, string RequestedByHostId, bool CanRevokeAny);
 
-public sealed record RevokeVisitResult(bool Success, string? Error);
+public sealed record RevokeVisitResult(bool Success, string? Error, bool Forbidden = false);
 
 /// <summary>
 /// Révocation manuelle d'un QR par l'hôte ou la sûreté, à tout moment
@@ -24,6 +27,11 @@ public sealed class RevokeVisitHandler
         var visit = await _visits.GetByIdAsync(command.VisitId, ct);
         if (visit is null)
             return new RevokeVisitResult(false, "Visite introuvable.");
+
+        // Moindre privilège (section 8.5 du CDC) : un Hôte ne révoque QUE ses
+        // propres demandes ; Sûreté/Admin peuvent révoquer tout QR du site.
+        if (!command.CanRevokeAny && visit.HostUserId != command.RequestedByHostId)
+            return new RevokeVisitResult(false, "Vous ne pouvez révoquer que vos propres demandes.", Forbidden: true);
 
         visit.Revoke();
         await _visits.SaveChangesAsync(ct);

@@ -34,6 +34,7 @@ file sealed class FakeVisitRepository : IVisitRepository
     public Visit? VisitToReturn { get; set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
+    public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) => Task.CompletedTask;
     public Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());

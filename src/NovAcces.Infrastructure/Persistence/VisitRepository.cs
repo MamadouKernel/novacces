@@ -35,6 +35,12 @@ public sealed class VisitRepository : IVisitRepository
         return await _db.Visits.SingleOrDefaultAsync(v => v.Id == visitId, ct);
     }
 
+    public async Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.Visits.SingleOrDefaultAsync(v => v.VisitToken == visitToken, ct);
+    }
+
     public async Task AddAsync(Visit visit, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);

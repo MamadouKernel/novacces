@@ -37,7 +37,10 @@ public sealed class OverstayMonitor : BackgroundService
 
         try
         {
-            do
+            // On attend un premier intervalle avant le premier passage : laisse
+            // l'application démarrer, et évite de muter l'état pendant les tests
+            // d'intégration (qui pilotent le scanner explicitement).
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 try
                 {
@@ -48,7 +51,6 @@ public sealed class OverstayMonitor : BackgroundService
                     _logger.LogError(ex, "Passage de supervision des dépassements en échec.");
                 }
             }
-            while (await timer.WaitForNextTickAsync(stoppingToken));
         }
         catch (OperationCanceledException)
         {

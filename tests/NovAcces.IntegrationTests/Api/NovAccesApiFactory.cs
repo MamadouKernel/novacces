@@ -68,6 +68,13 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
                 ["ApiKeys:Terminals:0:Label"] = "Terminal Test Intégration",
                 ["SeedAdmin:Email"] = AdminEmail,
                 ["SeedAdmin:Password"] = AdminPassword,
+                // Le minuteur de supervision ne doit pas se déclencher pendant les
+                // tests (intervalle très long) : les tests pilotent le scanner
+                // explicitement (OverstayTests). Le scanner reste actif (Enabled).
+                ["Overstay:ScanIntervalSeconds"] = "36000",
+                // Rate limiting désactivé en test : la suite sérialisée dépasse
+                // sinon les 30 req/min de la politique « sensitive ».
+                ["RateLimiting:Disabled"] = "true",
             });
         });
     }

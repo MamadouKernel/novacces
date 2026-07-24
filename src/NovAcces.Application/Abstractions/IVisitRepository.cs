@@ -16,6 +16,9 @@ public interface IVisitRepository
 
     Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct);
 
+    /// <summary>Lecture par jeton de visite, SANS verrou (confrontation de resync).</summary>
+    Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct);
+
     Task AddAsync(Visit visit, CancellationToken ct);
 
     /// <summary>Visites valides du jour, pour la génération de la liste hors ligne signée.</summary>

@@ -34,11 +34,12 @@ builder.Services.AddHostedService<OverstayMonitor>();
 
 // Rate limiting natif .NET 8 sur les endpoints sensibles (section 8.2 du CDC).
 // Politique nommée appliquée explicitement sur /api/scan et /api/visits ci-dessous.
+var rateLimitPermit = builder.Configuration.GetValue<int?>("RateLimiting:PermitLimit") ?? 30;
 builder.Services.AddRateLimiter(options =>
 {
     options.AddFixedWindowLimiter("sensitive", opt =>
     {
-        opt.PermitLimit = 30;
+        opt.PermitLimit = rateLimitPermit;
         opt.Window = TimeSpan.FromMinutes(1);
         opt.QueueLimit = 0;
     });
@@ -87,7 +88,12 @@ if (!app.Configuration.GetValue<bool>("DisableHttpsRedirection"))
 // claim SiteId du principal authentifié.
 app.UseAuthentication();
 app.UseTenantResolution();
-app.UseRateLimiter();
+
+// Rate limiting désactivable en test d'intégration (la suite sérialisée dépasse
+// sinon la politique « sensitive »). Toujours actif en dev/prod.
+if (!app.Configuration.GetValue<bool>("RateLimiting:Disabled"))
+    app.UseRateLimiter();
+
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow }));
@@ -97,6 +103,7 @@ app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapDashboardEndpoints();
 app.MapExclusionEndpoints();
+app.MapAgentEndpoints();
 app.MapAdminEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
 

@@ -16,7 +16,7 @@
 
         <div class="relative flex items-center gap-3">
             <span class="grid h-11 w-11 place-items-center rounded-xl bg-amber-500 text-brand-700 shadow-card">
-                @QrMark("h-6 w-6")
+                @BrandMark("h-6 w-6")
             </span>
             <span class="font-display text-2xl font-bold tracking-wide">NOV<span class="text-amber-500">ACCÈS</span></span>
         </div>
@@ -50,7 +50,7 @@
             @* En-tête de marque compact (mobile uniquement) *@
             <div class="mb-8 flex items-center gap-3 lg:hidden">
                 <span class="grid h-11 w-11 place-items-center rounded-xl bg-brand-700 text-amber-500 shadow-card">
-                    @QrMark("h-6 w-6")
+                    @BrandMark("h-6 w-6")
                 </span>
                 <div>
                     <div class="font-display text-xl font-bold tracking-wide text-brand-700">NOV<span class="text-amber-500">ACCÈS</span></div>
@@ -169,26 +169,16 @@
         return "/hote";
     }
 
-    // Marque QR (logo) et puce de validation, en SVG inline (aucune dépendance).
-    private static RenderFragment QrMark(string cls) => builder =>
+    // Marque de bouclier (logo NovAccès) en SVG inline monochrome (currentColor) :
+    // le contraste navy/ambre vient du conteneur. Aucune dépendance.
+    private static RenderFragment BrandMark(string cls) => builder =>
     {
-        // Glyphe QR équilibré : 3 repères d'angle (contour + centre plein) et
-        // un bloc de données en bas-droite, centré symétriquement dans 0..24.
         builder.AddMarkupContent(0, $@"<svg viewBox='0 0 24 24' class='{cls}' xmlns='http://www.w3.org/2000/svg'>
-            <g fill='none' stroke='currentColor' stroke-width='2'>
-                <rect x='3'  y='3'  width='6' height='6' rx='1.5'/>
-                <rect x='15' y='3'  width='6' height='6' rx='1.5'/>
-                <rect x='3'  y='15' width='6' height='6' rx='1.5'/>
-            </g>
-            <g fill='currentColor'>
-                <rect x='5'  y='5'  width='2' height='2' rx='.5'/>
-                <rect x='17' y='5'  width='2' height='2' rx='.5'/>
-                <rect x='5'  y='17' width='2' height='2' rx='.5'/>
-                <rect x='15'   y='15'   width='2.4' height='2.4' rx='.5'/>
-                <rect x='18.6' y='15'   width='2.4' height='2.4' rx='.5'/>
-                <rect x='15'   y='18.6' width='2.4' height='2.4' rx='.5'/>
-                <rect x='18.6' y='18.6' width='2.4' height='2.4' rx='.5'/>
-            </g></svg>");
+            <path d='M12 2.2 L20 5.2 V11 C20 16 16.4 19.5 12 21 C7.6 19.5 4 16 4 11 V5.2 Z'
+                  fill='none' stroke='currentColor' stroke-width='1.8' stroke-linejoin='round'/>
+            <path d='M8.4 12 L11 14.6 L15.6 9'
+                  fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/>
+        </svg>");
     };
 
     private static RenderFragment Check() => builder =>

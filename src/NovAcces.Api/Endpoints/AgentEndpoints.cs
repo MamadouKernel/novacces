@@ -68,35 +68,58 @@ public static class AgentEndpoints
             foreach (var scan in request.Scans)
             {
                 var visit = await visits.GetByTokenAsync(scan.VisitToken, ct);
+                var visitorName = visit?.VisitorName ?? "QR inconnu";
+                var direction = Enum.TryParse<CheckpointDirection>(scan.Direction, true, out var d)
+                    ? d : CheckpointDirection.Entry;
 
                 // Conflit : un accès accordé hors ligne pour un QR entre-temps
                 // révoqué (ou inconnu) = événement de sécurité à remonter.
                 var isConflict = scan.WasGranted && (visit is null || visit.Status == VisitStatus.Revoked);
-                if (!isConflict)
-                    continue;
 
-                var visitorName = visit?.VisitorName ?? "QR inconnu";
-                var reason = visit is null
-                    ? "QR inconnu confronté à la resynchronisation"
-                    : "Accès accordé hors ligne à un QR révoqué pendant la coupure";
+                // §6.2 / REQ-F-07 : CHAQUE scan hors-ligne est journalisé au registre
+                // central, marqué mode dégradé — accordé, refusé, ou conflit —, et
+                // pas seulement les conflits.
+                ScanOutcome outcome;
+                string detail;
+                if (isConflict)
+                {
+                    var reason = visit is null
+                        ? "QR inconnu confronté à la resynchronisation"
+                        : "Accès accordé hors ligne à un QR révoqué pendant la coupure";
+                    outcome = ScanOutcome.Denied(ScanDenialReason.Revoked, isSecurityEvent: true);
+                    detail = $"Conflit de resynchronisation : {reason}";
+                    conflicts.Add(new ResyncConflictDto(scan.VisitToken, visitorName, reason, scan.OccurredAt));
+                }
+                else if (scan.WasGranted)
+                {
+                    outcome = direction == CheckpointDirection.Exit
+                        ? ScanOutcome.CheckedOut(0)
+                        : ScanOutcome.Granted();
+                    detail = "Scan hors ligne confronté (accès accordé).";
+                }
+                else
+                {
+                    // Refus hors-ligne (fenêtre, exclusion, expiration, signature…).
+                    // Le motif local est repris tel quel ; « Expired » n'ayant pas de
+                    // ScanDenialReason dédié est assimilé à TooLate (comme le domaine).
+                    var reason = Enum.TryParse<ScanDenialReason>(scan.VerdictCode, out var r)
+                        ? r : ScanDenialReason.TooLate;
+                    outcome = ScanOutcome.Denied(reason, scan.WasSecurityEvent);
+                    detail = $"Scan hors ligne confronté (refus : {scan.VerdictCode ?? "inconnu"}).";
+                }
 
-                var entry = ScanLogEntry.Create(
-                    visit?.Id ?? Guid.Empty, visitorName, agentId,
-                    Enum.TryParse<CheckpointDirection>(scan.Direction, true, out var d) ? d : CheckpointDirection.Entry,
-                    ScanOutcome.Denied(ScanDenialReason.Revoked, isSecurityEvent: true),
-                    degradedMode: true, $"Conflit de resynchronisation : {reason}", clock.UtcNow);
-
-                await logs.AddAsync(entry, ct);
-                conflicts.Add(new ResyncConflictDto(scan.VisitToken, visitorName, reason, scan.OccurredAt));
+                await logs.AddAsync(ScanLogEntry.Create(
+                    visit?.Id ?? Guid.Empty, visitorName, agentId, direction,
+                    outcome, degradedMode: true, detail, clock.UtcNow), ct);
             }
 
-            if (conflicts.Count > 0)
-            {
+            if (request.Scans.Count > 0)
                 await logs.SaveChangesAsync(ct);
-                foreach (var c in conflicts)
-                    await broadcaster.BroadcastAsync(new ScanBroadcastEvent(
-                        Guid.Empty, c.VisitorName, "RESYNC_CONFLICT", false, false, true, agentId, c.OccurredAt), ct);
-            }
+
+            // Les conflits (événements de sécurité) sont diffusés au dashboard sûreté.
+            foreach (var c in conflicts)
+                await broadcaster.BroadcastAsync(new ScanBroadcastEvent(
+                    Guid.Empty, c.VisitorName, "RESYNC_CONFLICT", false, false, true, agentId, c.OccurredAt), ct);
 
             return Results.Ok(new ResyncResultDto(request.Scans.Count, conflicts));
         })

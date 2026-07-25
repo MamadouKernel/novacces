@@ -132,6 +132,41 @@ public class OfflineScanEvaluatorTests
     }
 
     [Fact]
+    public void ExpiredQr_IsRejected_EvenInList_OnBusinessDay()
+    {
+        var fx = new Fixture();
+        var friday = new DateTimeOffset(2026, 7, 24, 10, 0, 0, TimeSpan.Zero); // vendredi (jour ouvré)
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        // Mode 30 jours (ScheduledAt null) : sans contrôle d'expiration hors ligne,
+        // ce QR serait « reconnu » un jour ouvré. Son expiration crypto est dépassée.
+        var list = fx.SignedList(friday, friday.AddHours(4), new OfflineListEntry(visitId, token, null, false));
+        var qr = fx.Server.SignVisitToken(visitId, token, friday.AddMinutes(-1)); // déjà expiré
+
+        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, friday);
+
+        Assert.Equal(OfflineOutcome.Expired, verdict.Outcome);
+        Assert.True(verdict.IsSecurityEvent);
+        Assert.Equal(token, verdict.VisitToken); // token propagé pour journalisation au resync
+    }
+
+    [Fact]
+    public void DeniedOfflineScan_CarriesVisitToken_ForResync()
+    {
+        var fx = new Fixture();
+        var now = DateTimeOffset.UtcNow;
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        // Hors fenêtre (trop tard) : refus, mais le token doit être propagé afin
+        // que le scan refusé soit journalisé à la resynchronisation (REQ-F-07).
+        var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now.AddHours(-1), false));
+        var qr = fx.Server.SignVisitToken(visitId, token, now.AddHours(2));
+
+        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, now);
+
+        Assert.Equal(OfflineOutcome.TooLate, verdict.Outcome);
+        Assert.Equal(token, verdict.VisitToken);
+    }
+
+    [Fact]
     public void ThirtyDayMode_OnWeekend_IsNonBusinessDay()
     {
         var fx = new Fixture();

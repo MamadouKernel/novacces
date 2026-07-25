@@ -76,7 +76,45 @@ public sealed class AgentTests
         Assert.Contains(result.Conflicts, c => c.VisitToken == token);
     }
 
+    [SkippableFact]
+    public async Task Resync_JournalsEveryOfflineScan_NotOnlyConflicts()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var name = $"ResyncJournal-{Guid.NewGuid():N}";
+        var visitId = await CreateVisitAsync(name);
+        var token = await ReadVisitTokenAsync(visitId);
+
+        // QR valide (non révoqué) : un scan accordé + un scan refusé hors ligne.
+        // Aucun conflit attendu, mais LES DEUX doivent être journalisés (§6.2, REQ-F-07).
+        var resync = await AgentClient().PostAsJsonAsync("/api/agent/resync", new ResyncRequestDto(
+            new List<OfflineScanDto>
+            {
+                new(token, "Entry", true, DateTimeOffset.UtcNow, "Recognized", false),
+                new(token, "Entry", false, DateTimeOffset.UtcNow, "TooLate", true),
+            }));
+        var result = await resync.Content.ReadFromJsonAsync<ResyncResultDto>(Json);
+
+        Assert.Equal(2, result!.Processed);
+        Assert.Empty(result.Conflicts);
+
+        var journaled = await CountDegradedScanLogsAsync(visitId);
+        Assert.True(journaled >= 2, $"Attendu >= 2 entrées de journal en mode dégradé, obtenu {journaled}.");
+    }
+
     // ---- Aides ----
+
+    private static async Task<long> CountDegradedScanLogsAsync(Guid visitId)
+    {
+        await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"SELECT count(*) FROM \"site_{NovAccesApiFactory.TestSite}\".scan_logs " +
+            "WHERE \"VisitId\" = @id AND \"RecordedInDegradedMode\" = true";
+        cmd.Parameters.AddWithValue("id", visitId);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
 
     private async Task<Guid> CreateVisitAsync(string visitorName)
     {

@@ -20,12 +20,19 @@ public sealed record OfflineListDto(
     DateTimeOffset ExpiresAt,
     int EntryCount);
 
-/// <summary>Un scan effectué hors ligne, remonté à la resynchronisation.</summary>
+/// <summary>
+/// Un scan effectué hors ligne, remonté à la resynchronisation. Porte le verdict
+/// local (VerdictCode) et le marqueur d'événement de sécurité, pour que le
+/// serveur puisse journaliser fidèlement CHAQUE scan hors-ligne (REQ-F-07, §6.2),
+/// accordé comme refusé, et pas seulement les conflits.
+/// </summary>
 public sealed record OfflineScanDto(
     Guid VisitToken,
     string Direction,              // Entry | Exit
     bool WasGranted,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? VerdictCode = null,    // ex. « Recognized », « TooLate », « Expired »
+    bool WasSecurityEvent = false);
 
 /// <summary>Lot de scans hors-ligne à confronter au registre central.</summary>
 public sealed record ResyncRequestDto(IReadOnlyList<OfflineScanDto> Scans);

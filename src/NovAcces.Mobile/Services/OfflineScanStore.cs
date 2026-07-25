@@ -62,6 +62,8 @@ public sealed class PendingScanRow
     public string Direction { get; set; } = "";
     public bool WasGranted { get; set; }
     public long OccurredAtUnix { get; set; }
+    public string? VerdictCode { get; set; }
+    public bool WasSecurityEvent { get; set; }
 
     public static PendingScanRow From(OfflineScanDto s) => new()
     {
@@ -69,11 +71,15 @@ public sealed class PendingScanRow
         Direction = s.Direction,
         WasGranted = s.WasGranted,
         OccurredAtUnix = s.OccurredAt.ToUnixTimeMilliseconds(),
+        VerdictCode = s.VerdictCode,
+        WasSecurityEvent = s.WasSecurityEvent,
     };
 
     public OfflineScanDto ToDto() => new(
         Guid.Parse(VisitToken),
         Direction,
         WasGranted,
-        DateTimeOffset.FromUnixTimeMilliseconds(OccurredAtUnix));
+        DateTimeOffset.FromUnixTimeMilliseconds(OccurredAtUnix),
+        VerdictCode,
+        WasSecurityEvent);
 }

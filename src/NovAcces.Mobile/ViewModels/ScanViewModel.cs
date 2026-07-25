@@ -47,14 +47,18 @@ public sealed class ScanViewModel
 
     private async Task<ScanVerdict> EvaluateOfflineAsync(string signedQr)
     {
+        var now = DateTimeOffset.UtcNow;
         var list = _session.OfflineList ?? new OfflineListResult(false, true, Array.Empty<OfflineListItem>());
-        var verdict = OfflineScanEvaluator.Evaluate(_session.Verifier, signedQr, list, DateTimeOffset.UtcNow);
+        var verdict = OfflineScanEvaluator.Evaluate(_session.Verifier, signedQr, list, now);
 
-        // Un scan « reconnu » hors ligne est PERSISTÉ pour resynchronisation
-        // (il doit survivre à un redémarrage pendant la coupure).
-        if (verdict.Outcome == OfflineOutcome.Recognized && verdict.VisitToken is { } token)
+        // TOUT scan hors-ligne rattaché à un QR connu est PERSISTÉ pour
+        // resynchronisation — accordé comme refusé (REQ-F-07 : journaliser chaque
+        // tentative ; §6.2 : chaque validation dégradée marquée dans le journal).
+        // Il doit survivre à un redémarrage pendant la coupure.
+        if (verdict.VisitToken is { } token)
             await _session.EnqueueOfflineScanAsync(new OfflineScanDto(
-                token, _session.Direction, true, DateTimeOffset.UtcNow));
+                token, _session.Direction, verdict.Outcome == OfflineOutcome.Recognized, now,
+                verdict.Outcome.ToString(), verdict.IsSecurityEvent));
 
         return ScanVerdict.FromOffline(verdict);
     }
@@ -83,7 +87,7 @@ public sealed record ScanVerdict(string Title, string Subtitle, string ColorHex,
         OfflineOutcome.Recognized => new("QR RECONNU (hors ligne)", "Appliquer entrée/sortie", Green, false),
         OfflineOutcome.InvalidSignature => new("SIGNATURE INVALIDE", "QR altéré", Red, true),
         OfflineOutcome.Excluded => new("ACCÈS REFUSÉ", "Voir poste de garde", Red, true),
-        OfflineOutcome.TooEarly or OfflineOutcome.TooLate or OfflineOutcome.NonBusinessDay
+        OfflineOutcome.TooEarly or OfflineOutcome.TooLate or OfflineOutcome.NonBusinessDay or OfflineOutcome.Expired
             => new("ACCÈS REFUSÉ", v.Message, Red, true),
         OfflineOutcome.NotInLocalList => new("VÉRIFICATION IMPOSSIBLE", "Hors ligne — QR inconnu localement", Orange, false),
         _ => new("VALIDATION IMPOSSIBLE", "Liste locale expirée", Orange, false),

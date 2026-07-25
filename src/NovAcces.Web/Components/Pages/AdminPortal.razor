@@ -21,34 +21,63 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>
 
+    @if (_loaded && _overview.Count == 0 && _users.Count <= 1)
+    {
+        <section class="card" style="margin-bottom:1.2rem;border-left:4px solid #f5a300;">
+            <h2>Bienvenue — démarrage en 2 étapes</h2>
+            <ol style="margin:0;padding-left:1.2rem;line-height:1.9;color:#3c4854;">
+                <li><strong>Provisionnez un site</strong> (ci-dessous) : tapez le nom du client, l'identifiant technique est généré tout seul.</li>
+                <li><strong>Créez un compte Hôte et un compte Sûreté</strong> pour ce site : ils pourront alors inviter des visiteurs et superviser les accès.</li>
+            </ol>
+        </section>
+    }
+
     <section class="card" style="margin-bottom:1.2rem;">
         <h2>Vue consolidée multi-sites (@_overview.Count)</h2>
-        <table class="visits">
-            <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
-            <tbody>
-                @foreach (var s in _overview)
-                {
-                    <tr><td><strong>@s.SiteId</strong></td><td>@s.OnSite</td><td>@s.ScansToday</td></tr>
-                }
-            </tbody>
-        </table>
+        @if (_overview.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun site provisionné pour l'instant.</p></div>
+        }
+        else
+        {
+            <table class="visits">
+                <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
+                <tbody>
+                    @foreach (var s in _overview)
+                    {
+                        <tr><td><strong>@s.SiteId</strong></td><td>@s.OnSite</td><td>@s.ScansToday</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
     </section>
 
     <div class="cards">
         <section class="card">
             <h2>Créer un compte</h2>
-            <div class="field"><label>Email</label><input type="email" @bind="_newUser.Email" /></div>
-            <div class="field"><label>Nom affiché</label><input @bind="_newUser.DisplayName" /></div>
+            <div class="field"><label>Email</label>
+                <input type="email" @bind="_newUser.Email" placeholder="prenom@site.local" /></div>
+            <div class="field"><label>Nom affiché</label>
+                <input @bind="_newUser.DisplayName" placeholder="ex. K. N'Guessan" /></div>
             <PasswordBox @bind-Value="_newUser.Password" Label="Mot de passe" Autocomplete="new-password" />
+            <p class="hint" style="margin-top:-.6rem">12 caractères minimum.</p>
             <div class="row">
                 <div class="field"><label>Rôle</label>
                     <select @bind="_newUser.Role">
-                        <option value="Hote">Hôte</option>
-                        <option value="Surete">Sûreté</option>
-                        <option value="Admin">Admin (global)</option>
+                        <option value="Hote">Hôte — crée les demandes de visite</option>
+                        <option value="Surete">Sûreté — supervise les accès</option>
+                        <option value="Admin">Admin — global (tous les sites)</option>
                     </select>
                 </div>
-                <div class="field"><label>Site (sauf Admin)</label><input @bind="_newUser.SiteId" placeholder="sicopa" /></div>
+                <div class="field"><label>Site @(_newUser.Role == "Admin" ? "(non requis)" : "(requis)")</label>
+                    <input @bind="_newUser.SiteId" @bind:event="oninput"
+                           placeholder="ex. sicopa" disabled="@(_newUser.Role == "Admin")" />
+                    @if (_newUser.Role != "Admin" && !string.IsNullOrWhiteSpace(_newUser.SiteId)
+                         && SiteSlug.From(_newUser.SiteId) != _newUser.SiteId)
+                    {
+                        <p class="hint">Sera enregistré : <code>@SiteSlug.From(_newUser.SiteId)</code></p>
+                    }
+                </div>
             </div>
             <button class="btn-primary" @onclick="CreateUserAsync" disabled="@_busy">Créer le compte</button>
             @if (_userMsg is not null) { <p class="@(_userOk ? "info" : "error")">@_userMsg</p> }
@@ -57,9 +86,26 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         <section class="card">
             <h2>Provisionner un site</h2>
             <p class="muted">Crée le schéma, le modèle de données et le journal append-only.</p>
-            <div class="field"><label>Identifiant du site</label>
-                <input @bind="_siteId" placeholder="ex. sipra" /></div>
-            <button class="btn-primary" @onclick="ProvisionAsync" disabled="@_busy">Provisionner</button>
+            <div class="field"><label>Nom du site</label>
+                <input @bind="_siteInput" @bind:event="oninput"
+                       placeholder="ex. Côte d'Ivoire Terminal" /></div>
+            @if (!string.IsNullOrWhiteSpace(_siteInput))
+            {
+                <p class="hint" style="margin-top:-.6rem">
+                    Identifiant technique : <code>@SiteSlugValue</code>
+                    <span class="muted"> — minuscules, sans espaces ni accents (a-z, 0-9, _).</span>
+                </p>
+            }
+            else
+            {
+                <p class="hint" style="margin-top:-.6rem">
+                    Tapez le nom du client — l'identifiant technique est généré automatiquement.
+                </p>
+            }
+            <button class="btn-primary" @onclick="ProvisionAsync"
+                    disabled="@(_busy || string.IsNullOrEmpty(SiteSlugValue))">
+                @(string.IsNullOrEmpty(SiteSlugValue) ? "Provisionner" : $"Provisionner « {SiteSlugValue} »")
+            </button>
             @if (_siteMsg is not null) { <p class="@(_siteOk ? "info" : "error")">@_siteMsg</p> }
         </section>
     </div>
@@ -136,7 +182,8 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
     }
 
     private readonly NewUser _newUser = new();
-    private string _siteId = "";
+    private string _siteInput = "";
+    private string SiteSlugValue => SiteSlug.From(_siteInput);
     private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
     private bool _busy;
@@ -233,7 +280,13 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         try
         {
             var siteId = _newUser.Role == NovAccesRoles.Admin ? null
-                : string.IsNullOrWhiteSpace(_newUser.SiteId) ? null : _newUser.SiteId.Trim();
+                : string.IsNullOrWhiteSpace(_newUser.SiteId) ? null : SiteSlug.From(_newUser.SiteId);
+
+            if (_newUser.Role != NovAccesRoles.Admin && string.IsNullOrEmpty(siteId))
+            {
+                _userOk = false; _userMsg = "Renseignez le site (obligatoire sauf pour un Admin).";
+                return;
+            }
 
             var (ok, error) = await Api.RegisterUserAsync(new RegisterUserRequestDto(
                 _newUser.Email.Trim(), _newUser.Password, _newUser.DisplayName.Trim(), _newUser.Role, siteId));
@@ -247,13 +300,20 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
 
     private async Task ProvisionAsync()
     {
+        var slug = SiteSlugValue;
+        if (string.IsNullOrEmpty(slug))
+        {
+            _siteOk = false; _siteMsg = "Saisissez un nom de site.";
+            return;
+        }
+
         _busy = true; _siteMsg = null;
         try
         {
-            var (ok, error) = await Api.ProvisionSiteAsync(_siteId.Trim());
+            var (ok, error) = await Api.ProvisionSiteAsync(slug);
             _siteOk = ok;
-            _siteMsg = ok ? $"Site '{_siteId.Trim()}' provisionné." : error;
-            if (ok) _siteId = "";
+            _siteMsg = ok ? $"Site « {slug} » provisionné." : error;
+            if (ok) _siteInput = "";
         }
         finally { _busy = false; }
     }

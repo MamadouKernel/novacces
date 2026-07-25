@@ -20,6 +20,9 @@
   /* Surlignage des correspondances de recherche (listes intelligentes). */
   mark { @apply rounded bg-amber-100 px-0.5 text-ink; }
 
+  /* Fragments techniques inline (identifiant de site, jetons…). */
+  code { @apply rounded bg-paper px-1 py-0.5 font-mono text-[0.82em] font-medium text-brand-700; }
+
   /* Accessibilité : focus visible ambre, comme la maquette. */
   a:focus-visible, button:focus-visible,
   input:focus-visible, select:focus-visible, textarea:focus-visible {

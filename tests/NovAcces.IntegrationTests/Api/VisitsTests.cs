@@ -117,6 +117,55 @@ public sealed class VisitsTests
         Assert.Equal(90, entry.PlannedDurationMinutes);
     }
 
+    [SkippableFact]
+    public async Task BulkCreate_GeneratesQrPerVisitor_AndReportsFailuresPerItem()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var n1 = $"Grp1-{Guid.NewGuid():N}";
+        var n2 = $"Grp2-{Guid.NewGuid():N}";
+
+        static CreateVisitRequestDto Item(string name) =>
+            new(name, "ACME", "Groupe", "ThirtyDays", null, 60, null, null);
+
+        var req = new BulkCreateVisitsRequestDto(new[]
+        {
+            Item(n1),
+            Item(n2),
+            Item(n1),      // doublon dans le lot
+            Item("   "),   // nom vide
+        });
+
+        var resp = await hote.PostAsJsonAsync("/api/visits/bulk", req);
+        resp.EnsureSuccessStatusCode();
+        var result = await resp.Content.ReadFromJsonAsync<BulkCreateVisitsResponseDto>(Json);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Created);
+        Assert.Equal(2, result.Failed);
+
+        // Un QR signé est bien généré pour chaque visiteur valide.
+        var ok = result.Items.Single(i => i.VisitorName == n1 && i.Success);
+        Assert.False(string.IsNullOrEmpty(ok.SignedQrPayload));
+
+        // Le doublon et le nom vide sont refusés, isolément.
+        Assert.Contains(result.Items, i => i.VisitorName == n1 && !i.Success && i.Error!.Contains("déjà"));
+        Assert.Contains(result.Items, i => !i.Success && i.Error!.Contains("Nom"));
+    }
+
+    [SkippableFact]
+    public async Task BulkCreate_EmptyList_Is400()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var resp = await hote.PostAsJsonAsync("/api/visits/bulk",
+            new BulkCreateVisitsRequestDto(Array.Empty<CreateVisitRequestDto>()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static async Task<Guid> CreateVisitAsync(HttpClient hote, string visitorName)

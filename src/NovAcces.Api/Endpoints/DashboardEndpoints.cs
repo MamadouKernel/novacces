@@ -124,9 +124,19 @@ public static class DashboardEndpoints
         return sb.ToString();
     }
 
-    // Échappement CSV (séparateur ';') : encadre de guillemets si nécessaire.
+    // Échappement CSV (séparateur ';') + neutralisation de l'injection de formule.
     private static string Csv(string value)
     {
+        value ??= "";
+
+        // Anti-injection de formule (Excel / LibreOffice / Google Sheets) : une
+        // cellule commençant par = + - @ (ou tabulation / retour chariot) serait
+        // évaluée comme une formule à l'ouverture — y compris malgré le
+        // guillemetage CSV. On préfixe donc d'une apostrophe (reco. OWASP), ce
+        // qui force le texte brut sans altérer la lisibilité du nom.
+        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+            value = "'" + value;
+
         if (value.Contains(';') || value.Contains('"') || value.Contains('\n'))
             return "\"" + value.Replace("\"", "\"\"") + "\"";
         return value;

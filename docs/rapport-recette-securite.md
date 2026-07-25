@@ -20,7 +20,7 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **75 tests** au vert (43 unitaires + 32 d'intégration),
+- **Tests automatisés** : **78 tests** au vert (43 unitaires + 35 d'intégration),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
@@ -86,7 +86,7 @@ seule la clé publique est destinée à être embarquée dans l'app agent.
 |---|---|
 | A01 Contrôle d'accès défaillant | RBAC par policy, moindre privilège, tenant par claim, révocation avec contrôle de propriété. |
 | A02 Défaillances cryptographiques | ES256 natif ; secrets (clés, mots de passe, connection string) **hors dépôt** (user-secrets / variables d'environnement) ; QR sans donnée personnelle. |
-| A03 Injection | EF Core paramétré ; le seul SQL brut (`search_path`, nom de schéma) est sur identifiant **validé + mis entre guillemets** ; recherche journal paramétrée. |
+| A03 Injection | EF Core paramétré ; le seul SQL brut (`search_path`, nom de schéma) est sur identifiant **validé + mis entre guillemets** ; recherche journal paramétrée ; **export CSV du journal neutralisé contre l'injection de formule** (préfixe apostrophe, reco. OWASP) — test dédié. |
 | A04 Conception non sécurisée | Logique de sûreté centralisée dans le Domain (jamais dupliquée client) ; journal append-only ; sortie jamais bloquée. |
 | A05 Mauvaise configuration | Rate limiting sur endpoints sensibles ; redirection HTTPS ; provisionnement DDL réservé à l'Admin/CLI. |
 | A07 Identification/Authentification | 2FA TOTP, verrouillage, messages d'échec génériques (anti-énumération), comparaison de clés à temps constant. |
@@ -155,6 +155,16 @@ relecture du code et vérification par tests.
   — un utilisateur rattaché à un autre site qui vise `sicopa` ne reçoit aucun
   événement (sans le correctif, ce test échouerait).
 
+### Injection de formule CSV — corrigée (OWASP A03)
+
+- **Constat** : l'export CSV du journal échappait correctement le séparateur et
+  les guillemets, mais pas les **caractères de formule** en tête de cellule
+  (`= + - @`). Un nom de visiteur tel que `=HYPERLINK(...)` aurait pu être
+  exécuté par Excel/LibreOffice/Sheets à l'ouverture, sur le poste de l'agent.
+- **Correctif** : préfixe apostrophe sur toute valeur commençant par un
+  caractère de formule (reco. OWASP), sans altérer la lisibilité du nom.
+  Couvert par `DashboardTests.CsvExport_NeutralizesFormulaInjection`.
+
 ### Durcissement — isolation des tests d'intégration
 
 Les tests d'intégration écrivaient dans la base de **développement** `novacces`
@@ -169,7 +179,7 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-75 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+78 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
 identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
 test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —

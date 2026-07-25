@@ -131,6 +131,26 @@ public sealed class DashboardTests
         Assert.All(results!, r => Assert.Contains(unique, r.VisitorName));
     }
 
+    /// <summary>
+    /// Sécurité (OWASP A03) : un nom de visiteur commençant par « = » ne doit
+    /// pas être exporté comme une formule exécutable dans le CSV du journal —
+    /// il est neutralisé par un préfixe apostrophe.
+    /// </summary>
+    [SkippableFact]
+    public async Task CsvExport_NeutralizesFormulaInjection()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var name = "=CMD" + Guid.NewGuid().ToString("N"); // début de « formule »
+        await CreateVisitAndCheckInAsync(name);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var csv = await (await surete.GetAsync("/api/dashboard/journal.csv")).Content.ReadAsStringAsync();
+
+        Assert.Contains("'" + name, csv);       // neutralisé (préfixe apostrophe)
+        Assert.DoesNotContain(";" + name, csv);  // jamais laissé brut en tête de cellule
+    }
+
     // ---- Aides ----
 
     private async Task CreateVisitAndCheckInAsync(string visitorName)

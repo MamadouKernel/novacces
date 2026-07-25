@@ -279,6 +279,23 @@
   .result-line.ok { @apply border-l-ok bg-okbg/60; }
   .result-line.ko { @apply border-l-no bg-nobg/60; }
 
+  /* ---- Notifications (toasts) ---- */
+  .toasts {
+    @apply pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2;
+  }
+  .toast {
+    @apply pointer-events-auto flex cursor-pointer items-start gap-2.5 rounded-md border-l-4
+           border-amber-500 bg-brand-700 px-4 py-3 text-sm text-white shadow-pop animate-fade-in-up;
+  }
+  .toast b { @apply block font-semibold; }
+  .toast .toast-ico { @apply mt-0.5 shrink-0 text-amber-400; }
+  .toast.ok  { @apply border-l-ok; }
+  .toast.ok  .toast-ico { @apply text-emerald-300; }
+  .toast.err { @apply border-l-no; }
+  .toast.err .toast-ico { @apply text-rose-300; }
+  .toast.sec { @apply border-l-no bg-no; }
+  .toast.sec .toast-ico { @apply text-white; }
+
   /* ---- Œil du champ mot de passe ---- */
   .pwd-eye {
     @apply absolute inset-y-0 right-0 flex items-center pr-3 text-muted

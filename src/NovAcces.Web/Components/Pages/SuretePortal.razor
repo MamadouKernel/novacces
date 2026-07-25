@@ -6,6 +6,7 @@
 @inject IConfiguration Config
 @inject IWebHostEnvironment Env
 @inject IJSRuntime JS
+@inject ToastService Toasts
 
 <PageTitle>NovAcces — Dashboard sûreté</PageTitle>
 
@@ -24,6 +25,7 @@ else if (CanViewDashboard)
                 <span class="dot @(_connected ? "dot-on" : "dot-off")"></span>
                 @(_connected ? "Temps réel connecté" : "Hors ligne")
             </p>
+            <p class="hint">Supervision en direct des postes : chaque scan apparaît dans le flux. Filtrez par type, surveillez les présents et les dépassements. Recherchez dans le journal, exportez-le en CSV.</p>
             @if (Auth.IsInRole(NovAccesRoles.Hote))
             {
                 <div class="nav-links"><a href="/hote">→ Portail hôte</a></div>
@@ -298,9 +300,11 @@ else if (CanViewDashboard)
         {
             if (await Api.AddExclusionAsync(_exclName.Trim(), _exclReason.Trim()))
             {
+                Toasts.Success($"« {_exclName.Trim()} » ajouté à la liste d'exclusion.");
                 _exclName = _exclReason = "";
                 await RefreshExclusionsAsync();
             }
+            else { Toasts.Error("Ajout à l'exclusion refusé."); }
         }
         finally { _exclBusy = false; }
     }
@@ -312,6 +316,7 @@ else if (CanViewDashboard)
         try
         {
             await Api.RemoveExclusionAsync(id);
+            Toasts.Info("Personne retirée de la liste d'exclusion.");
             await RefreshExclusionsAsync();
         }
         finally { _exclBusy = false; }

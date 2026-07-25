@@ -3,6 +3,7 @@
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject ToastService Toasts
 
 <PageTitle>NovAcces — Portail hôte</PageTitle>
 
@@ -17,6 +18,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         <div>
             <h1>Nouvelle demande de visite</h1>
             <p class="muted">Site : <strong>@(Auth.SiteId ?? "—")</strong> · Connecté : @Auth.DisplayName</p>
+            <p class="hint">Renseignez le visiteur puis générez son QR : il le reçoit automatiquement par WhatsApp (repli email). Pour plusieurs personnes, utilisez <strong>Inviter un groupe</strong>.</p>
             @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
             {
                 <div class="nav-links"><a href="/surete">→ Dashboard sûreté</a></div>
@@ -151,7 +153,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                 <td>
                                     @if (v.Status == "Valid")
                                     {
-                                        <button class="btn-danger" @onclick="() => RevokeAsync(v.VisitId)" disabled="@_revoking">Révoquer</button>
+                                        <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
                                     }
                                     else
                                     {
@@ -171,16 +173,47 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     {
         <GroupInvite OnClose="() => _showGroup = false" OnCompleted="OnGroupCompleted" />
     }
+
+    @if (_pendingRevoke is not null)
+    {
+        <div class="overlay" @onclick="() => _pendingRevoke = null">
+            <div class="modal" style="max-width:26rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div><h2>Révoquer le QR ?</h2></div>
+                </div>
+                <div class="modal-b">
+                    <p>Le QR de <strong>@_pendingRevoke.VisitorName</strong> sera invalidé immédiatement à l'entrée.</p>
+                    <p class="hint">Une sortie éventuelle reste toujours possible — on ne bloque jamais physiquement une personne déjà sur site.</p>
+                </div>
+                <div class="modal-f">
+                    <button class="btn-ghost" @onclick="() => _pendingRevoke = null">Annuler</button>
+                    <button class="btn-danger" style="max-width:180px" @onclick="ConfirmRevokeAsync" disabled="@_revoking">
+                        @(_revoking ? "Révocation…" : "Oui, révoquer")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
 @code {
     private bool _showGroup;
+    private HostVisitDto? _pendingRevoke;
 
     private async Task OnGroupCompleted()
     {
         await RefreshMyVisitsAsync();
         StateHasChanged();
+    }
+
+    private async Task ConfirmRevokeAsync()
+    {
+        if (_pendingRevoke is null) return;
+        var target = _pendingRevoke;
+        await RevokeAsync(target.VisitId);
+        _pendingRevoke = null;
+        Toasts.Success($"QR de « {target.VisitorName} » révoqué.");
     }
 
     private bool _loaded;
@@ -364,6 +397,14 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         if (string.IsNullOrWhiteSpace(_form.VisitorName) || string.IsNullOrWhiteSpace(_form.VisitorCompany))
         {
             _error = "Nom du visiteur et société sont requis.";
+            Toasts.Error("Nom du visiteur et société sont requis.");
+            return;
+        }
+
+        if (_form.Mode == "Unique" && _scheduledAt == default)
+        {
+            _error = "Indiquez la date et l'heure du rendez-vous.";
+            Toasts.Error("Indiquez la date et l'heure du rendez-vous.");
             return;
         }
 
@@ -382,10 +423,12 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
 
             _result = await Api.CreateVisitAsync(request);
             await RefreshMyVisitsAsync();
+            Toasts.Success($"QR généré pour « {_form.VisitorName.Trim()} » — envoyé au visiteur.");
         }
         catch
         {
             _error = "La génération a échoué (session expirée ou service indisponible).";
+            Toasts.Error("La génération a échoué (session ou service indisponible).");
         }
         finally { _busy = false; }
     }

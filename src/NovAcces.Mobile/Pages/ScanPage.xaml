@@ -4,7 +4,7 @@
              xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
              x:Class="NovAcces.Mobile.Pages.ScanPage"
              Title="NovAcces — Poste de contrôle"
-             BackgroundColor="Black">
+             BackgroundColor="{StaticResource BrandNavyDeep}">
 
     <ContentPage.ToolbarItems>
         <ToolbarItem Text="Attendus" Clicked="OnOpenExpected" />
@@ -15,17 +15,38 @@
         <zxing:CameraBarcodeReaderView x:Name="Camera"
                                        BarcodesDetected="OnBarcodesDetected" />
 
-        <!-- Bandeau supérieur : sens du poste (toujours visible) + connectivité -->
-        <Grid VerticalOptions="Start" Padding="16,40,16,16" ColumnDefinitions="*,Auto">
+        <!-- Viseur de scan (centré, purement visuel) -->
+        <Border InputTransparent="True" WidthRequest="240" HeightRequest="240"
+                HorizontalOptions="Center" VerticalOptions="Center"
+                BackgroundColor="Transparent" Stroke="{StaticResource BrandAmber}" StrokeThickness="2">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="18" />
+            </Border.StrokeShape>
+        </Border>
+
+        <!-- Bandeau supérieur : connectivité + son + sens du poste -->
+        <Grid VerticalOptions="Start" Padding="16,40,16,16" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
             <Label x:Name="ConnectivityLabel" Text="● en ligne"
                    TextColor="White" FontSize="14" VerticalOptions="Center" />
-            <Button x:Name="DirectionButton" Grid.Column="1"
-                    Text="Poste : ENTRÉE" Clicked="OnToggleDirection"
-                    BackgroundColor="#1B6EC2" TextColor="White" CornerRadius="8" />
+            <Button x:Name="SoundButton" Grid.Column="1" Text="🔊"
+                    Clicked="OnToggleSound" BackgroundColor="{StaticResource BrandSlate}"
+                    TextColor="White" CornerRadius="8" Padding="10,0" WidthRequest="46" />
+            <Button x:Name="DirectionButton" Grid.Column="2"
+                    Text="Poste : entrée" Clicked="OnToggleDirection"
+                    BackgroundColor="{StaticResource Tertiary}" TextColor="White" CornerRadius="8" />
+        </Grid>
+
+        <!-- Pied : poste + compteur de scans du jour -->
+        <Grid VerticalOptions="End" Padding="16,12,16,20" ColumnDefinitions="*,Auto"
+              BackgroundColor="#B3101820">
+            <Label Text="Poste de contrôle" TextColor="{StaticResource BrandMuted}"
+                   FontSize="12" VerticalOptions="Center" />
+            <Label x:Name="CountLabel" Grid.Column="1" Text="0 scan aujourd'hui"
+                   TextColor="{StaticResource BrandMuted}" FontSize="12" VerticalOptions="Center" />
         </Grid>
 
         <!-- Overlay de verdict plein écran (masqué au repos) -->
-        <Grid x:Name="VerdictOverlay" IsVisible="False" BackgroundColor="#1E7E45">
+        <Grid x:Name="VerdictOverlay" IsVisible="False" BackgroundColor="{StaticResource VerdictGreen}">
             <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="12" Padding="24">
                 <Label x:Name="VerdictTitle" Text="" TextColor="White"
                        FontSize="34" FontAttributes="Bold" HorizontalTextAlignment="Center" />

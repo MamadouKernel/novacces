@@ -15,6 +15,8 @@ public partial class ScanPage : ContentPage
     private readonly IServiceProvider _services;
     private bool _processing;
     private bool _resyncing;
+    private bool _soundOn = true;
+    private int _scanCount;
 
     public ScanPage(ScanViewModel vm, AgentSession session, IConnectivity connectivity, IServiceProvider services)
     {
@@ -100,16 +102,23 @@ public partial class ScanPage : ContentPage
         try
         {
             var verdict = await _vm.EvaluateAsync(value);
-            await MainThread.InvokeOnMainThreadAsync(() => ShowVerdict(verdict));
+            _scanCount++;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                ShowVerdict(verdict);
+                CountLabel.Text = _scanCount == 1 ? "1 scan aujourd'hui" : $"{_scanCount} scans aujourd'hui";
+            });
+
             // Retour non-visuel : l'agent ne doit pas dépendre du visuel seul.
-            // Vibration + énoncé vocal du verdict (synthèse vocale intégrée MAUI).
+            // Vibration + énoncé vocal, sauf si le son est coupé (bouton 🔇).
             try { Vibration.Default.Vibrate(TimeSpan.FromMilliseconds(verdict.IsSecurityEvent ? 600 : 200)); } catch { }
-            try { _ = TextToSpeech.Default.SpeakAsync(verdict.Title); } catch { }
+            if (_soundOn)
+                try { _ = TextToSpeech.Default.SpeakAsync(verdict.Title); } catch { }
         }
         catch
         {
             await MainThread.InvokeOnMainThreadAsync(() =>
-                ShowVerdict(new ScanVerdict("ERREUR", "Réessayer", "#E67E22", false)));
+                ShowVerdict(new ScanVerdict("Erreur", "Réessayer", "#E0932A", false)));
         }
     }
 
@@ -130,7 +139,14 @@ public partial class ScanPage : ContentPage
     private void OnToggleDirection(object? sender, EventArgs e)
     {
         _session.Direction = _session.Direction == "Entry" ? "Exit" : "Entry";
-        DirectionButton.Text = _session.Direction == "Entry" ? "Poste : ENTRÉE" : "Poste : SORTIE";
+        DirectionButton.Text = _session.Direction == "Entry" ? "Poste : entrée" : "Poste : sortie";
+    }
+
+    // Coupe/rétablit l'énoncé vocal du verdict (la vibration reste toujours active).
+    private void OnToggleSound(object? sender, EventArgs e)
+    {
+        _soundOn = !_soundOn;
+        SoundButton.Text = _soundOn ? "🔊" : "🔇";
     }
 
     // Ouvre l'écran « attendus du jour » + resynchronisation (résolu par DI).

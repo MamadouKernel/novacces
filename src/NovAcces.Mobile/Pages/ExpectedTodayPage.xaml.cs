@@ -94,10 +94,10 @@ public sealed class ExpectedRow
         Window = FormatWindow(d.WindowStart, d.WindowEnd),
         StatusColor = d.Status switch
         {
-            "sur site" => Color.FromArgb("#26C266"),
-            "sorti"    => Color.FromArgb("#1B6EC2"),
-            "révoqué"  => Color.FromArgb("#E74C3C"),
-            _          => Color.FromArgb("#F5A300"), // attendu
+            "sur site" => Color.FromArgb("#26C266"), // vert maquette
+            "sorti"    => Color.FromArgb("#1B5E9E"), // bleu maquette
+            "révoqué"  => Color.FromArgb("#C92A2A"), // rouge maquette
+            _          => Color.FromArgb("#F5A300"), // ambre — attendu
         },
     };
 

@@ -76,11 +76,12 @@ public sealed class ScanViewModel
 /// <summary>Verdict affiché plein écran (§11) : couleur + titre + sous-titre.</summary>
 public sealed record ScanVerdict(string Title, string Subtitle, string ColorHex, bool IsSecurityEvent)
 {
-    // Vert = autorisé, Bleu = sortie, Rouge = refus/sécurité.
-    private const string Green = "#1E7E45";
-    private const string Blue = "#1B6EC2";
-    private const string Red = "#C0392B";
-    private const string Orange = "#E67E22";
+    // Couleurs de verdict alignées sur la maquette (maquette_novacces.html) :
+    // vert = autorisé, bleu = sortie, rouge = refus/sécurité, ambre = indéterminé.
+    private const string Green = "#26C266";
+    private const string Blue = "#1B5E9E";
+    private const string Red = "#C92A2A";
+    private const string Orange = "#E0932A";
 
     public static ScanVerdict FromApi(string verdict, bool granted, bool checkOut, bool security, string? name) => verdict switch
     {

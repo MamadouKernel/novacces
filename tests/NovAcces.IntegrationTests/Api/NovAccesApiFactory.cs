@@ -19,8 +19,8 @@ namespace NovAcces.IntegrationTests.Api;
 /// </summary>
 public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
 {
-    public const string ConnectionString =
-        "Host=localhost;Port=5432;Database=novacces;Username=postgres;Password=root";
+    // Base DÉDIÉE aux tests (novacces_test) — jamais la base de dev.
+    public static string ConnectionString => TestDatabase.ConnectionString;
 
     public const string TestApiKey = "integration-test-api-key-0123456789";
     public const string TestSite = "sicopa";
@@ -34,6 +34,9 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
     {
         try
         {
+            // Crée la base de test dédiée si nécessaire (jamais la base de dev).
+            TestDatabase.EnsureCreated();
+
             using var probe = new NpgsqlConnection(ConnectionString);
             probe.Open();
 

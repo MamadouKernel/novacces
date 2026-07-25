@@ -22,20 +22,19 @@ public sealed class PostgresTenantFixture : IDisposable
     public const string TenantA = "italpha";
     public const string TenantB = "itbeta";
 
-    private const string DefaultConnectionString =
-        "Host=localhost;Port=5432;Database=novacces;Username=postgres;Password=root";
-
     public string ConnectionString { get; }
     public bool DatabaseAvailable { get; }
     public string? SkipReason { get; }
 
     public PostgresTenantFixture()
     {
-        ConnectionString =
-            Environment.GetEnvironmentVariable("NOVACCES_TEST_POSTGRES") ?? DefaultConnectionString;
+        // Base DÉDIÉE aux tests (novacces_test) — jamais la base de dev.
+        ConnectionString = TestDatabase.ConnectionString;
 
         try
         {
+            TestDatabase.EnsureCreated();
+
             using (var probe = new NpgsqlConnection(ConnectionString))
                 probe.Open();
 

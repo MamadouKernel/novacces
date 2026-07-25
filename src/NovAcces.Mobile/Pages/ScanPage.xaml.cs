@@ -24,10 +24,20 @@ public partial class ScanPage : ContentPage
         };
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
+
+        // Permission caméra (runtime) : sans elle, aucun scan possible.
+        var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
+        if (status != PermissionStatus.Granted)
+            status = await Permissions.RequestAsync<Permissions.Camera>();
+        Camera.IsDetecting = status == PermissionStatus.Granted;
+
         UpdateConnectivityLabel();
+
+        // Précharge la liste hors-ligne signée pour préparer une éventuelle coupure.
+        try { await _session.RefreshOfflineListAsync(); } catch { /* best-effort */ }
     }
 
     private async void OnBarcodesDetected(object? sender, BarcodeDetectionEventArgs e)

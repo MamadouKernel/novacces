@@ -1,11 +1,40 @@
-# NovAcces.Mobile (.NET MAUI — Android) — plan de construction
+# NovAcces.Mobile (.NET MAUI — Android/Windows)
 
 L'application agent de contrôle d'accès : scan caméra, verdict plein écran,
 mode dégradé, poste directionnel entrée/sortie, liste des attendus du jour.
 
-> **À construire sur une machine avec le workload MAUI installé et un terminal
-> Android de test.** Le scaffolding + build MAUI et le test caméra ne sont pas
-> réalisables dans l'environnement CI/headless où le reste a été développé.
+## ✅ État : projet scaffoldé et intégré (à compiler dans Visual Studio)
+
+Le projet est désormais **complet et prêt à compiler** :
+`NovAcces.Mobile.csproj` (net10 android + windows), `App.xaml(.cs)` (ouvre
+directement `ScanPage` via l'injection), `Platforms/`, `Resources/`, permission
+caméra Android, câblage DI (`MauiProgram.cs`), et référence à `NovAcces.Shared`.
+
+### Compiler / lancer (dans Visual Studio)
+1. **Ouvrir dans Visual Studio 2022** (workloads MAUI installés) :
+   clic droit sur la solution → *Ajouter → Projet existant* →
+   `src/NovAcces.Mobile/NovAcces.Mobile.csproj`.
+   > Le projet n'est **volontairement pas** dans `NovAcces.sln` : le SDK en
+   > ligne de commande (bande 10.0.200) ne voit pas les workloads MAUI
+   > installés par VS (bande 10.0.100), ce qui casserait `dotnet build` du
+   > reste de la solution. **Visual Studio, lui, compile le projet sans
+   > problème.** (Si tu veux l'ajouter au `.sln` définitivement, fais-le
+   > depuis VS et compile via VS, pas via `dotnet build` en CLI.)
+2. Renseigner `AgentConfig` dans `MauiProgram.cs` (URL API, clé API du
+   terminal, clé PUBLIQUE ES256) — à externaliser en stockage sécurisé à
+   l'enrôlement.
+3. Sélectionner une cible **Android** (terminal ou émulateur) et lancer.
+
+### Reste à finir (TODO)
+- Persister `AgentSession.PendingOfflineScans` en **SQLite** (`sqlite-net-pcl`) :
+  actuellement en mémoire ; doit survivre à un redémarrage pendant une coupure.
+- Écran « **attendus du jour** » (consomme `GetExpectedTodayAsync`) + resync à
+  la reconnexion (afficher les conflits).
+- Signal **sonore** au verdict (la vibration est déjà câblée).
+
+---
+
+## Historique / référence (conception)
 
 ## Ce qui est DÉJÀ prêt et testé côté serveur/partagé (à consommer)
 

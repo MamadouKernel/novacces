@@ -1,0 +1,16 @@
+@* Pied de page discret (marque + agrément), sur les pages authentifiées. *@
+@implements IDisposable
+@inject AuthState Auth
+
+@if (Auth.Initialized && Auth.IsAuthenticated)
+{
+    <footer class="app-footer">
+        NovAccès v1.0 · Opéré par Sigasécurité · Agrément n° 344 MI · © @DateTime.Now.Year
+    </footer>
+}
+
+@code {
+    protected override void OnInitialized() => Auth.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Auth.Changed -= OnChanged;
+}

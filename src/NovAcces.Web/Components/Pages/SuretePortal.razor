@@ -244,7 +244,7 @@ else if (CanViewDashboard)
                 <ul class="onsite">
                     @foreach (var v in OnSiteRanked)
                     {
-                        <li>
+                        <li class="flex flex-wrap items-center gap-x-1.5">
                             <strong>@v.VisitorName</strong>
                             <span class="muted"> — @v.VisitorCompany</span>
                             @if (v.CheckedInAt is not null)
@@ -257,6 +257,8 @@ else if (CanViewDashboard)
                                     ⏱ dépassement +@v.OverstayMinutes min@(v.OverstayLevel > 0 ? $" (niv. {v.OverstayLevel})" : "")
                                 </span>
                             }
+                            <button class="btn-ghost" style="margin-left:auto;padding:.15rem .5rem;font-size:.75rem"
+                                    @onclick="() => _historyVisitId = v.VisitId">Historique</button>
                         </li>
                     }
                 </ul>
@@ -295,6 +297,11 @@ else if (CanViewDashboard)
             }
         </section>
     }
+
+    @if (_historyVisitId is { } hid)
+    {
+        <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
+    }
 </div>
 }
 
@@ -312,6 +319,8 @@ else if (CanViewDashboard)
     private HubConnection? _hub;
     private bool _connected;
     private bool _loaded;
+
+    private Guid? _historyVisitId;
 
     // Mode « salle de supervision » (control-room plein écran) + horloge.
     private bool _wallMode;

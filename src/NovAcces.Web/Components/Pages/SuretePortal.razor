@@ -31,7 +31,81 @@ else if (CanViewDashboard)
                 <div class="nav-links"><a href="/hote">→ Portail hôte</a></div>
             }
         </div>
+        <button class="btn-primary" style="align-self:start;max-width:230px" @onclick="ToggleWall">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Mode supervision
+        </button>
     </header>
+
+    @if (_wallMode)
+    {
+        <div class="wall">
+            <div class="wall-top">
+                <span class="wall-brand">NOV<span>ACCÈS</span></span>
+                <span class="wall-title">Salle de supervision — @(Auth.SiteId ?? "—")</span>
+                <span class="wall-status"><span class="dot @(_connected ? "dot-on" : "dot-off")"></span> @(_connected ? "temps réel" : "hors ligne")</span>
+                <span class="wall-clock">@_clock.ToString("HH:mm:ss")</span>
+                <button class="wall-exit" @onclick="ToggleWall">✕ Quitter</button>
+            </div>
+
+            @if (_summary is not null)
+            {
+                <div class="wall-kpis">
+                    <div class="wk"><span class="wk-n">@_summary.ScansToday</span><span class="wk-l">Scans</span></div>
+                    <div class="wk"><span class="wk-n">@_summary.EntriesGranted</span><span class="wk-l">Entrées</span></div>
+                    <div class="wk"><span class="wk-n">@_summary.Exits</span><span class="wk-l">Sorties</span></div>
+                    <div class="wk warn"><span class="wk-n">@_summary.Denied</span><span class="wk-l">Refus</span></div>
+                    <div class="wk alert"><span class="wk-n">@_summary.SecurityEvents</span><span class="wk-l">Sécurité</span></div>
+                    <div class="wk in"><span class="wk-n">@_summary.OnSite</span><span class="wk-l">Présents</span></div>
+                </div>
+            }
+
+            <div class="wall-body">
+                <div class="wall-panel">
+                    <h3>Flux temps réel</h3>
+                    <ul class="wall-feed">
+                        @foreach (var e in _feed.Take(12))
+                        {
+                            <li class="feed-item @VerdictClass(e)">
+                                <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                                <span class="feed-name">@e.VisitorName</span>
+                                <span class="feed-verdict">@Humanize(e)</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                <div class="wall-panel">
+                    @if (_summary?.HourlyScans is { Count: 24 } hrs && hrs.Sum() > 0)
+                    {
+                        var maxH = hrs.Max();
+                        var nowH = DateTime.Now.Hour;
+                        <h3>Affluence par heure</h3>
+                        <div class="hchart" style="height:7rem;margin-bottom:1.2rem">
+                            @for (var h = 0; h < 24; h++)
+                            {
+                                var v = hrs[h];
+                                <div class="hbar @(v == maxH && v > 0 ? "peak" : "") @(h == nowH ? "now" : "")"
+                                     style="height:@(maxH > 0 ? Math.Max(2, (int)Math.Round(v * 100.0 / maxH)) : 0)%"></div>
+                            }
+                        </div>
+                    }
+                    <h3>Présents (@_onSite.Count)</h3>
+                    <ul class="wall-onsite">
+                        @foreach (var v in OnSiteRanked.Take(8))
+                        {
+                            <li>
+                                <strong>@v.VisitorName</strong>
+                                @if (v.OverstayMinutes > 0)
+                                {
+                                    <span class="badge @(v.OverstayLevel >= 3 ? "badge-revoked" : "badge-pending")">+@v.OverstayMinutes min</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_summary is not null)
     {
@@ -238,6 +312,30 @@ else if (CanViewDashboard)
     private HubConnection? _hub;
     private bool _connected;
     private bool _loaded;
+
+    // Mode « salle de supervision » (control-room plein écran) + horloge.
+    private bool _wallMode;
+    private DateTime _clock = DateTime.Now;
+    private System.Threading.Timer? _clockTimer;
+
+    private void ToggleWall()
+    {
+        _wallMode = !_wallMode;
+        if (_wallMode)
+        {
+            _clock = DateTime.Now;
+            _clockTimer = new System.Threading.Timer(_ =>
+            {
+                _clock = DateTime.Now;
+                InvokeAsync(StateHasChanged);
+            }, null, 1000, 1000);
+        }
+        else
+        {
+            _clockTimer?.Dispose();
+            _clockTimer = null;
+        }
+    }
 
     // ── Listes intelligentes : filtre du flux + tri des présents ──
     private string _feedFilter = "all";
@@ -463,6 +561,7 @@ else if (CanViewDashboard)
     public async ValueTask DisposeAsync()
     {
         Auth.Changed -= OnAuthChanged;
+        _clockTimer?.Dispose();
         if (_hub is not null)
             await _hub.DisposeAsync();
     }

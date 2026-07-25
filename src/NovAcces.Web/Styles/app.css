@@ -319,6 +319,31 @@
   .hbar.now  { @apply outline outline-2 outline-offset-1 outline-brand-700; }
   .hchart-axis { @apply mt-1.5 flex justify-between font-mono text-[0.6rem] text-muted; }
 
+  /* ---- Mode « salle de supervision » (control-room plein écran) ---- */
+  .wall { @apply fixed inset-0 z-[70] flex flex-col gap-4 overflow-auto bg-brand-950 p-5 text-white; }
+  .wall-top { @apply flex flex-wrap items-center gap-x-5 gap-y-2 border-b-2 border-amber-500 pb-3; }
+  .wall-brand { @apply font-display text-2xl font-bold tracking-wide; }
+  .wall-brand span { @apply text-amber-500; }
+  .wall-title { @apply text-lg font-semibold text-white/90; }
+  .wall-status { @apply text-sm text-white/70; }
+  .wall-clock { @apply ml-auto font-mono text-3xl font-bold tabular-nums text-amber-400; }
+  .wall-exit { @apply rounded-md border border-white/30 px-3 py-1.5 text-sm transition hover:bg-white/10; }
+  .wall-kpis { @apply grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6; }
+  .wk { @apply rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-center; }
+  .wk-n { @apply block font-display text-4xl font-bold leading-none lg:text-5xl; }
+  .wk-l { @apply mt-1 block text-xs uppercase tracking-wide text-white/60; }
+  .wk.warn  .wk-n { @apply text-amber-400; }
+  .wk.alert .wk-n { @apply text-rose-400; }
+  .wk.in    .wk-n { @apply text-sky-400; }
+  .wall-body { @apply grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[2fr,1fr]; }
+  .wall-panel { @apply rounded-xl border border-white/10 bg-white/5 p-4; }
+  .wall-panel h3 { @apply mb-3 font-display text-lg font-semibold text-amber-400; }
+  .wall-feed { @apply max-h-[60vh] space-y-2 overflow-y-auto; }
+  .wall-feed .feed-item { @apply border-l-4 border-white/10 bg-white/5 text-white; }
+  .wall-feed .feed-name { @apply text-white; }
+  .wall-feed .feed-time, .wall-feed .feed-verdict { @apply text-white/70; }
+  .wall-onsite { @apply space-y-2 text-sm text-white/90; }
+
   /* ---- Notifications (toasts) ---- */
   .toasts {
     @apply pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2;

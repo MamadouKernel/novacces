@@ -161,6 +161,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                             <th class="sortable" @onclick='() => SortBy("name")'>Visiteur@(Arrow("name"))</th>
                             <th>Société</th>
                             <th>Mode</th>
+                            <th>Rendez-vous</th>
                             <th class="sortable" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</th>
                             <th class="sortable" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</th>
                             <th></th>
@@ -173,6 +174,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                 <td>@Highlight(v.VisitorName)</td>
                                 <td class="muted">@Highlight(v.VisitorCompany)</td>
                                 <td>@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
+                                <td class="muted">@(v.Mode == "Unique" && v.ScheduledAt is { } rdv ? rdv.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
                                 <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
                                 <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
                                 <td>

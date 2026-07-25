@@ -102,8 +102,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                     <div class="badge-head">NOV<span>ACCÈS</span></div>
                     <div class="badge-site">@((Auth.SiteId ?? "").ToUpperInvariant())</div>
                     <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
-                    <div class="badge-name">@_form.VisitorName</div>
-                    <div class="badge-company">@_form.VisitorCompany</div>
+                    <div class="badge-name">@_lastVisitorName</div>
+                    <div class="badge-company">@_lastVisitorCompany</div>
                     <div class="badge-valid">Valide jusqu'au @_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
                     <div class="badge-foot">Présentez ce badge au poste de contrôle · Sigasécurité</div>
                 </div>
@@ -273,6 +273,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private readonly VisitForm _form = new();
     private DateTime _scheduledAt = DateTime.Now;
     private CreateVisitResponseDto? _result;
+    private string _lastVisitorName = "";
+    private string _lastVisitorCompany = "";
     private IReadOnlyList<HostVisitDto> _myVisits = Array.Empty<HostVisitDto>();
     private IReadOnlyList<KnownVisitorDto> _knownVisitors = Array.Empty<KnownVisitorDto>();
     private bool _busy;
@@ -472,8 +474,18 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 string.IsNullOrWhiteSpace(_form.VisitorEmail) ? null : _form.VisitorEmail.Trim());
 
             _result = await Api.CreateVisitAsync(request);
+
+            // Mémorise le visiteur pour le badge, PUIS vide le formulaire.
+            _lastVisitorName = _form.VisitorName.Trim();
+            _lastVisitorCompany = _form.VisitorCompany.Trim();
+
             await RefreshMyVisitsAsync();
-            Toasts.Success($"QR généré pour « {_form.VisitorName.Trim()} » — envoyé au visiteur.");
+            Toasts.Success($"QR généré pour « {_lastVisitorName} » — envoyé au visiteur.");
+
+            _form.VisitorName = _form.VisitorCompany = _form.Motif = _form.VisitorPhone = _form.VisitorEmail = "";
+            _form.Mode = "Unique";
+            _form.PlannedDurationMinutes = 60;
+            _scheduledAt = DateTime.Now;
         }
         catch
         {

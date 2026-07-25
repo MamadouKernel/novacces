@@ -404,14 +404,28 @@
    Le reste de la page (navbar, formulaires, listes) est masqué.
    ============================================================ */
 @media print {
+  @page { size: A4; margin: 10mm; }
+
+  /* overflow:hidden sur la racine évite les pages blanches supplémentaires :
+     les éléments masqués (visibility) gardent leur hauteur, on la clippe donc. */
+  html, body {
+    height: auto !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
   body * { visibility: hidden !important; }
   #visitor-badge, #visitor-badge * { visibility: visible !important; }
+
   #visitor-badge {
     position: absolute;
     left: 50%;
-    top: 24px;
+    top: 0;
     transform: translateX(-50%);
+    width: 72mm;
     border: 2px solid #0e2a3a !important;
+    box-shadow: none !important;
   }
+
   .navbar, .toasts, .app-footer, #blazor-error-ui { display: none !important; }
 }

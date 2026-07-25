@@ -170,6 +170,22 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Modifie le nom affiché de l'utilisateur connecté.</summary>
+    public async Task<(bool Success, string? Error)> UpdateDisplayNameAsync(string displayName)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            "/api/auth/me/display-name", new UpdateDisplayNameRequestDto(displayName));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Change le mot de passe de l'utilisateur connecté.</summary>
+    public async Task<(bool Success, string? Error)> ChangePasswordAsync(string current, string @new)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            "/api/auth/me/password", new ChangePasswordRequestDto(current, @new));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     public async Task<(bool Success, string? Error)> ProvisionSiteAsync(string siteId)
     {
         var response = await CreateClient(true).PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));

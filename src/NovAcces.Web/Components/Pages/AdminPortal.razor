@@ -19,7 +19,6 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
             <h1>Administration</h1>
             <p class="muted">Connecté : @Auth.DisplayName (Admin Sigasécurité)</p>
         </div>
-        <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>
 
     @if (_overview.Count > 0)

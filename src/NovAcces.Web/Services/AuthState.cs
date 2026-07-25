@@ -42,6 +42,13 @@ public sealed class AuthState
         Changed?.Invoke();
     }
 
+    /// <summary>Met à jour le nom affiché après modification du profil.</summary>
+    public void UpdateDisplayName(string displayName)
+    {
+        DisplayName = displayName;
+        Changed?.Invoke();
+    }
+
     /// <summary>Marque la restauration comme effectuée (notifie les abonnés).</summary>
     public void MarkInitialized()
     {

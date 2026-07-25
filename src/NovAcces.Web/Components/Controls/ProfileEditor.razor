@@ -1,0 +1,90 @@
+@* Modale « Modifier mes données » : nom affiché + changement de mot de passe. *@
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject ToastService Toasts
+
+<div class="overlay" @onclick="Close">
+    <div class="modal" style="max-width:34rem" @onclick:stopPropagation="true">
+        <div class="modal-h">
+            <div>
+                <h2>Modifier mes données</h2>
+                <div class="sub">@Auth.DisplayName · @(Auth.SiteId ?? "compte global")</div>
+            </div>
+            <button type="button" @onclick="Close" aria-label="Fermer">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
+
+        <div class="modal-b">
+            <div class="eyebrow">Identité</div>
+            <div class="field"><label>Nom affiché</label>
+                <input @bind="_name" placeholder="ex. K. N'Guessan" /></div>
+            <button class="btn-primary" style="max-width:220px" @onclick="SaveNameAsync" disabled="@_busy">
+                Enregistrer le nom
+            </button>
+
+            <hr class="sep" />
+
+            <div class="eyebrow">Sécurité</div>
+            <PasswordBox @bind-Value="_current" Label="Mot de passe actuel" Autocomplete="current-password" />
+            <PasswordBox @bind-Value="_new" Label="Nouveau mot de passe" Autocomplete="new-password" />
+            <p class="hint" style="margin-top:-.6rem">12 caractères minimum.</p>
+            <button class="btn-primary" style="max-width:220px" @onclick="ChangePasswordAsync" disabled="@_busy">
+                Changer le mot de passe
+            </button>
+
+            @if (_error is not null) { <p class="error">@_error</p> }
+        </div>
+
+        <div class="modal-f">
+            <button class="btn-ghost" @onclick="Close">Fermer</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _name = "";
+    private string _current = "";
+    private string _new = "";
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized() => _name = Auth.DisplayName ?? "";
+
+    private async Task SaveNameAsync()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "Nom affiché requis."; return; }
+
+        _busy = true;
+        try
+        {
+            var (ok, err) = await Api.UpdateDisplayNameAsync(_name.Trim());
+            if (ok) { Auth.UpdateDisplayName(_name.Trim()); Toasts.Success("Nom mis à jour."); }
+            else { _error = err; Toasts.Error(err ?? "Mise à jour refusée."); }
+        }
+        catch { _error = "Service indisponible."; }
+        finally { _busy = false; }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _error = null;
+        if (string.IsNullOrEmpty(_current) || string.IsNullOrEmpty(_new))
+        { _error = "Renseignez le mot de passe actuel et le nouveau."; return; }
+
+        _busy = true;
+        try
+        {
+            var (ok, err) = await Api.ChangePasswordAsync(_current, _new);
+            if (ok) { _current = _new = ""; Toasts.Success("Mot de passe modifié."); }
+            else { _error = err; Toasts.Error(err ?? "Changement refusé."); }
+        }
+        catch { _error = "Service indisponible."; }
+        finally { _busy = false; }
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync();
+}

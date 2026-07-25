@@ -41,6 +41,28 @@
 
   .app-shell { @apply min-h-full; }
 
+  /* ---- Barre de navigation (console : navy + liseré ambre) ---- */
+  .navbar { @apply sticky top-0 z-40 border-b-[3px] border-amber-500 bg-brand-700 text-white; }
+  .navbar-in { @apply mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2.5 sm:px-6; }
+  .navbar-brand { @apply font-display text-xl font-bold tracking-wide text-white no-underline; }
+  .navbar-brand span { @apply text-amber-500; }
+  .navbar-user { @apply relative; }
+  .navbar-userbtn { @apply flex items-center gap-2.5 rounded-lg px-2 py-1 transition hover:bg-white/10; }
+  .avatar { @apply grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-500 text-sm font-bold text-brand-700; }
+  .navbar-uinfo { @apply hidden text-left leading-tight sm:block; }
+  .navbar-uname { @apply block text-sm font-semibold; }
+  .navbar-urole { @apply block text-[0.7rem] text-white/70; }
+  .navbar-chevron { @apply text-white/70; }
+  .navbar-menu {
+    @apply absolute right-0 top-[calc(100%+10px)] z-50 w-60 overflow-hidden rounded-xl
+           border border-line bg-white py-1 text-ink shadow-pop animate-fade-in-up;
+  }
+  .navbar-item { @apply flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition hover:bg-paper; }
+  .navbar-item.danger { @apply text-no hover:bg-nobg; }
+  .navbar-backdrop { @apply fixed inset-0 z-30; }
+
+  .sep { @apply my-6 border-0 border-t border-line; }
+
   /* ---- Barre console (identité maquette : navy + liseré ambre) ---- */
   .console {
     @apply sticky top-0 z-40 border-b-[3px] border-amber-500 bg-brand-700 text-white;

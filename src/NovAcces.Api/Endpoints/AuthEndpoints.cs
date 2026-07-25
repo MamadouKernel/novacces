@@ -98,6 +98,51 @@ public static class AuthEndpoints
         .WithName("RegisterUser")
         .WithSummary("Crée un compte utilisateur (réservé à l'Admin).");
 
+        // --- Profil : modifier son nom affiché (authentifié) ---
+        group.MapPost("/me/display-name", async (
+            UpdateDisplayNameRequestDto request,
+            System.Security.Claims.ClaimsPrincipal principal,
+            UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.GetUserAsync(principal);
+            if (user is null)
+                return Results.Unauthorized();
+
+            var name = request.DisplayName?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return Results.BadRequest(new { error = "Nom affiché requis." });
+
+            user.DisplayName = name;
+            var result = await users.UpdateAsync(user);
+            return result.Succeeded
+                ? Results.Ok(new { user.DisplayName })
+                : Results.BadRequest(new { error = "Mise à jour refusée." });
+        })
+        .RequireAuthorization()
+        .WithName("UpdateDisplayName")
+        .WithSummary("Modifie le nom affiché de l'utilisateur connecté.");
+
+        // --- Profil : changer son mot de passe (authentifié, ancien requis) ---
+        group.MapPost("/me/password", async (
+            ChangePasswordRequestDto request,
+            System.Security.Claims.ClaimsPrincipal principal,
+            UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.GetUserAsync(principal);
+            if (user is null)
+                return Results.Unauthorized();
+
+            var result = await users.ChangePasswordAsync(
+                user, request.CurrentPassword ?? string.Empty, request.NewPassword ?? string.Empty);
+
+            return result.Succeeded
+                ? Results.Ok(new { message = "Mot de passe modifié." })
+                : Results.BadRequest(new { error = "Changement refusé.", details = result.Errors.Select(e => e.Description) });
+        })
+        .RequireAuthorization()
+        .WithName("ChangePassword")
+        .WithSummary("Change le mot de passe de l'utilisateur connecté (ancien requis).");
+
         // --- 2FA : enrôlement (authentifié) — renvoie la clé + l'URI otpauth ---
         group.MapPost("/2fa/setup", async (
             System.Security.Claims.ClaimsPrincipal principal,

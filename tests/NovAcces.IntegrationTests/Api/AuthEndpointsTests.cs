@@ -167,6 +167,41 @@ public sealed class AuthEndpointsTests
         Assert.Equal("no-referrer", resp.Headers.GetValues("Referrer-Policy").Single());
     }
 
+    /// <summary>
+    /// Profil : l'utilisateur modifie son nom affiché et change son mot de passe
+    /// (ancien requis) ; il peut ensuite se reconnecter avec le nouveau.
+    /// </summary>
+    [SkippableFact]
+    public async Task Profile_UpdateNameAndPassword_Work()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+        var client = _factory.CreateClient();
+        var (email, password) = await RegisterAsync(client, "Hote");
+        var login = await LoginAsync(client, email, password);
+        SetBearer(client, login.AccessToken);
+
+        // Nom affiché.
+        var nameResp = await client.PostAsJsonAsync("/api/auth/me/display-name",
+            new UpdateDisplayNameRequestDto("Nom Modifié"));
+        Assert.Equal(HttpStatusCode.OK, nameResp.StatusCode);
+
+        // Mauvais mot de passe actuel -> refusé.
+        var bad = await client.PostAsJsonAsync("/api/auth/me/password",
+            new ChangePasswordRequestDto("mauvais-actuel", "NouveauMdp!2026xyz"));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+
+        // Bon mot de passe actuel -> OK.
+        const string newPassword = "NouveauMdp!2026xyz";
+        var ok = await client.PostAsJsonAsync("/api/auth/me/password",
+            new ChangePasswordRequestDto(password, newPassword));
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        // On peut se reconnecter avec le nouveau mot de passe.
+        var relogin = await _factory.CreateClient().PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(email, newPassword));
+        Assert.Equal(HttpStatusCode.OK, relogin.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(

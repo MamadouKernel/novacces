@@ -62,5 +62,11 @@ public sealed record AdminUserDto(
 /// <summary>Provisionnement d'un site (schéma + modèle + journal append-only).</summary>
 public sealed record ProvisionSiteRequestDto(string SiteId);
 
+// ---- Profil : l'utilisateur modifie ses propres données ----
+
+public sealed record UpdateDisplayNameRequestDto(string DisplayName);
+
+public sealed record ChangePasswordRequestDto(string CurrentPassword, string NewPassword);
+
 /// <summary>Ligne de la vue consolidée multi-sites (§10).</summary>
 public sealed record AdminSiteOverviewDto(string SiteId, int OnSite, int ScansToday);

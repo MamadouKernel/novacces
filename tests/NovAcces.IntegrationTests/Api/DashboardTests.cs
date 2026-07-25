@@ -156,7 +156,10 @@ public sealed class DashboardTests
         return client;
     }
 
-    private async Task<string> GetTokenAsync(string role)
+    private Task<string> GetTokenAsync(string role) =>
+        GetTokenForSiteAsync(role, NovAccesApiFactory.TestSite);
+
+    private async Task<string> GetTokenForSiteAsync(string role, string siteId)
     {
         var admin = _factory.CreateClient();
         var adminLogin = await admin.PostAsJsonAsync("/api/auth/login",
@@ -165,15 +168,58 @@ public sealed class DashboardTests
         var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
         admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
-        var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@sicopa.local";
+        var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@{siteId}.local";
         const string password = "Test!Passw0rd2026";
         var reg = await admin.PostAsJsonAsync("/api/auth/register",
-            new RegisterUserRequestDto(email, password, $"{role} Test", role, NovAccesApiFactory.TestSite));
+            new RegisterUserRequestDto(email, password, $"{role} Test", role, siteId));
         reg.EnsureSuccessStatusCode();
 
         var login = await _factory.CreateClient().PostAsJsonAsync("/api/auth/login",
             new LoginRequestDto(email, password));
         login.EnsureSuccessStatusCode();
         return (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+    }
+
+    /// <summary>
+    /// CLOISONNEMENT TEMPS RÉEL (CLAUDE.md §7.3) : un utilisateur rattaché à un
+    /// AUTRE site ne doit ni s'abonner, ni recevoir le flux de scans de sicopa.
+    /// Non-régression de la faille corrigée le 25/07/2026 (ScanEventsHub).
+    /// </summary>
+    [SkippableFact]
+    public async Task Hub_RejectsCrossTenantSubscription()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Sûreté rattachée à « othersite », qui tente de viser le site sicopa.
+        var foreignToken = await GetTokenForSiteAsync("Surete", "othersite");
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, $"hubs/scan?site={NovAccesApiFactory.TestSite}"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(foreignToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<ScanEventDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<ScanEventDto>("ScanRecorded", e => received.TrySetResult(e));
+
+        try
+        {
+            await hub.StartAsync();
+        }
+        catch
+        {
+            // Connexion refusée d'emblée = comportement attendu.
+            return;
+        }
+
+        // Si la connexion a été acceptée puis coupée par Abort(), elle ne doit
+        // recevoir AUCUN scan du site sicopa.
+        await CreateVisitAndCheckInAsync($"Leak-{Guid.NewGuid():N}");
+        var completed = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(3)));
+
+        Assert.NotSame(received.Task, completed); // aucun événement inter-tenant reçu
     }
 }

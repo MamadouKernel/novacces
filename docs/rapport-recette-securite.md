@@ -20,7 +20,7 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **74 tests** au vert (43 unitaires + 31 d'intégration),
+- **Tests automatisés** : **75 tests** au vert (43 unitaires + 32 d'intégration),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
@@ -150,10 +150,10 @@ relecture du code et vérification par tests.
 - **Correctif** : le hub confronte désormais le paramètre `site` au claim `SiteId`
   du principal — un utilisateur rattaché à un site ne rejoint que le sien ; seul
   l'Admin global (sans claim de site) peut cibler un site précis. Règle identique
-  à celle du middleware HTTP. Correction couverte par la recompilation et la
-  suite (74 tests au vert).
-- **Suivi recommandé** : ajouter un test d'intégration SignalR dédié (client se
-  connectant avec un `site` ≠ son claim → connexion refusée).
+  à celle du middleware HTTP.
+- **Test de non-régression** : `DashboardTests.Hub_RejectsCrossTenantSubscription`
+  — un utilisateur rattaché à un autre site qui vise `sicopa` ne reçoit aucun
+  événement (sans le correctif, ce test échouerait).
 
 ### Durcissement — isolation des tests d'intégration
 
@@ -169,8 +169,9 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-74 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
-identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR) ; les
+75 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
+test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —
 notamment l'audit externe avant déploiement chez un tiers et la recette de l'app
 agent sur terminal — le périmètre API + Web est jugé prêt pour la mise en

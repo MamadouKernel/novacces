@@ -13,19 +13,27 @@ public sealed class AgentSession
 {
     private readonly AgentApiClient _api;
     private readonly OfflineScanStore _store;
-    private readonly OfflineQrVerifier _verifier;
+    private readonly string _publicKeyPem;
+    private OfflineQrVerifier? _verifier;
 
     public AgentSession(AgentApiClient api, AgentConfig config, OfflineScanStore store)
     {
         _api = api;
         _store = store;
-        _verifier = new OfflineQrVerifier(config.PublicKeyPem);
+        _publicKeyPem = config.PublicKeyPem;
     }
 
     /// <summary>Sens du poste. Bascule Entrée ⇄ Sortie toujours visible (§11).</summary>
     public string Direction { get; set; } = "Entry";
 
-    public OfflineQrVerifier Verifier => _verifier;
+    /// <summary>
+    /// Vérificateur ES256 construit paresseusement à la première utilisation
+    /// hors-ligne : un terminal non enrôlé (clé publique absente) ne plante donc
+    /// pas au démarrage, mais échoue explicitement s'il tente une vérification.
+    /// </summary>
+    public OfflineQrVerifier Verifier => _verifier ??= string.IsNullOrWhiteSpace(_publicKeyPem)
+        ? throw new InvalidOperationException("Terminal non enrôlé : clé publique de vérification absente.")
+        : new OfflineQrVerifier(_publicKeyPem);
 
     /// <summary>Dernière liste hors-ligne vérifiée (null si jamais chargée).</summary>
     public OfflineListResult? OfflineList { get; private set; }

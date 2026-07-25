@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Media;
+using Microsoft.Maui.Networking;
 using NovAcces.Mobile.Services;
 using NovAcces.Mobile.ViewModels;
 using ZXing.Net.Maui;
@@ -10,14 +11,17 @@ public partial class ScanPage : ContentPage
 {
     private readonly ScanViewModel _vm;
     private readonly AgentSession _session;
+    private readonly IConnectivity _connectivity;
     private readonly IServiceProvider _services;
     private bool _processing;
+    private bool _resyncing;
 
-    public ScanPage(ScanViewModel vm, AgentSession session, IServiceProvider services)
+    public ScanPage(ScanViewModel vm, AgentSession session, IConnectivity connectivity, IServiceProvider services)
     {
         InitializeComponent();
         _vm = vm;
         _session = session;
+        _connectivity = connectivity;
         _services = services;
 
         Camera.Options = new BarcodeReaderOptions
@@ -38,10 +42,52 @@ public partial class ScanPage : ContentPage
             status = await Permissions.RequestAsync<Permissions.Camera>();
         Camera.IsDetecting = status == PermissionStatus.Granted;
 
+        // Bandeau connectivité dynamique (#5) : suivre les changements réseau en
+        // continu, pas seulement à l'ouverture.
+        _connectivity.ConnectivityChanged += OnConnectivityChanged;
         UpdateConnectivityLabel();
 
         // Précharge la liste hors-ligne signée pour préparer une éventuelle coupure.
         try { await _session.RefreshOfflineListAsync(); } catch { /* best-effort */ }
+    }
+
+    protected override void OnDisappearing()
+    {
+        _connectivity.ConnectivityChanged -= OnConnectivityChanged;
+        base.OnDisappearing();
+    }
+
+    // #4/#5 : à la reconnexion, rafraîchir la liste hors-ligne et resynchroniser
+    // automatiquement les scans en attente (les conflits sont des événements de
+    // sécurité et sont signalés à l'agent).
+    private async void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        await MainThread.InvokeOnMainThreadAsync(UpdateConnectivityLabel);
+        if (_vm.IsOnline)
+            await RefreshAndResyncAsync();
+    }
+
+    private async Task RefreshAndResyncAsync()
+    {
+        if (_resyncing) return;
+        _resyncing = true;
+        try
+        {
+            try { await _session.RefreshOfflineListAsync(); } catch { /* best-effort */ }
+
+            if (await _session.PendingCountAsync() == 0) return;
+
+            var result = await _session.ResyncAsync();
+            if (result is { Conflicts.Count: > 0 })
+            {
+                var lines = string.Join("\n", result.Conflicts.Select(c => $"• {c.VisitorName} — {c.Reason}"));
+                await MainThread.InvokeOnMainThreadAsync(() => DisplayAlert(
+                    "⚠ Conflits à la resynchronisation",
+                    $"{result.Conflicts.Count} conflit(s) détecté(s) :\n{lines}", "OK"));
+            }
+        }
+        catch { /* on retentera au prochain changement de connectivité */ }
+        finally { _resyncing = false; }
     }
 
     private async void OnBarcodesDetected(object? sender, BarcodeDetectionEventArgs e)

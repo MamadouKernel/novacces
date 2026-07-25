@@ -65,7 +65,7 @@ public sealed class AgentSession
     {
         var dto = await _api.GetOfflineListAsync(ct);
         if (dto is not null)
-            OfflineList = _verifier.VerifyDailyList(dto.SignedList, DateTimeOffset.UtcNow);
+            OfflineList = Verifier.VerifyDailyList(dto.SignedList, DateTimeOffset.UtcNow);
     }
 
     /// <summary>

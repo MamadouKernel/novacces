@@ -36,20 +36,24 @@ retour en ligne (§6.4) · exclusion → refus générique (moindre privilège) 
 fenêtre −20/+15 répliquée (Unique) · file SQLite survit au redémarrage ·
 attendus limités à nom + statut + fenêtre (§11).
 
+## Compilation — VALIDÉE le 25/07/2026
+
+Le projet **compile sur les deux cibles** (`net10.0-windows` et `net10.0-android`),
+**0 erreur**, avec Visual Studio 2022 **17.14.37516** (mise à jour). VS 2026
+n'est PAS nécessaire ; l'avertissement `NETSDK1233` a disparu. Les corrections
+MAUI des constats 4/5/6 sont donc compilées. Reste 7 avertissements cosmétiques
+(`DisplayAlert` → `DisplayAlertAsync`, et XA0141 sur la lib caméra ZXing pour
+Android 16 — sans effet sur l'émulateur API 35).
+
 ## Reste à faire
 
-Les 6 constats de l'audit sont traités. Restent des tâches **non vérifiables
-hors Visual Studio / terminal réel** :
-
-1. **Compiler le projet dans Visual Studio** et corriger toute erreur (les
-   corrections MAUI — constats 4/5/6 — ont été écrites sans compilation CLI
-   possible dans cet environnement).
-2. **Écran d'enrôlement** appelant `AgentConfig.SaveAsync` (saisie/QR de la clé
+1. **Écran d'enrôlement** appelant `AgentConfig.SaveAsync` (saisie/QR de la clé
    API, clé publique, URL) — pour rendre le constat 6 pleinement opérationnel.
-3. **Tests sur terminal réel** : scan caméra (autofocus, luminosité), rendu
-   audio (synthèse vocale), et surtout le **mode dégradé bout-en-bout** (cycle
-   directionnel + anti-rejeu local + resync automatique à la reconnexion).
+2. **Déploiement et tests sur émulateur / terminal réel** : scan caméra (webcam
+   de l'AVD `novacces` déjà réglée), rendu audio (synthèse vocale), et surtout le
+   **mode dégradé bout-en-bout** (cycle directionnel + anti-rejeu local + resync
+   automatique à la reconnexion).
 
-Les écarts de **sûreté** du mode dégradé (constats 1, 2, 3) sont corrigés et
-**testés** côté `Shared`/API. Les constats 4, 5, 6 sont du câblage MAUI, écrit
-mais **à compiler/valider en VS**.
+Les 6 constats de l'audit sont corrigés ; ceux de **sûreté** (1, 2, 3) sont en
+plus **couverts par tests** côté `Shared`/API, et le tout **compile** (Windows +
+Android). Ne restent que l'écran d'enrôlement et les tests sur appareil.

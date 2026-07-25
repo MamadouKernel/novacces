@@ -180,12 +180,24 @@ public static class AuthEndpoints
 
     // ---- Aides privées ----
 
+    // Leurre à temps constant contre l'énumération de comptes par canal
+    // temporel : même quand l'email est inconnu, on effectue le travail de
+    // hachage d'un mot de passe pour que le temps de réponse ne trahisse pas
+    // l'existence du compte.
+    private static readonly PasswordHasher<ApplicationUser> DummyHasher = new();
+    private static readonly string DummyHash =
+        DummyHasher.HashPassword(new ApplicationUser(), "leurre-" + Guid.NewGuid().ToString("N"));
+
     private static async Task<ApplicationUser?> AuthenticatePasswordAsync(
         UserManager<ApplicationUser> users, string email, string password)
     {
         var user = await users.FindByEmailAsync(email);
         if (user is null)
+        {
+            // Égalise le temps de réponse avec le cas d'un compte existant.
+            DummyHasher.VerifyHashedPassword(new ApplicationUser(), DummyHash, password ?? string.Empty);
             return null;
+        }
 
         if (await users.IsLockedOutAsync(user))
             return null;

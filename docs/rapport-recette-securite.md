@@ -20,7 +20,8 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **80 tests** au vert (43 unitaires + 37 d'intégration),
+- **Tests automatisés** : **95 tests** au vert (43 unitaires + 37 d'intégration
+  + 15 de composants Blazor via bUnit),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
@@ -124,12 +125,10 @@ par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
    l'imposer à la connexion est un durcissement à activer.
 5. **Fériés hors-ligne** : la vérification de jour ouvré en mode dégradé ne
    connaît pas les fériés (confrontés au retour en ligne lors de la resync).
-6. **Énumération de comptes par canal temporel (basse sévérité)** : à la
-   connexion, un email inconnu répond sans vérifier de hash (rapide), un email
-   connu subit la vérification du mot de passe (lente) — l'écart de temps peut
-   théoriquement distinguer les deux. Le verrouillage après 5 échecs limite
-   l'exploitation. Durcissement possible : vérifier un hash factice à temps
-   constant pour les emails inconnus (comme le fait `SignInManager`).
+6. ~~**Énumération de comptes par canal temporel**~~ — **corrigé (25/07/2026)** :
+   à la connexion, un email inconnu déclenche désormais la vérification d'un
+   hash factice (leurre à temps constant), pour que le temps de réponse ne
+   distingue plus un compte existant d'un compte inexistant (`AuthEndpoints`).
 
 ---
 
@@ -218,7 +217,7 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-80 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+95 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
 identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
 test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —

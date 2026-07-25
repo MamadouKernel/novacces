@@ -37,6 +37,17 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+// En-têtes de sécurité HTTP (OWASP A05) : anti-sniffing MIME, anti-clickjacking
+// (le portail ne doit jamais être embarqué en iframe), pas de fuite de referrer.
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    await next();
+});
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();

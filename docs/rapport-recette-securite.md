@@ -20,7 +20,7 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **79 tests** au vert (43 unitaires + 36 d'intégration),
+- **Tests automatisés** : **80 tests** au vert (43 unitaires + 37 d'intégration),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
@@ -88,7 +88,7 @@ seule la clé publique est destinée à être embarquée dans l'app agent.
 | A02 Défaillances cryptographiques | ES256 natif ; secrets (clés, mots de passe, connection string) **hors dépôt** (user-secrets / variables d'environnement) ; QR sans donnée personnelle. |
 | A03 Injection | EF Core paramétré ; le seul SQL brut (`search_path`, nom de schéma) est sur identifiant **validé + mis entre guillemets** ; recherche journal paramétrée ; **export CSV du journal neutralisé contre l'injection de formule** (préfixe apostrophe, reco. OWASP) — test dédié. |
 | A04 Conception non sécurisée | Logique de sûreté centralisée dans le Domain (jamais dupliquée client) ; journal append-only ; sortie jamais bloquée. |
-| A05 Mauvaise configuration | Rate limiting sur endpoints sensibles ; redirection HTTPS ; provisionnement DDL réservé à l'Admin/CLI. |
+| A05 Mauvaise configuration | Rate limiting sur endpoints sensibles **et sur l'authentification (par IP)** ; **en-têtes de sécurité HTTP** (`X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`) sur API et Web + HSTS en production ; antiforgery (CSRF) côté Web ; redirection HTTPS ; provisionnement DDL réservé à l'Admin/CLI. |
 | A07 Identification/Authentification | 2FA TOTP, verrouillage, messages d'échec génériques (anti-énumération), comparaison de clés à temps constant. |
 | A08 Intégrité logiciel/données | Journal INSERT-only imposé au niveau base (triggers) ; signature vérifiable des QR et listes. |
 | A09 Journalisation | Chaque tentative journalisée ; événements de sécurité distingués ; supervision des dépassements. |
@@ -180,6 +180,18 @@ relecture du code et vérification par tests.
   désactiver d'abord, ce qui exige le mot de passe). Couvert par
   `AuthEndpointsTests.TwoFactor_Setup_WhenAlreadyEnabled_IsRejected`.
 
+### Durcissement HTTP — rate limiting auth + en-têtes de sécurité
+
+- **Rate limiting de l'authentification** : `/api/auth` (login, 2FA) était le
+  seul endpoint sensible non limité. Ajout d'une politique **par IP** (10/min,
+  configurable) — freine le brute-force / password-spraying au-delà du
+  verrouillage par compte.
+- **En-têtes de sécurité HTTP** (OWASP A05), absents jusqu'ici, posés sur
+  toutes les réponses de l'API et du Web : `X-Content-Type-Options: nosniff`
+  (anti-sniffing MIME), `X-Frame-Options: DENY` (anti-clickjacking),
+  `Referrer-Policy: no-referrer` ; HSTS en production. Test dédié
+  `AuthEndpointsTests.SecurityHeaders_ArePresentOnResponses`.
+
 ### Durcissement — isolation des tests d'intégration
 
 Les tests d'intégration écrivaient dans la base de **développement** `novacces`
@@ -194,7 +206,7 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-79 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+80 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
 identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
 test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —

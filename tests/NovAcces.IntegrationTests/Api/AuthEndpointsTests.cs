@@ -151,6 +151,22 @@ public sealed class AuthEndpointsTests
         Assert.Equal(HttpStatusCode.BadRequest, setupAgain.StatusCode);
     }
 
+    /// <summary>
+    /// Durcissement HTTP (OWASP A05) : les en-têtes de sécurité sont posés sur
+    /// toutes les réponses.
+    /// </summary>
+    [SkippableFact]
+    public async Task SecurityHeaders_ArePresentOnResponses()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var resp = await _factory.CreateClient().GetAsync("/health");
+
+        Assert.Equal("nosniff", resp.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("DENY", resp.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Equal("no-referrer", resp.Headers.GetValues("Referrer-Policy").Single());
+    }
+
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(

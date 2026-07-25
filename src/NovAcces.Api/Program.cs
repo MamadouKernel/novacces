@@ -1,3 +1,4 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using NovAcces.Api;
@@ -43,6 +44,22 @@ builder.Services.AddRateLimiter(options =>
         opt.Window = TimeSpan.FromMinutes(1);
         opt.QueueLimit = 0;
     });
+
+    // Politique dédiée à l'authentification, partitionnée PAR IP : limite le
+    // brute-force / password-spraying sur /api/auth (login, 2FA) — au-delà du
+    // verrouillage de compte qui, lui, est par compte. 10 requêtes/min/IP.
+    var authPermit = builder.Configuration.GetValue<int?>("RateLimiting:AuthPermitLimit") ?? 10;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = authPermit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
 var app = builder.Build();
@@ -79,6 +96,22 @@ if (app.Environment.IsDevelopment())
     await app.EnsureIdentityReadyAsync();
 }
 
+// En-têtes de sécurité HTTP (OWASP A05) sur TOUTES les réponses : anti-sniffing
+// MIME, anti-clickjacking, pas de fuite de referrer, pas de politique Flash/PDF.
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    h["X-Permitted-Cross-Domain-Policies"] = "none";
+    await next();
+});
+
+// HSTS en production (force HTTPS côté navigateur/clients). Pas en dev/test.
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+
 // Désactivable en test d'intégration (TestServer tourne en HTTP, la redirection
 // produirait des 307 parasites). Toujours actif en dev/prod.
 if (!app.Configuration.GetValue<bool>("DisableHttpsRedirection"))
@@ -98,7 +131,7 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow }));
 
-app.MapAuthEndpoints();
+app.MapAuthEndpoints().RequireRateLimiting("auth");
 app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapDashboardEndpoints();

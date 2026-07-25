@@ -71,12 +71,16 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
                     </select>
                 </div>
                 <div class="field"><label>Site @(_newUser.Role == "Admin" ? "(non requis)" : "(requis)")</label>
-                    <input @bind="_newUser.SiteId" @bind:event="oninput"
-                           placeholder="ex. sicopa" disabled="@(_newUser.Role == "Admin")" />
-                    @if (_newUser.Role != "Admin" && !string.IsNullOrWhiteSpace(_newUser.SiteId)
-                         && SiteSlug.From(_newUser.SiteId) != _newUser.SiteId)
+                    <select @bind="_newUser.SiteId" disabled="@(_newUser.Role == "Admin")">
+                        <option value="">— choisir un site —</option>
+                        @foreach (var s in _overview)
+                        {
+                            <option value="@s.SiteId">@s.SiteId</option>
+                        }
+                    </select>
+                    @if (_newUser.Role != "Admin" && _overview.Count == 0)
                     {
-                        <p class="hint">Sera enregistré : <code>@SiteSlug.From(_newUser.SiteId)</code></p>
+                        <p class="hint">Aucun site provisionné — créez-en un à droite d'abord.</p>
                     }
                 </div>
             </div>
@@ -320,7 +324,12 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
             var (ok, error) = await Api.ProvisionSiteAsync(slug);
             _siteOk = ok;
             _siteMsg = ok ? $"Site « {slug} » provisionné." : error;
-            if (ok) { Toasts.Success($"Site « {slug} » provisionné."); _siteInput = ""; }
+            if (ok)
+            {
+                Toasts.Success($"Site « {slug} » provisionné.");
+                _siteInput = "";
+                await RefreshUsersAsync(); // recharge la liste des sites (menu déroulant)
+            }
             else { Toasts.Error(error ?? "Provisionnement refusé."); }
         }
         finally { _busy = false; }

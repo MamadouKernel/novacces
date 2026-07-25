@@ -239,15 +239,16 @@
   }
   .overstay-item.v-security { @apply border-l-no bg-nobg; }
 
-  /* ---- Tableaux ---- */
+  /* ---- Tableaux (défilables horizontalement sur petit écran) ---- */
+  .table-wrap { @apply -mx-1 overflow-x-auto px-1 pb-1; }
   .visits { @apply w-full border-collapse text-sm; }
   .visits th {
-    @apply border-b border-line px-3 py-2.5 text-left font-mono text-[0.65rem]
-           font-medium uppercase tracking-[0.1em] text-muted;
+    @apply whitespace-nowrap border-b border-line px-3 py-2.5 text-left font-mono
+           text-[0.65rem] font-medium uppercase tracking-[0.1em] text-muted;
   }
   .visits th.sortable { @apply cursor-pointer select-none hover:text-ink; }
   .visits th .arrow { @apply ml-1 inline-block text-amber-600; }
-  .visits td { @apply border-b border-line px-3 py-2.5 align-middle; }
+  .visits td { @apply whitespace-nowrap border-b border-line px-3 py-2.5 align-middle; }
   .visits tbody tr:hover td { @apply bg-paper/70; }
   .row-security td { @apply bg-nobg/60; }
 

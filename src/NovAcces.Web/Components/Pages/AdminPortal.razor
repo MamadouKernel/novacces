@@ -50,6 +50,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         }
         else
         {
+            <div class="table-wrap">
             <table class="visits">
                 <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
                 <tbody>
@@ -59,6 +60,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
                     }
                 </tbody>
             </table>
+            </div>
         }
     </section>
 
@@ -177,6 +179,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
             }
             else
             {
+                <div class="table-wrap">
                 <table class="visits">
                     <thead><tr><th>Email</th><th>Nom</th><th>Rôles</th><th>Site</th><th>2FA</th></tr></thead>
                     <tbody>
@@ -197,6 +200,7 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
                         }
                     </tbody>
                 </table>
+                </div>
                 <p class="hint">@urows.Count compte(s) affiché(s) sur @_users.Count.</p>
             }
         }

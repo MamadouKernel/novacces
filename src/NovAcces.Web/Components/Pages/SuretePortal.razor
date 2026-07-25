@@ -159,6 +159,7 @@ else if (CanViewDashboard)
     {
         <section class="card" style="margin-bottom:1rem;">
             <h2>Résultats de recherche (@_searchResults.Count)</h2>
+            <div class="table-wrap">
             <table class="visits">
                 <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Détail</th></tr></thead>
                 <tbody>
@@ -168,11 +169,12 @@ else if (CanViewDashboard)
                             <td class="muted">@r.Timestamp.LocalDateTime.ToString("dd/MM HH:mm:ss")</td>
                             <td>@r.VisitorName</td>
                             <td class="muted">@r.AgentId</td>
-                            <td class="muted">@r.Detail</td>
+                            <td class="muted" style="white-space:normal">@r.Detail</td>
                         </tr>
                     }
                 </tbody>
             </table>
+            </div>
         </section>
     }
 
@@ -279,7 +281,8 @@ else if (CanViewDashboard)
 
             @if (_exclusions.Count > 0)
             {
-                <table class="visits" style="margin-top:1rem;">
+                <div class="table-wrap" style="margin-top:1rem;">
+                <table class="visits">
                     <thead><tr><th>Nom</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var e in _exclusions)
@@ -294,6 +297,7 @@ else if (CanViewDashboard)
                         }
                     </tbody>
                 </table>
+                </div>
             }
         </section>
     }

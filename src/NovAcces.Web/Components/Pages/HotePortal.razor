@@ -155,6 +155,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
             else
             {
+                <div class="table-wrap">
                 <table class="visits">
                     <thead>
                         <tr>
@@ -194,6 +195,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                         }
                     </tbody>
                 </table>
+                </div>
                 <p class="hint">@rows.Count demande(s) affichée(s) sur @_myVisits.Count.</p>
             }
         }

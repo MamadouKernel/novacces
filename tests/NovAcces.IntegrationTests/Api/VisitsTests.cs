@@ -166,6 +166,34 @@ public sealed class VisitsTests
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
+    [SkippableFact]
+    public async Task History_ReturnsOrderedLifecycle_AndRespectsPrivilege()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var owner = await LoginNewUserAsync("Hote");
+        var name = $"Hist-{Guid.NewGuid():N}";
+        var visitId = await CreateVisitAsync(owner, name);
+
+        // Le propriétaire voit la chronologie (au moins « créée »), ordonnée.
+        var history = await owner.GetFromJsonAsync<VisitHistoryDto>($"/api/visits/{visitId}/history", Json);
+        Assert.NotNull(history);
+        Assert.Equal(name, history!.VisitorName);
+        Assert.Contains(history.Events, e => e.Kind == "created");
+        var times = history.Events.Select(e => e.At).ToList();
+        Assert.Equal(times.OrderBy(t => t), times);
+
+        // Un autre hôte ne peut pas voir cette demande (moindre privilège) -> 403.
+        var other = await LoginNewUserAsync("Hote");
+        var forbidden = await other.GetAsync($"/api/visits/{visitId}/history");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+
+        // La Sûreté voit la chronologie de n'importe quelle demande -> 200.
+        var surete = await LoginNewUserAsync("Surete");
+        var ok = await surete.GetAsync($"/api/visits/{visitId}/history");
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static async Task<Guid> CreateVisitAsync(HttpClient hote, string visitorName)

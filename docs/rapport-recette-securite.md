@@ -20,7 +20,7 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **96 tests** au vert (43 unitaires + 38 d’intégration
+- **Tests automatisés** : **97 tests** au vert (43 unitaires + 39 d’intégration
   + 15 de composants Blazor via bUnit),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
@@ -217,7 +217,7 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-96 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+97 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
 identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
 test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —

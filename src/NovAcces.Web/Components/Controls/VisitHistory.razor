@@ -1,0 +1,75 @@
+@* Modale « Historique » : chronologie des statuts d'une demande de visite. *@
+@inject NovAccesApiClient Api
+
+<div class="overlay" @onclick="Close">
+    <div class="modal" style="max-width:30rem" @onclick:stopPropagation="true">
+        <div class="modal-h">
+            <div>
+                <h2>Historique de la demande</h2>
+                <div class="sub">@(_history?.VisitorName ?? "…")</div>
+            </div>
+            <button type="button" @onclick="Close" aria-label="Fermer">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
+
+        <div class="modal-b">
+            @if (_loading)
+            {
+                <div class="empty"><p>Chargement…</p></div>
+            }
+            else if (_history is null || _history.Events.Count == 0)
+            {
+                <div class="empty"><p>Historique indisponible.</p></div>
+            }
+            else
+            {
+                <ol class="timeline">
+                    @foreach (var e in _history.Events)
+                    {
+                        <li class="tl-item tl-@e.Kind">
+                            <span class="tl-dot"></span>
+                            <div class="tl-label">@e.Label</div>
+                            <div class="tl-time">@e.At.LocalDateTime.ToString("dddd d MMMM yyyy 'à' HH:mm")</div>
+                            @if (!string.IsNullOrEmpty(e.Detail))
+                            {
+                                <div class="tl-detail">@e.Detail</div>
+                            }
+                        </li>
+                    }
+                </ol>
+                <p class="hint">Statut actuel : <strong>@StatusLabel(_history.Status)</strong></p>
+            }
+        </div>
+
+        <div class="modal-f">
+            <button class="btn-ghost" @onclick="Close">Fermer</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid VisitId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private VisitHistoryDto? _history;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _history = await Api.GetVisitHistoryAsync(VisitId); }
+        catch { /* best-effort */ }
+        _loading = false;
+    }
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Valid" => "Valide",
+        "Revoked" => "Révoquée",
+        "Expired" => "Expirée",
+        "Consumed" => "Utilisée",
+        _ => status
+    };
+
+    private async Task Close() => await OnClose.InvokeAsync();
+}

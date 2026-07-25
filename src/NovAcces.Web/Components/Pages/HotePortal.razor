@@ -163,14 +163,17 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                 <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
                                 <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
                                 <td>
-                                    @if (v.Status == "Valid")
-                                    {
-                                        <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
-                                    }
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <button class="btn-ghost" @onclick="() => _historyVisitId = v.VisitId">Historique</button>
+                                        @if (v.Status == "Valid")
+                                        {
+                                            <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -206,12 +209,18 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             </div>
         </div>
     }
+
+    @if (_historyVisitId is { } hid)
+    {
+        <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
+    }
 </div>
 }
 
 @code {
     private bool _showGroup;
     private HostVisitDto? _pendingRevoke;
+    private Guid? _historyVisitId;
 
     private async Task OnGroupCompleted()
     {

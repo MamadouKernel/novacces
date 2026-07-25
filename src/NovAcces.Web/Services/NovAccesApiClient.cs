@@ -89,6 +89,10 @@ public sealed class NovAccesApiClient
         return result ?? new List<HostVisitDto>();
     }
 
+    /// <summary>Chronologie (statuts) d'une demande de visite.</summary>
+    public async Task<VisitHistoryDto?> GetVisitHistoryAsync(Guid visitId)
+        => await CreateClient(true).GetFromJsonAsync<VisitHistoryDto>($"/api/visits/{visitId}/history");
+
     /// <summary>Visiteurs déjà connus du site (autocomplétion + pré-remplissage).</summary>
     public async Task<IReadOnlyList<KnownVisitorDto>> GetKnownVisitorsAsync()
     {

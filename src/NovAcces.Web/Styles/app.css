@@ -361,6 +361,18 @@
   .toast.sec { @apply border-l-no bg-no; }
   .toast.sec .toast-ico { @apply text-white; }
 
+  /* ---- Chronologie (historique d'une demande) ---- */
+  .timeline { @apply relative ml-1 space-y-4 border-l-2 border-line py-1 pl-6; }
+  .tl-item { @apply relative; }
+  .tl-dot { @apply absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-white bg-brand-600; }
+  .tl-item.tl-created  .tl-dot { @apply bg-amber-500; }
+  .tl-item.tl-entry    .tl-dot { @apply bg-ok; }
+  .tl-item.tl-exit     .tl-dot { @apply bg-onsite; }
+  .tl-item.tl-revoked  .tl-dot { @apply bg-no; }
+  .tl-label  { @apply font-semibold text-ink; }
+  .tl-time   { @apply font-mono text-xs text-muted; }
+  .tl-detail { @apply mt-0.5 text-sm text-ink2; }
+
   /* ---- Œil du champ mot de passe ---- */
   .pwd-eye {
     @apply absolute inset-y-0 right-0 flex items-center pr-3 text-muted

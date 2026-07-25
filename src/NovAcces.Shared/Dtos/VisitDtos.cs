@@ -48,3 +48,12 @@ public sealed record HostVisitDto(
 /// <summary>Visiteur connu pour l'autocomplétion (pré-remplissage).</summary>
 public sealed record KnownVisitorDto(
     string Name, string Company, string Motif, int PlannedDurationMinutes);
+
+// ---- Historique / chronologie d'une demande de visite ----
+
+/// <summary>Un événement de la vie d'une demande (créée, entrée, sortie, révoquée…).</summary>
+public sealed record VisitEventDto(DateTimeOffset At, string Label, string? Detail, string Kind);
+
+/// <summary>Chronologie complète d'une demande.</summary>
+public sealed record VisitHistoryDto(
+    Guid VisitId, string VisitorName, string Status, IReadOnlyList<VisitEventDto> Events);

@@ -139,6 +139,55 @@ public static class VisitEndpoints
         .WithName("CreateVisitsBulk")
         .WithSummary("Crée un lot de demandes de visite (invitation groupée) et génère un QR par visiteur.");
 
+        // Chronologie d'une demande (créée → RDV → entrée → sortie → révoquée).
+        // Visible par la Sûreté/Admin pour toute demande ; par un Hôte, seulement
+        // les siennes (moindre privilège).
+        group.MapGet("/{visitId:guid}/history", async (
+            Guid visitId,
+            ClaimsPrincipal user,
+            IVisitRepository visits,
+            CancellationToken ct) =>
+        {
+            var visit = await visits.GetByIdAsync(visitId, ct);
+            if (visit is null)
+                return Results.NotFound(new { error = "Demande introuvable." });
+
+            var canViewAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin);
+            if (!canViewAny && visit.HostUserId != user.HostIdentifier())
+                return Results.Json(new { error = "Accès refusé." }, statusCode: StatusCodes.Status403Forbidden);
+
+            var events = new List<VisitEventDto>
+            {
+                new(visit.CreatedAt, "Demande créée",
+                    $"{(visit.Mode == AccessMode.Unique ? "Passage unique" : "Accès 30 jours")} · durée prévue {visit.PlannedDurationMinutes} min",
+                    "created"),
+            };
+
+            if (visit.ScheduledAt is { } scheduled)
+                events.Add(new(scheduled, "Rendez-vous prévu", null, "scheduled"));
+
+            if (visit.CheckedInAt is { } checkedIn)
+                events.Add(new(checkedIn, "Entrée sur site", null, "entry"));
+
+            if (visit.CheckedOutAt is { } checkedOut)
+            {
+                var over = visit.CheckedInAt is { } ci && visit.PlannedDurationMinutes > 0
+                    ? Math.Max(0, (int)(checkedOut - ci).TotalMinutes - visit.PlannedDurationMinutes)
+                    : 0;
+                events.Add(new(checkedOut, "Sortie enregistrée",
+                    over > 0 ? $"dépassement +{over} min" : null, "exit"));
+            }
+
+            if (visit.RevokedAt is { } revoked)
+                events.Add(new(revoked, "QR révoqué", visit.RevokedBy, "revoked"));
+
+            var ordered = events.OrderBy(e => e.At).ToList();
+            return Results.Ok(new VisitHistoryDto(visit.Id, visit.VisitorName, visit.Status.ToString(), ordered));
+        })
+        .RequireAuthorization("Dashboard")
+        .WithName("VisitHistory")
+        .WithSummary("Chronologie des statuts d'une demande de visite.");
+
         // REQ-F-09 : révocation manuelle par l'hôte ou la sûreté, à tout moment.
         group.MapPost("/{visitId:guid}/revoke", async (
             Guid visitId,

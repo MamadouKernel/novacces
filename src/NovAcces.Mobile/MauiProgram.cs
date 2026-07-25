@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Networking;
+using Microsoft.Maui.Storage;
 using NovAcces.Mobile.Pages;
 using NovAcces.Mobile.Services;
 using NovAcces.Mobile.ViewModels;
@@ -17,6 +18,10 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
+        // Initialise le fournisseur SQLite natif (persistance des scans hors-ligne).
+        // Idempotent — le bundle s'auto-initialise déjà, ceci est une ceinture.
+        SQLitePCL.Batteries_V2.Init();
+
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()
@@ -39,9 +44,15 @@ public static class MauiProgram
         builder.Services.AddSingleton<IConnectivity>(Connectivity.Current);
         builder.Services.AddSingleton(_ => new HttpClient());
         builder.Services.AddSingleton<AgentApiClient>();
+
+        // Persistance SQLite des scans hors-ligne (survit à un redémarrage).
+        var offlineDbPath = Path.Combine(FileSystem.AppDataDirectory, "novacces-offline.db3");
+        builder.Services.AddSingleton(new OfflineScanStore(offlineDbPath));
+
         builder.Services.AddSingleton<AgentSession>();
         builder.Services.AddTransient<ScanViewModel>();
         builder.Services.AddTransient<ScanPage>();
+        builder.Services.AddTransient<ExpectedTodayPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();

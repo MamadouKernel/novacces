@@ -25,12 +25,20 @@ caméra Android, câblage DI (`MauiProgram.cs`), et référence à `NovAcces.Sha
    l'enrôlement.
 3. Sélectionner une cible **Android** (terminal ou émulateur) et lancer.
 
-### Reste à finir (TODO)
-- Persister `AgentSession.PendingOfflineScans` en **SQLite** (`sqlite-net-pcl`) :
-  actuellement en mémoire ; doit survivre à un redémarrage pendant une coupure.
-- Écran « **attendus du jour** » (consomme `GetExpectedTodayAsync`) + resync à
-  la reconnexion (afficher les conflits).
-- Signal **sonore** au verdict (la vibration est déjà câblée).
+### Fonctionnalités implémentées (à compiler/tester dans VS)
+- ✅ **Persistance SQLite** des scans hors-ligne (`OfflineScanStore`, `sqlite-net-pcl`) :
+  la file survit à un redémarrage pendant une coupure ; la resynchronisation la vide.
+- ✅ Écran « **attendus du jour** » (`ExpectedTodayPage`) : nom + statut + fenêtre
+  uniquement (moindre privilège §11), avec bouton de **resynchronisation** et
+  affichage des **conflits** (ex. QR révoqué pendant la coupure).
+- ✅ Signal **sonore** au verdict : énoncé vocal (synthèse vocale MAUI intégrée,
+  aucune dépendance ni fichier audio) en plus de la vibration.
+
+### À valider sur terminal réel
+- Scan caméra (autofocus, luminosité) sur un terminal du parc.
+- Rendu audio (synthèse vocale) selon la langue/voix installée sur l'appareil.
+- Charger `RefreshOfflineListAsync` périodiquement en tâche de fond (aujourd'hui
+  au `OnAppearing` de `ScanPage`).
 
 ---
 

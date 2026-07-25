@@ -4,18 +4,21 @@ using NovAcces.Shared.Offline;
 namespace NovAcces.Mobile.Services;
 
 /// <summary>
-/// État runtime du poste agent : sens du poste (Entrée/Sortie), connectivité,
-/// liste hors-ligne signée mise en cache, et file des scans hors-ligne en attente
-/// de resynchronisation. Le vérificateur ES256 (clé publique) est conservé ici.
+/// État runtime du poste agent : sens du poste (Entrée/Sortie), liste hors-ligne
+/// signée mise en cache, et file PERSISTÉE des scans hors-ligne en attente de
+/// resynchronisation (SQLite, survit à un redémarrage). Le vérificateur ES256
+/// (clé publique) est conservé ici.
 /// </summary>
 public sealed class AgentSession
 {
     private readonly AgentApiClient _api;
+    private readonly OfflineScanStore _store;
     private readonly OfflineQrVerifier _verifier;
 
-    public AgentSession(AgentApiClient api, AgentConfig config)
+    public AgentSession(AgentApiClient api, AgentConfig config, OfflineScanStore store)
     {
         _api = api;
+        _store = store;
         _verifier = new OfflineQrVerifier(config.PublicKeyPem);
     }
 
@@ -27,8 +30,11 @@ public sealed class AgentSession
     /// <summary>Dernière liste hors-ligne vérifiée (null si jamais chargée).</summary>
     public OfflineListResult? OfflineList { get; private set; }
 
-    /// <summary>Scans réalisés hors ligne, en attente de resynchronisation.</summary>
-    public List<OfflineScanDto> PendingOfflineScans { get; } = new();
+    /// <summary>Met en file (persistée) un scan réalisé hors ligne.</summary>
+    public Task EnqueueOfflineScanAsync(OfflineScanDto scan) => _store.EnqueueAsync(scan);
+
+    /// <summary>Nombre de scans hors-ligne en attente de resynchronisation.</summary>
+    public Task<int> PendingCountAsync() => _store.CountAsync();
 
     /// <summary>
     /// Charge (en ligne) la liste hors-ligne signée du jour et la vérifie
@@ -42,15 +48,20 @@ public sealed class AgentSession
             OfflineList = _verifier.VerifyDailyList(dto.SignedList, DateTimeOffset.UtcNow);
     }
 
-    /// <summary>Confronte les scans hors-ligne au registre et vide la file si OK.</summary>
+    /// <summary>
+    /// Confronte les scans hors-ligne persistés au registre central et vide la
+    /// file locale si l'opération aboutit. Retourne les conflits éventuels
+    /// (ex. QR révoqué pendant la coupure = événement de sécurité).
+    /// </summary>
     public async Task<ResyncResultDto?> ResyncAsync(CancellationToken ct = default)
     {
-        if (PendingOfflineScans.Count == 0)
+        var pending = await _store.GetAllAsync();
+        if (pending.Count == 0)
             return new ResyncResultDto(0, Array.Empty<ResyncConflictDto>());
 
-        var result = await _api.ResyncAsync(PendingOfflineScans, ct);
+        var result = await _api.ResyncAsync(pending, ct);
         if (result is not null)
-            PendingOfflineScans.Clear();
+            await _store.ClearAsync();
         return result;
     }
 }

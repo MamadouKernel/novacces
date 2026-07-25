@@ -6,6 +6,10 @@
              Title="NovAcces — Poste de contrôle"
              BackgroundColor="Black">
 
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Attendus" Clicked="OnOpenExpected" />
+    </ContentPage.ToolbarItems>
+
     <Grid>
         <!-- Caméra plein écran -->
         <zxing:CameraBarcodeReaderView x:Name="Camera"

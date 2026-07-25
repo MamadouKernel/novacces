@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Maui.Media;
 using NovAcces.Mobile.Services;
 using NovAcces.Mobile.ViewModels;
 using ZXing.Net.Maui;
@@ -8,13 +10,15 @@ public partial class ScanPage : ContentPage
 {
     private readonly ScanViewModel _vm;
     private readonly AgentSession _session;
+    private readonly IServiceProvider _services;
     private bool _processing;
 
-    public ScanPage(ScanViewModel vm, AgentSession session)
+    public ScanPage(ScanViewModel vm, AgentSession session, IServiceProvider services)
     {
         InitializeComponent();
         _vm = vm;
         _session = session;
+        _services = services;
 
         Camera.Options = new BarcodeReaderOptions
         {
@@ -51,8 +55,10 @@ public partial class ScanPage : ContentPage
         {
             var verdict = await _vm.EvaluateAsync(value);
             await MainThread.InvokeOnMainThreadAsync(() => ShowVerdict(verdict));
-            // Retour sonore + vibration : l'agent ne doit pas dépendre du visuel seul.
+            // Retour non-visuel : l'agent ne doit pas dépendre du visuel seul.
+            // Vibration + énoncé vocal du verdict (synthèse vocale intégrée MAUI).
             try { Vibration.Default.Vibrate(TimeSpan.FromMilliseconds(verdict.IsSecurityEvent ? 600 : 200)); } catch { }
+            try { _ = TextToSpeech.Default.SpeakAsync(verdict.Title); } catch { }
         }
         catch
         {
@@ -80,6 +86,10 @@ public partial class ScanPage : ContentPage
         _session.Direction = _session.Direction == "Entry" ? "Exit" : "Entry";
         DirectionButton.Text = _session.Direction == "Entry" ? "Poste : ENTRÉE" : "Poste : SORTIE";
     }
+
+    // Ouvre l'écran « attendus du jour » + resynchronisation (résolu par DI).
+    private async void OnOpenExpected(object? sender, EventArgs e)
+        => await Navigation.PushAsync(_services.GetRequiredService<Pages.ExpectedTodayPage>());
 
     private void UpdateConnectivityLabel()
     {

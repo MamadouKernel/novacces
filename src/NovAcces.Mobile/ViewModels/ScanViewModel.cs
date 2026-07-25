@@ -1,5 +1,6 @@
 using Microsoft.Maui.Networking;
 using NovAcces.Mobile.Services;
+using NovAcces.Shared.Dtos;
 using NovAcces.Shared.Offline;
 
 namespace NovAcces.Mobile.ViewModels;
@@ -41,18 +42,18 @@ public sealed class ScanViewModel
             }
         }
 
-        return EvaluateOffline(signedQr);
+        return await EvaluateOfflineAsync(signedQr);
     }
 
-    private ScanVerdict EvaluateOffline(string signedQr)
+    private async Task<ScanVerdict> EvaluateOfflineAsync(string signedQr)
     {
         var list = _session.OfflineList ?? new OfflineListResult(false, true, Array.Empty<OfflineListItem>());
         var verdict = OfflineScanEvaluator.Evaluate(_session.Verifier, signedQr, list, DateTimeOffset.UtcNow);
 
-        // Un scan « reconnu » hors ligne est enregistré pour resynchronisation
-        // (l'application locale de l'entrée/sortie relève de l'état local).
+        // Un scan « reconnu » hors ligne est PERSISTÉ pour resynchronisation
+        // (il doit survivre à un redémarrage pendant la coupure).
         if (verdict.Outcome == OfflineOutcome.Recognized && verdict.VisitToken is { } token)
-            _session.PendingOfflineScans.Add(new Shared.Dtos.OfflineScanDto(
+            await _session.EnqueueOfflineScanAsync(new OfflineScanDto(
                 token, _session.Direction, true, DateTimeOffset.UtcNow));
 
         return ScanVerdict.FromOffline(verdict);

@@ -288,6 +288,15 @@
   .chart-fill.peak { @apply bg-amber-500; }
   .chart-val { @apply whitespace-nowrap font-mono text-xs tabular-nums text-muted; }
 
+  /* ---- Courbe d'affluence horaire (24 barres) ---- */
+  .hchart { @apply flex h-24 items-end gap-[3px]; }
+  .hbar {
+    @apply min-h-[2px] flex-1 rounded-t bg-brand-500/70 transition-[height] duration-500 hover:bg-brand-600;
+  }
+  .hbar.peak { @apply bg-amber-500 hover:bg-amber-500; }
+  .hbar.now  { @apply outline outline-2 outline-offset-1 outline-brand-700; }
+  .hchart-axis { @apply mt-1.5 flex justify-between font-mono text-[0.6rem] text-muted; }
+
   /* ---- Notifications (toasts) ---- */
   .toasts {
     @apply pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2;

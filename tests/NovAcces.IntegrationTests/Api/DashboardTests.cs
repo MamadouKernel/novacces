@@ -107,6 +107,10 @@ public sealed class DashboardTests
         Assert.False(string.IsNullOrWhiteSpace(summary.RefusalAppreciation));
         Assert.False(string.IsNullOrWhiteSpace(summary.Recommendation));
 
+        // Courbe d'affluence : 24 tranches horaires, dont la somme = scans du jour.
+        Assert.Equal(24, summary.HourlyScans.Count);
+        Assert.Equal(summary.ScansToday, summary.HourlyScans.Sum());
+
         // Export CSV : type et en-tête attendus.
         var csvResp = await surete.GetAsync("/api/dashboard/journal.csv");
         Assert.Equal(HttpStatusCode.OK, csvResp.StatusCode);

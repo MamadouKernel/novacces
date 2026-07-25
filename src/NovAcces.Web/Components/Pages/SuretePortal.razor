@@ -48,6 +48,26 @@ else if (CanViewDashboard)
             Taux de refus : <strong>@_summary.RefusalAppreciation</strong>@(_summary.PeakHour is int h ? $" · pic d'affluence vers {h}h" : "")
             — @_summary.Recommendation
         </p>
+
+        @if (_summary.HourlyScans is { Count: 24 } hours && hours.Sum() > 0)
+        {
+            var maxH = hours.Max();
+            var nowH = DateTime.Now.Hour;
+            <section class="card" style="margin-bottom:1rem;">
+                <h2>Affluence par heure (aujourd'hui)</h2>
+                <div class="hchart">
+                    @for (var hr = 0; hr < 24; hr++)
+                    {
+                        var val = hours[hr];
+                        var peak = val == maxH && val > 0;
+                        <div class="hbar @(peak ? "peak" : "") @(hr == nowH ? "now" : "")"
+                             style="height:@(maxH > 0 ? Math.Max(2, (int)Math.Round(val * 100.0 / maxH)) : 0)%"
+                             title="@hr h — @val scan(s)"></div>
+                    }
+                </div>
+                <div class="hchart-axis"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>23 h</span></div>
+            </section>
+        }
     }
 
     <div class="toolbar">

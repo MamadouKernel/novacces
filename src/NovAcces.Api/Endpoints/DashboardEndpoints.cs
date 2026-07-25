@@ -58,6 +58,11 @@ public static class DashboardEndpoints
             var securityEvents = today.Count(e => e.IsSecurityEvent);
             var overstays = onSite.Count(v => v.OverstayLevel > 0);
 
+            // Histogramme horaire (24 tranches, heure locale) — courbe d'affluence.
+            var hourly = new int[24];
+            foreach (var e in today)
+                hourly[e.Timestamp.ToLocalTime().Hour]++;
+
             // Pic d'affluence : heure locale la plus chargée du jour.
             int? peakHour = today.Count > 0
                 ? today.GroupBy(e => e.Timestamp.ToLocalTime().Hour)
@@ -86,7 +91,8 @@ public static class DashboardEndpoints
                 OnSite: onSite.Count,
                 PeakHour: peakHour,
                 RefusalAppreciation: appreciation,
-                Recommendation: recommendation);
+                Recommendation: recommendation,
+                HourlyScans: hourly);
 
             return Results.Ok(summary);
         })

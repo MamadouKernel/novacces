@@ -57,7 +57,8 @@ public sealed record DashboardSummaryDto(
     int OnSite,
     int? PeakHour,
     string RefusalAppreciation,
-    string Recommendation);
+    string Recommendation,
+    IReadOnlyList<int> HourlyScans);   // 24 tranches (index = heure locale) — courbe d'affluence
 
 /// <summary>Entrée de la liste d'exclusion (vue sûreté, motif inclus).</summary>
 public sealed record ExclusionDto(

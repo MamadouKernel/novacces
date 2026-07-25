@@ -31,15 +31,11 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
             });
 
-        // Configuration du terminal chargée depuis le STOCKAGE SÉCURISÉ (renseigné
-        // à l'enrôlement) — plus aucun secret en dur. En cas d'absence (terminal
-        // pas encore enrôlé) ou de stockage indisponible, on démarre avec une
-        // config vide : l'app fonctionne mais n'est pas enrôlée (AgentConfig.IsEnrolled
-        // == false), un écran d'enrôlement appellera AgentConfig.SaveAsync().
-        AgentConfig config;
-        try { config = AgentConfig.LoadAsync().GetAwaiter().GetResult(); }
-        catch { config = new AgentConfig(); }
-        builder.Services.AddSingleton(config);
+        // Config du terminal enregistrée VIDE au démarrage — elle sera chargée
+        // depuis le stockage sécurisé EN ASYNCHRONE par App (jamais en bloquant
+        // le thread principal : un GetAwaiter().GetResult() sur SecureStorage fige
+        // l'UI au démarrage sur Android = « application ne répond pas »).
+        builder.Services.AddSingleton(new AgentConfig());
         builder.Services.AddSingleton<IConnectivity>(Connectivity.Current);
         builder.Services.AddSingleton(_ => new HttpClient());
         builder.Services.AddSingleton<AgentApiClient>();

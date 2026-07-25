@@ -13,15 +13,28 @@ public partial class App : Application
 		_services = services;
 	}
 
-	// App agent : poste de contrôle si le terminal est enrôlé, sinon écran
-	// d'enrôlement. Tant que la config est vide, on ne résout PAS ScanPage (donc
-	// ni l'API client ni le vérificateur) — évite de les construire sans config.
+	// App agent : on affiche d'abord un écran de chargement, puis on charge la
+	// config depuis le stockage sécurisé EN ASYNCHRONE (jamais en bloquant le
+	// thread principal), et on route vers le poste de contrôle si le terminal est
+	// enrôlé, sinon vers l'écran d'enrôlement. ScanPage n'est résolu (donc l'API
+	// client et le vérificateur construits) qu'une fois la config chargée.
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
+		var window = new Window(new NavigationPage(new LoadingPage()));
+		_ = RouteAsync(window);
+		return window;
+	}
+
+	private async Task RouteAsync(Window window)
+	{
 		var config = _services.GetRequiredService<Services.AgentConfig>();
+		try { await config.LoadFromSecureStorageAsync(); }
+		catch { /* stockage indisponible : on partira sur l'enrôlement */ }
+
 		Page root = config.IsEnrolled
 			? _services.GetRequiredService<ScanPage>()
 			: _services.GetRequiredService<EnrollmentPage>();
-		return new Window(new NavigationPage(root));
+
+		await MainThread.InvokeOnMainThreadAsync(() => window.Page = new NavigationPage(root));
 	}
 }

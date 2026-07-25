@@ -26,13 +26,17 @@ public sealed class AgentConfig
     /// <summary>Vrai si le terminal a été enrôlé (clé API + clé publique présentes).</summary>
     public bool IsEnrolled => !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(PublicKeyPem);
 
-    /// <summary>Charge la configuration depuis le stockage sécurisé du terminal.</summary>
-    public static async Task<AgentConfig> LoadAsync() => new()
+    /// <summary>
+    /// Charge la configuration depuis le stockage sécurisé DANS cette instance.
+    /// À appeler en asynchrone (jamais en bloquant sur le thread principal :
+    /// SecureStorage figerait l'UI au démarrage sur Android).
+    /// </summary>
+    public async Task LoadFromSecureStorageAsync()
     {
-        ApiBaseUrl = await SecureStorage.GetAsync(KeyBaseUrl) ?? "https://localhost",
-        ApiKey = await SecureStorage.GetAsync(KeyApiKey) ?? "",
-        PublicKeyPem = await SecureStorage.GetAsync(KeyPublicKey) ?? "",
-    };
+        ApiBaseUrl = await SecureStorage.GetAsync(KeyBaseUrl) ?? "https://localhost";
+        ApiKey = await SecureStorage.GetAsync(KeyApiKey) ?? "";
+        PublicKeyPem = await SecureStorage.GetAsync(KeyPublicKey) ?? "";
+    }
 
     /// <summary>Enrôlement : écrit les paramètres du terminal dans le stockage sécurisé.</summary>
     public async Task SaveAsync()

@@ -192,6 +192,18 @@ relecture du code et vérification par tests.
   `Referrer-Policy: no-referrer` ; HSTS en production. Test dédié
   `AuthEndpointsTests.SecurityHeaders_ArePresentOnResponses`.
 
+### Revue des journaux applicatifs (§7.2)
+
+- **Aucun secret journalisé** : revue de tous les points de log — ni clé privée
+  ES256, ni jeton JWT, ni mot de passe, ni clé API, ni jeton Meta, ni
+  téléphone/email/QR ne sont écrits dans les traces. Les exceptions de l'API
+  Meta loggées ne portent pas le jeton (il est dans l'en-tête `HttpClient`).
+- **Minimisation des données** : les noms de visiteurs (PII) qui apparaissaient
+  dans quelques logs (échec de notification, dépassement) sont remplacés par
+  l'**identifiant opaque de la visite** — corrélable au journal métier, qui
+  reste, lui, sous contrôle d'accès. Le nom n'apparaît plus dans les traces
+  d'exploitation.
+
 ### Durcissement — isolation des tests d'intégration
 
 Les tests d'intégration écrivaient dans la base de **développement** `novacces`

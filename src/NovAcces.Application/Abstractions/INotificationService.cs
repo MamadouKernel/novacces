@@ -13,6 +13,7 @@ public interface INotificationService
 }
 
 public sealed record VisitInvitationNotification(
+    Guid VisitId,
     string VisitorName,
     string? VisitorPhone,
     string? VisitorEmail,

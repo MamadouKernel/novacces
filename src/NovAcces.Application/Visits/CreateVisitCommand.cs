@@ -75,15 +75,18 @@ public sealed class CreateVisitHandler
         {
             await _notifications.SendVisitInvitationAsync(
                 new VisitInvitationNotification(
-                    visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
+                    visit.Id, visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
                     signedPayload, visit.ScheduledAt, expiresAt),
                 ct);
         }
         catch (Exception ex)
         {
+            // Minimisation des données : on journalise l'identifiant opaque de
+            // la visite (corrélable au journal, sous contrôle d'accès), pas le
+            // nom du visiteur (PII).
             _logger.LogWarning(ex,
-                "Échec de l'envoi de l'invitation à {VisitorName} pour la visite {VisitId} — le QR reste valide.",
-                visit.VisitorName, visit.Id);
+                "Échec de l'envoi de l'invitation pour la visite {VisitId} — le QR reste valide.",
+                visit.Id);
         }
 
         return new CreateVisitResult(visit.Id, signedPayload, expiresAt);

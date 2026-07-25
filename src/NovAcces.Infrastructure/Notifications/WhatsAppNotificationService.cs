@@ -55,8 +55,8 @@ public sealed class WhatsAppNotificationService : INotificationService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "Échec de l'envoi WhatsApp du QR pour {VisitorName}, repli sur email.",
-                    notification.VisitorName);
+                    "Échec de l'envoi WhatsApp du QR pour la visite {VisitId}, repli sur email.",
+                    notification.VisitId);
             }
         }
 
@@ -67,8 +67,8 @@ public sealed class WhatsAppNotificationService : INotificationService
         }
 
         _logger.LogWarning(
-            "Aucun canal de notification n'a abouti pour {VisitorName} (téléphone et/ou email manquant ou en échec) — QR non transmis automatiquement.",
-            notification.VisitorName);
+            "Aucun canal de notification n'a abouti pour la visite {VisitId} (téléphone et/ou email manquant ou en échec) — QR non transmis automatiquement.",
+            notification.VisitId);
     }
 
     private static byte[] GenerateQrPng(string signedPayload)

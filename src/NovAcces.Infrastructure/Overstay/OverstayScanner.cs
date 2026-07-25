@@ -93,9 +93,11 @@ public sealed class OverstayScanner : IOverstayScanner
             await broadcaster.BroadcastOverstayAsync(
                 new OverstayBroadcastEvent(visit.Id, visit.VisitorName, overstayMinutes, level, isSecurityEvent, now), ct);
 
+            // Minimisation des données : identifiant opaque de la visite, pas le
+            // nom (PII) — le nom reste dans le journal et le dashboard (accès contrôlé).
             _logger.Log(isSecurityEvent ? LogLevel.Warning : LogLevel.Information,
-                "Dépassement site {SiteId} : {Visitor} +{Min} min (niveau {Level}{Secu}).",
-                siteId, visit.VisitorName, overstayMinutes, level, isSecurityEvent ? ", ÉVÉNEMENT SÉCURITÉ" : "");
+                "Dépassement site {SiteId} : visite {VisitId} +{Min} min (niveau {Level}{Secu}).",
+                siteId, visit.Id, overstayMinutes, level, isSecurityEvent ? ", ÉVÉNEMENT SÉCURITÉ" : "");
         }
 
         if (changed)

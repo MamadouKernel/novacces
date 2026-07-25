@@ -1,4 +1,5 @@
 using NovAcces.Application.Abstractions;
+using NovAcces.Domain.Enums;
 
 namespace NovAcces.Application.Visits;
 
@@ -20,11 +21,13 @@ public sealed class RevokeVisitHandler
 {
     private readonly IVisitRepository _visits;
     private readonly IDateTimeProvider _clock;
+    private readonly IAdminAuditLog _audit;
 
-    public RevokeVisitHandler(IVisitRepository visits, IDateTimeProvider clock)
+    public RevokeVisitHandler(IVisitRepository visits, IDateTimeProvider clock, IAdminAuditLog audit)
     {
         _visits = visits;
         _clock = clock;
+        _audit = audit;
     }
 
     public async Task<RevokeVisitResult> HandleAsync(RevokeVisitCommand command, CancellationToken ct)
@@ -38,10 +41,17 @@ public sealed class RevokeVisitHandler
         if (!command.CanRevokeAny && visit.HostUserId != command.RequestedByHostId)
             return new RevokeVisitResult(false, "Vous ne pouvez révoquer que vos propres demandes.", Forbidden: true);
 
-        // Audit persistant de l'action (qui, quand) porté par la visite elle-même
-        // — traçabilité §8.5 sans table d'audit séparée.
+        // La visite porte elle-même qui/quand a révoqué (RevokedBy/RevokedAt),
+        // pour l'affichage de sa chronologie. En complément, l'action est
+        // inscrite au journal d'audit inaltérable du site (§8.5) : trace unique
+        // et non répudiable de toutes les actions privilégiées, consultable
+        // indépendamment de la visite concernée.
         visit.Revoke(command.RevokedBy, _clock.UtcNow);
         await _visits.SaveChangesAsync(ct);
+
+        await _audit.RecordAsync(
+            AdminAuditAction.VisitRevoked, command.RevokedBy, command.VisitId.ToString(),
+            $"Révocation du QR de la visite {command.VisitId}.", ct);
 
         return new RevokeVisitResult(true, null);
     }

@@ -51,10 +51,12 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         await ExecuteAsync(connection, $"SET search_path TO \"{schema}\"", ct);
         await ExecuteAsync(connection, BuildModelScript(tenant), ct);
 
-        // 3. Journal inaltérable (CLAUDE.md §7.4, REQ-SEC-05) : UPDATE/DELETE/
-        //    TRUNCATE bloqués au niveau base, y compris pour un superutilisateur
-        //    (les triggers s'exécutent quel que soit le rôle). Le search_path
-        //    est toujours positionné, donc les objets visent bien le schéma.
+        // 3. Journaux inaltérables (CLAUDE.md §7.4, REQ-SEC-05, §8.5) :
+        //    UPDATE/DELETE/TRUNCATE bloqués au niveau base, y compris pour un
+        //    superutilisateur (les triggers s'exécutent quel que soit le rôle).
+        //    Le search_path est toujours positionné, donc les objets visent bien
+        //    le schéma. Deux journaux protégés : scan_logs (contrôle d'accès) et
+        //    admin_audit (actions d'administration/sûreté).
         await ExecuteAsync(connection, AppendOnlyJournalDdl, ct);
     }
 
@@ -81,24 +83,37 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    // Trigger append-only sur scan_logs : lève une exception à toute tentative
-    // de modification/suppression. Idempotent (CREATE OR REPLACE + DROP IF EXISTS).
+    // Triggers append-only sur les journaux : lèvent une exception à toute
+    // tentative de modification/suppression. Idempotent (CREATE OR REPLACE +
+    // DROP IF EXISTS). Une seule fonction générique, réutilisée par les deux
+    // journaux (scan_logs et admin_audit) — le message cite la table via
+    // TG_TABLE_NAME pour rester exact quel que soit le déclencheur.
     private const string AppendOnlyJournalDdl = """
-        CREATE OR REPLACE FUNCTION forbid_scan_log_mutation() RETURNS trigger
+        CREATE OR REPLACE FUNCTION forbid_journal_mutation() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
-            RAISE EXCEPTION 'scan_logs est append-only : UPDATE/DELETE/TRUNCATE interdits (journal inaltérable, REQ-SEC-05).';
+            RAISE EXCEPTION '% est append-only : UPDATE/DELETE/TRUNCATE interdits (journal inaltérable, CDC §7.5/8.5).', TG_TABLE_NAME;
         END;
         $$;
 
         DROP TRIGGER IF EXISTS scan_logs_append_only ON scan_logs;
         CREATE TRIGGER scan_logs_append_only
             BEFORE UPDATE OR DELETE ON scan_logs
-            FOR EACH ROW EXECUTE FUNCTION forbid_scan_log_mutation();
+            FOR EACH ROW EXECUTE FUNCTION forbid_journal_mutation();
 
         DROP TRIGGER IF EXISTS scan_logs_no_truncate ON scan_logs;
         CREATE TRIGGER scan_logs_no_truncate
             BEFORE TRUNCATE ON scan_logs
-            FOR EACH STATEMENT EXECUTE FUNCTION forbid_scan_log_mutation();
+            FOR EACH STATEMENT EXECUTE FUNCTION forbid_journal_mutation();
+
+        DROP TRIGGER IF EXISTS admin_audit_append_only ON admin_audit;
+        CREATE TRIGGER admin_audit_append_only
+            BEFORE UPDATE OR DELETE ON admin_audit
+            FOR EACH ROW EXECUTE FUNCTION forbid_journal_mutation();
+
+        DROP TRIGGER IF EXISTS admin_audit_no_truncate ON admin_audit;
+        CREATE TRIGGER admin_audit_no_truncate
+            BEFORE TRUNCATE ON admin_audit
+            FOR EACH STATEMENT EXECUTE FUNCTION forbid_journal_mutation();
         """;
 }

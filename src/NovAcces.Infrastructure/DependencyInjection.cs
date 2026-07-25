@@ -49,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<IVisitRepository, VisitRepository>();
         services.AddScoped<IScanLogRepository, ScanLogRepository>();
         services.AddScoped<IExclusionListService, ExclusionListService>();
+        services.AddScoped<IAdminAuditLog, AdminAuditLog>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // --- Horloge & signature cryptographique ---
@@ -62,6 +63,11 @@ public static class DependencyInjection
         services.AddSingleton<ISiteCatalog, SiteCatalog>();
         services.Configure<Overstay.OverstayOptions>(configuration.GetSection("Overstay"));
         services.AddSingleton<IOverstayScanner, Overstay.OverstayScanner>();
+
+        // Rétention/purge des données personnelles (§7.3) : balayage multi-sites,
+        // même orchestration transverse que la supervision.
+        services.Configure<Retention.RetentionOptions>(configuration.GetSection("Retention"));
+        services.AddSingleton<IDataRetentionService, Retention.DataRetentionService>();
 
         // Vue consolidée multi-sites (§10).
         services.AddScoped<ISiteOverviewService, SiteOverviewService>();

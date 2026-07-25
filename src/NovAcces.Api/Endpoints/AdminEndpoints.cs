@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure.Identity;
 using NovAcces.Infrastructure.Persistence.Tenancy;
+using NovAcces.Infrastructure.Retention;
 using NovAcces.Shared.Auth;
 using NovAcces.Shared.Dtos;
 
@@ -60,6 +62,30 @@ public static class AdminEndpoints
         })
         .WithName("AdminProvisionSite")
         .WithSummary("Provisionne un nouveau site (schéma + modèle + journal append-only).");
+
+        // --- Rétention / purge des données personnelles (§7.3) ---
+
+        group.MapGet("/retention", (IOptions<RetentionOptions> options) =>
+        {
+            var o = options.Value;
+            return Results.Ok(new RetentionStatusDto(o.Enabled, o.VisitRetentionDays, o.RunIntervalHours));
+        })
+        .WithName("AdminRetentionStatus")
+        .WithSummary("Politique de rétention en vigueur (durée de conservation, intervalle).");
+
+        // Déclenchement manuel d'une passe de purge (en plus de la passe
+        // automatique du RetentionMonitor). Action privilégiée : chaque site
+        // purgé est inscrit à son journal d'audit inaltérable.
+        group.MapPost("/retention/run", async (IDataRetentionService retention, CancellationToken ct) =>
+        {
+            var results = await retention.PurgeOnceAsync(ct);
+            var dto = new RetentionRunResultDto(
+                results.Sum(r => r.VisitsPurged),
+                results.Select(r => new SitePurgeDto(r.SiteId, r.VisitsPurged)).ToList());
+            return Results.Ok(dto);
+        })
+        .WithName("AdminRetentionRun")
+        .WithSummary("Déclenche une purge immédiate des données au-delà de la conservation (§7.3).");
 
         return group;
     }

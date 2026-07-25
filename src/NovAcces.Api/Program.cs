@@ -33,6 +33,9 @@ builder.Services.AddScoped<IScanEventBroadcaster, ScanEventBroadcaster>();
 // Supervision des dépassements de durée (§7) : service de fond périodique.
 builder.Services.AddHostedService<OverstayMonitor>();
 
+// Purge des données au-delà de la durée de conservation (§7.3) : service de fond.
+builder.Services.AddHostedService<RetentionMonitor>();
+
 // Rate limiting natif .NET 8 sur les endpoints sensibles (section 8.2 du CDC).
 // Politique nommée appliquée explicitement sur /api/scan et /api/visits ci-dessous.
 var rateLimitPermit = builder.Configuration.GetValue<int?>("RateLimiting:PermitLimit") ?? 30;
@@ -136,6 +139,7 @@ app.MapScanEndpoints().RequireRateLimiting("sensitive");
 app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapDashboardEndpoints();
 app.MapExclusionEndpoints();
+app.MapAuditEndpoints();
 app.MapAgentEndpoints();
 app.MapAdminEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");

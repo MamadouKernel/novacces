@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
+using NovAcces.Domain.Enums;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
@@ -29,21 +31,41 @@ public static class ExclusionEndpoints
             AddExclusionRequestDto request,
             ClaimsPrincipal user,
             IExclusionListService exclusions,
+            IAdminAuditLog audit,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.Reason))
                 return Results.BadRequest(new { error = "Nom et motif requis." });
 
             await exclusions.AddAsync(request.DisplayName, request.Reason, user.HostIdentifier(), ct);
+
+            // Traçabilité §8.5 : l'ajout à la liste d'exclusion est un paramétrage
+            // de sûreté — inscrit au journal d'audit inaltérable.
+            await audit.RecordAsync(
+                AdminAuditAction.ExclusionAdded, user.HostIdentifier(), null,
+                $"Ajout à la liste d'exclusion : « {request.DisplayName} ».", ct);
+
             return Results.Ok(new { message = "Ajouté à la liste d'exclusion." });
         })
         .WithName("AddExclusion")
         .WithSummary("Ajoute une personne à la liste d'exclusion.");
 
-        group.MapDelete("/{id:guid}", async (Guid id, IExclusionListService exclusions, CancellationToken ct) =>
+        group.MapDelete("/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            IExclusionListService exclusions,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
         {
             var removed = await exclusions.RemoveAsync(id, ct);
-            return removed ? Results.Ok(new { message = "Retiré." }) : Results.NotFound();
+            if (!removed)
+                return Results.NotFound();
+
+            await audit.RecordAsync(
+                AdminAuditAction.ExclusionRemoved, user.HostIdentifier(), id.ToString(),
+                $"Retrait de la liste d'exclusion (entrée {id}).", ct);
+
+            return Results.Ok(new { message = "Retiré." });
         })
         .WithName("RemoveExclusion")
         .WithSummary("Retire une personne de la liste d'exclusion.");

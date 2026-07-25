@@ -222,15 +222,18 @@ déploiement, pas du code, et ne sont pas listées ici).
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
 | 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (codes de récupération) ; persistance de session |
 | 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Policies ASP.NET Core + rôles Identity ; moindre privilège appliqué |
+| 7.3 | Rétention limitée + purge automatique paramétrable | ✅ `IDataRetentionService` (purge des demandes > `VisitRetentionDays`, jamais un visiteur sur site) + `RetentionMonitor` ; journaux inaltérables exclus (décision de sûreté documentée) |
+| 8.5 | Journal d'audit des actions d'administration | ✅ `admin_audit` par site, append-only (trigger) : révocation, ajout/retrait d'exclusion, purge ; consultation Sûreté/Admin |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)
 
 ### État Jalon 2 (mise à jour)
 
-- **API** : complète et testée (55 tests : 31 unitaires + 24 d'intégration, dont
+- **API** : complète et testée (86 tests : 43 unitaires + 43 d'intégration, dont
   auth/RBAC, cloisonnement, anti-rejeu concurrent, 2FA, dashboard temps réel,
-  exclusion). **REQ-SEC-06 (mode dégradé)** : la signature de liste hors ligne
-  est côté API ; la consommation hors-ligne relève de l'app agent MAUI.
+  exclusion, rétention/purge, journal d'audit inaltérable). **REQ-SEC-06 (mode
+  dégradé)** : la signature de liste hors ligne est côté API ; la consommation
+  hors-ligne relève de l'app agent MAUI.
 - **Web (`NovAcces.Web`, Blazor Server)** : portail hôte (création + QR + liste +
   révocation + autocomplétion), dashboard sûreté (temps réel + présents + synthèse
   + export CSV + liste d'exclusion), administration (comptes + provisionnement de

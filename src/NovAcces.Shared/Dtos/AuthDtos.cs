@@ -70,3 +70,19 @@ public sealed record ChangePasswordRequestDto(string CurrentPassword, string New
 
 /// <summary>Ligne de la vue consolidée multi-sites (§10).</summary>
 public sealed record AdminSiteOverviewDto(string SiteId, int OnSite, int ScansToday);
+
+// ---- Journal d'audit des actions d'administration/sûreté (§8.5) ----
+
+/// <summary>Entrée du journal d'audit inaltérable, telle qu'affichée à la Sûreté/Admin.</summary>
+public sealed record AdminAuditDto(
+    Guid Id, string Actor, string Action, string? TargetId, string Detail, DateTimeOffset Timestamp);
+
+// ---- Rétention / purge des données (§7.3) ----
+
+/// <summary>État de la politique de rétention (consultation Admin).</summary>
+public sealed record RetentionStatusDto(bool Enabled, int VisitRetentionDays, int RunIntervalHours);
+
+/// <summary>Résultat d'une purge déclenchée manuellement, par site.</summary>
+public sealed record RetentionRunResultDto(int TotalPurged, IReadOnlyList<SitePurgeDto> Sites);
+
+public sealed record SitePurgeDto(string SiteId, int VisitsPurged);

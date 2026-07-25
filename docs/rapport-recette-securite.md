@@ -10,8 +10,9 @@
 > d'intrusion externe reste recommandé avant tout déploiement chez un client
 > tiers de Sigasécurité.
 
-Date de rédaction : 24/07/2026 · Périmètre : API + Web (Jalon 2). L'application
-agent (MAUI) fera l'objet d'une recette dédiée sur terminal réel.
+Date de rédaction : 24/07/2026 · **Revue complémentaire : 25/07/2026** (cf. §8).
+Périmètre : API + Web (Jalon 2). L'application agent (MAUI) fera l'objet d'une
+recette dédiée sur terminal réel.
 
 ---
 
@@ -67,6 +68,10 @@ seule la clé publique est destinée à être embarquée dans l'app agent.
   robuste au pooling.
 - Le tenant est **dérivé du jeton authentifié** (claim `SiteId`), pas d'un
   en-tête client falsifiable ; une tentative de viser un autre site → **403**.
+- **Diffusion temps réel (SignalR)** : le hub applique la **même règle** — un
+  utilisateur rattaché à un site ne peut s'abonner qu'au flux de SON site (le
+  paramètre `site` est revalidé ET confronté au claim). *Corrigé le 25/07/2026,
+  cf. §8.*
 - Validation stricte des identifiants de site (whitelist ASCII, longueur bornée
   pour éviter la troncature silencieuse de PostgreSQL).
 - **Preuve par test** : `TenantIsolationTests` — deux sites, aucune donnée ne
@@ -122,12 +127,51 @@ par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
 
 ---
 
-## 8. Conclusion
+## 8. Revue de sécurité complémentaire (25/07/2026)
+
+Revue ligne par ligne des quatre zones sensibles de `CLAUDE.md §7`, avec
+relecture du code et vérification par tests.
+
+| Zone | Constat |
+|---|---|
+| Cryptographie (`Es256QrSigningService`) | **Conforme.** Clé privée jamais journalisée ni exposée ; algorithme figé dans le code (pas de confusion d'algorithme type JWT `alg:none`) ; la vérification porte sur les octets exactement signés (pas de faille de canonicalisation) ; payload sans donnée personnelle. |
+| Cloisonnement (`TenantResolutionMiddleware`, `TenantSchemaConnectionInterceptor`, `CurrentTenant`) | **Conforme.** Tenant issu du claim ; en-tête divergent rejeté (403) ; `search_path` par connexion ; identifiant validé (whitelist ASCII, longueur < NAMEDATALEN) avant tout usage. |
+| Anti-rejeu (`ScanQrHandler`, `UnitOfWork`, `VisitRepository`) | **Conforme.** `SELECT … FOR UPDATE` **paramétré** tenu dans une transaction jusqu'au commit ; expiration cryptographique vérifiée ; diffusion temps réel **après** commit. |
+| Journal (`TenantProvisioningService`) | **Conforme.** Triggers bloquant `UPDATE`/`DELETE`/`TRUNCATE` sur `scan_logs`, quel que soit le rôle. |
+
+### Faille identifiée et corrigée — fuite temps réel inter-tenant (SignalR)
+
+- **Constat** : le hub `ScanEventsHub` validait le **format** du site demandé
+  (paramètre `site`) mais pas sa **correspondance avec le compte connecté**. Un
+  utilisateur authentifié d'un site (ex. Sûreté du client A) pouvait s'abonner
+  au groupe d'un **autre** site et recevoir son flux de scans en direct (noms de
+  visiteurs, verdicts). Impact : fuite de données entre clients de Sigasécurité
+  (`CLAUDE.md §7.3`). Exploitabilité : nécessite un compte dashboard valide.
+- **Correctif** : le hub confronte désormais le paramètre `site` au claim `SiteId`
+  du principal — un utilisateur rattaché à un site ne rejoint que le sien ; seul
+  l'Admin global (sans claim de site) peut cibler un site précis. Règle identique
+  à celle du middleware HTTP. Correction couverte par la recompilation et la
+  suite (74 tests au vert).
+- **Suivi recommandé** : ajouter un test d'intégration SignalR dédié (client se
+  connectant avec un `site` ≠ son claim → connexion refusée).
+
+### Durcissement — isolation des tests d'intégration
+
+Les tests d'intégration écrivaient dans la base de **développement** `novacces`
+(mauvaise hygiène : des tests ne doivent jamais toucher une base réelle). Ils
+utilisent désormais une base **dédiée** `novacces_test`, créée automatiquement et
+surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
+
+---
+
+## 9. Conclusion
 
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-74 tests automatisés au vert**. Sous réserve des recommandations du §7 —
+74 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR) ; les
+autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —
 notamment l'audit externe avant déploiement chez un tiers et la recette de l'app
 agent sur terminal — le périmètre API + Web est jugé prêt pour la mise en
 production sur le site pilote.

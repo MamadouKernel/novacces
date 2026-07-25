@@ -9,11 +9,14 @@ namespace NovAcces.UnitTests.Security;
 
 /// <summary>
 /// Décision de scan HORS LIGNE (§6) : reproduit, sans base ni réseau, les
-/// verdicts de la maquette en mode dégradé. Les QR et la liste sont signés par
-/// le vrai service serveur et vérifiés avec la clé publique.
+/// verdicts de la maquette en mode dégradé, cycle directionnel entrée/sortie et
+/// anti-rejeu local compris. Les QR et la liste sont signés par le vrai service
+/// serveur et vérifiés avec la clé publique.
 /// </summary>
 public class OfflineScanEvaluatorTests
 {
+    private static readonly IReadOnlySet<Guid> None = new HashSet<Guid>();
+
     private sealed class Fixture
     {
         public Es256QrSigningService Server { get; }
@@ -37,6 +40,13 @@ public class OfflineScanEvaluatorTests
         }
     }
 
+    // Poste ENTRÉE, aucun visiteur sur site — la configuration par défaut des
+    // tests non directionnels.
+    private static OfflineVerdict Eval(
+        Fixture fx, string qr, OfflineListResult list, DateTimeOffset now,
+        string direction = "Entry", IReadOnlySet<Guid>? onSite = null)
+        => OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, direction, onSite ?? None, now);
+
     [Fact]
     public void ValidQr_InList_WithinWindow_IsRecognized()
     {
@@ -46,7 +56,7 @@ public class OfflineScanEvaluatorTests
         var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now, false));
         var qr = fx.Server.SignVisitToken(visitId, token, now.AddMinutes(15));
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, now);
+        var verdict = Eval(fx, qr, list, now);
 
         Assert.Equal(OfflineOutcome.Recognized, verdict.Outcome);
         Assert.Equal(token, verdict.VisitToken);
@@ -66,7 +76,7 @@ public class OfflineScanEvaluatorTests
         var i = qr.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
         var chars = qr.ToCharArray(); chars[i] = chars[i] == 'A' ? 'B' : 'A';
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, new string(chars), list, now);
+        var verdict = Eval(fx, new string(chars), list, now);
 
         Assert.Equal(OfflineOutcome.InvalidSignature, verdict.Outcome);
         Assert.True(verdict.IsSecurityEvent);
@@ -80,7 +90,7 @@ public class OfflineScanEvaluatorTests
         var list = fx.SignedList(now, now.AddHours(4)); // liste vide
         var qr = fx.Server.SignVisitToken(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(15));
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, now);
+        var verdict = Eval(fx, qr, list, now);
 
         Assert.Equal(OfflineOutcome.NotInLocalList, verdict.Outcome);
         Assert.False(verdict.IsSecurityEvent);
@@ -91,12 +101,11 @@ public class OfflineScanEvaluatorTests
     {
         var fx = new Fixture();
         var issued = DateTimeOffset.UtcNow.AddHours(-5);
-        var list = fx.SignedList(issued, issued.AddHours(4)); // TTL déjà dépassé (now)
         var listNow = fx.Verifier.VerifyDailyList(fx.Server.SignDailyOfflineList(
             Array.Empty<OfflineListEntry>(), issued, issued.AddHours(4)), DateTimeOffset.UtcNow);
         var qr = fx.Server.SignVisitToken(Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow);
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, listNow, DateTimeOffset.UtcNow);
+        var verdict = Eval(fx, qr, listNow, DateTimeOffset.UtcNow);
 
         Assert.Equal(OfflineOutcome.ListUnavailable, verdict.Outcome);
     }
@@ -110,7 +119,7 @@ public class OfflineScanEvaluatorTests
         var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now, true)); // exclu
         var qr = fx.Server.SignVisitToken(visitId, token, now.AddMinutes(15));
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, now);
+        var verdict = Eval(fx, qr, list, now);
 
         Assert.Equal(OfflineOutcome.Excluded, verdict.Outcome);
         Assert.DoesNotContain("exclu", verdict.Message, StringComparison.OrdinalIgnoreCase); // motif jamais exposé
@@ -127,8 +136,8 @@ public class OfflineScanEvaluatorTests
         var late = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now.AddHours(-1), false));
         var qr = fx.Server.SignVisitToken(visitId, token, now.AddHours(2));
 
-        Assert.Equal(OfflineOutcome.TooEarly, OfflineScanEvaluator.Evaluate(fx.Verifier, qr, early, now).Outcome);
-        Assert.Equal(OfflineOutcome.TooLate, OfflineScanEvaluator.Evaluate(fx.Verifier, qr, late, now).Outcome);
+        Assert.Equal(OfflineOutcome.TooEarly, Eval(fx, qr, early, now).Outcome);
+        Assert.Equal(OfflineOutcome.TooLate, Eval(fx, qr, late, now).Outcome);
     }
 
     [Fact]
@@ -142,7 +151,7 @@ public class OfflineScanEvaluatorTests
         var list = fx.SignedList(friday, friday.AddHours(4), new OfflineListEntry(visitId, token, null, false));
         var qr = fx.Server.SignVisitToken(visitId, token, friday.AddMinutes(-1)); // déjà expiré
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, friday);
+        var verdict = Eval(fx, qr, list, friday);
 
         Assert.Equal(OfflineOutcome.Expired, verdict.Outcome);
         Assert.True(verdict.IsSecurityEvent);
@@ -155,12 +164,10 @@ public class OfflineScanEvaluatorTests
         var fx = new Fixture();
         var now = DateTimeOffset.UtcNow;
         var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
-        // Hors fenêtre (trop tard) : refus, mais le token doit être propagé afin
-        // que le scan refusé soit journalisé à la resynchronisation (REQ-F-07).
         var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now.AddHours(-1), false));
         var qr = fx.Server.SignVisitToken(visitId, token, now.AddHours(2));
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, now);
+        var verdict = Eval(fx, qr, list, now);
 
         Assert.Equal(OfflineOutcome.TooLate, verdict.Outcome);
         Assert.Equal(token, verdict.VisitToken);
@@ -172,13 +179,76 @@ public class OfflineScanEvaluatorTests
         var fx = new Fixture();
         var saturday = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero); // samedi
         var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
-        // Mode 30 jours = ScheduledAt null.
         var list = fx.SignedList(saturday, saturday.AddHours(4), new OfflineListEntry(visitId, token, null, false));
         var qr = fx.Server.SignVisitToken(visitId, token, saturday.AddDays(1));
 
-        var verdict = OfflineScanEvaluator.Evaluate(fx.Verifier, qr, list, saturday);
+        var verdict = Eval(fx, qr, list, saturday);
 
         Assert.Equal(OfflineOutcome.NonBusinessDay, verdict.Outcome);
         Assert.True(verdict.IsSecurityEvent);
+    }
+
+    // ---- Cycle directionnel + anti-rejeu local (constat #1) ----
+
+    [Fact]
+    public void EntryPost_WhenAlreadyOnSite_IsSuspectedDuplicate_SecurityEvent()
+    {
+        var fx = new Fixture();
+        var now = DateTimeOffset.UtcNow;
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now, false));
+        var qr = fx.Server.SignVisitToken(visitId, token, now.AddMinutes(15));
+
+        // Le visiteur est DÉJÀ sur site : re-scanner à l'entrée = suspicion de copie.
+        var verdict = Eval(fx, qr, list, now, "Entry", new HashSet<Guid> { token });
+
+        Assert.Equal(OfflineOutcome.SuspectedDuplicate, verdict.Outcome);
+        Assert.True(verdict.IsSecurityEvent);
+    }
+
+    [Fact]
+    public void ExitPost_WhenOnSite_IsCheckedOut_AndNeverBlocked()
+    {
+        var fx = new Fixture();
+        var now = DateTimeOffset.UtcNow;
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        // Hors fenêtre à l'entrée, mais une SORTIE n'est jamais bloquée.
+        var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now.AddHours(-3), false));
+        var qr = fx.Server.SignVisitToken(visitId, token, now.AddHours(2));
+
+        var verdict = Eval(fx, qr, list, now, "Exit", new HashSet<Guid> { token });
+
+        Assert.Equal(OfflineOutcome.CheckedOut, verdict.Outcome);
+        Assert.False(verdict.IsSecurityEvent);
+    }
+
+    [Fact]
+    public void ExitPost_WhenNotOnSite_IsNoActiveEntry()
+    {
+        var fx = new Fixture();
+        var now = DateTimeOffset.UtcNow;
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now, false));
+        var qr = fx.Server.SignVisitToken(visitId, token, now.AddMinutes(15));
+
+        var verdict = Eval(fx, qr, list, now, "Exit", None);
+
+        Assert.Equal(OfflineOutcome.NoActiveEntry, verdict.Outcome);
+        Assert.False(verdict.IsSecurityEvent);
+    }
+
+    [Fact]
+    public void ExcludedButOnSite_CanStillExit()
+    {
+        var fx = new Fixture();
+        var now = DateTimeOffset.UtcNow;
+        var (visitId, token) = (Guid.NewGuid(), Guid.NewGuid());
+        // Personne exclue MAIS déjà sur site : elle doit pouvoir sortir (miroir en ligne).
+        var list = fx.SignedList(now, now.AddHours(4), new OfflineListEntry(visitId, token, now, true));
+        var qr = fx.Server.SignVisitToken(visitId, token, now.AddMinutes(15));
+
+        var verdict = Eval(fx, qr, list, now, "Exit", new HashSet<Guid> { token });
+
+        Assert.Equal(OfflineOutcome.CheckedOut, verdict.Outcome);
     }
 }

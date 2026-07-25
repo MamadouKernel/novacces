@@ -2,14 +2,17 @@ namespace NovAcces.Shared.Offline;
 
 /// <summary>
 /// Décision de scan en MODE DÉGRADÉ (hors ligne), côté agent. Pur, sans état ni
-/// dépendance : le MAUI l'appelle avec le QR scanné et la liste locale signée du
-/// jour, puis affiche le verdict et gère l'enregistrement local (entrée/sortie,
-/// resynchronisation). Reproduit la doctrine §6 des scénarios.
+/// dépendance : le MAUI l'appelle avec le QR scanné, la liste locale signée du
+/// jour, le SENS du poste (Entrée/Sortie) et l'ensemble des visiteurs
+/// considérés « sur site » localement (cf. <see cref="OfflineOnSiteState"/>).
+/// Reproduit la doctrine §6 des scénarios ET, en miroir de Domain/Visit.Scan,
+/// le cycle directionnel entrée/sortie + l'anti-rejeu local.
 ///
-/// Limites assumées du hors-ligne : la fenêtre −20/+15 et le jour ouvré sont
-/// vérifiés localement à partir de la liste signée ; l'anti-rejeu complet et
-/// l'état « déjà sur site » relèvent de l'état LOCAL géré par le MAUI (SQLite),
-/// confronté au registre central à la reconnexion (resync).
+/// L'ordre des contrôles suit exactement Domain/Visit.Scan : exclusion (sauf
+/// déjà sur site), poste Sortie (jamais bloqué pour qui est sur site), poste
+/// Entrée avec détection « déjà sur site » (suspicion de copie volée), puis
+/// fenêtre/jour ouvré à l'entrée. La sync avec le registre central à la
+/// reconnexion (resync) tranche les conflits éventuels.
 /// </summary>
 public static class OfflineScanEvaluator
 {
@@ -19,7 +22,8 @@ public static class OfflineScanEvaluator
     public const int WindowAfterMinutes = 15;
 
     public static OfflineVerdict Evaluate(
-        OfflineQrVerifier verifier, string signedQr, OfflineListResult list, DateTimeOffset now)
+        OfflineQrVerifier verifier, string signedQr, OfflineListResult list,
+        string direction, IReadOnlySet<Guid> onSiteTokens, DateTimeOffset now)
     {
         // 1. Liste locale absente ou TTL dépassé : plus aucune validation possible.
         if (!list.IsValid || list.IsExpired)
@@ -49,47 +53,62 @@ public static class OfflineScanEvaluator
             return new OfflineVerdict(OfflineOutcome.NotInLocalList,
                 "VÉRIFICATION IMPOSSIBLE — hors ligne", IsSecurityEvent: false);
 
-        // 4. Liste d'exclusion : refus générique (motif jamais exposé à l'agent).
-        if (item.IsExcluded)
-            return new OfflineVerdict(OfflineOutcome.Excluded,
-                "ACCÈS REFUSÉ — voir poste de garde", IsSecurityEvent: true,
-                VisitId: item.VisitId, VisitToken: item.VisitToken);
+        var onSite = onSiteTokens.Contains(item.VisitToken);
+        var isExit = string.Equals(direction, "Exit", StringComparison.OrdinalIgnoreCase);
 
-        // 5. Fenêtre de validité.
+        OfflineVerdict Refuse(OfflineOutcome o, string m, bool secu) =>
+            new(o, m, secu, item.VisitId, item.VisitToken);
+
+        // 4. Liste d'exclusion : refus générique (motif jamais exposé). Une personne
+        //    exclue mais DÉJÀ sur site peut néanmoins sortir (comme en ligne).
+        if (item.IsExcluded && !onSite)
+            return Refuse(OfflineOutcome.Excluded, "ACCÈS REFUSÉ — voir poste de garde", secu: true);
+
+        // 5. Poste SORTIE : ne gère que des sorties. Une sortie n'est JAMAIS bloquée
+        //    pour qui est sur site (CLAUDE.md §4) ; sinon, aucune entrée active.
+        if (isExit)
+        {
+            return onSite
+                ? Refuse(OfflineOutcome.CheckedOut, "SORTIE ENREGISTRÉE", secu: false)
+                : Refuse(OfflineOutcome.NoActiveEntry, "AUCUNE ENTRÉE ACTIVE", secu: false);
+        }
+
+        // 6. Poste ENTRÉE, mais le visiteur est DÉJÀ sur site => suspicion de copie
+        //    volée (ce n'est pas une sortie : chaque poste a un sens — CLAUDE.md §4).
+        if (onSite)
+            return Refuse(OfflineOutcome.SuspectedDuplicate, "ACCÈS REFUSÉ — déjà sur site", secu: true);
+
+        // 7. Fenêtre de validité (ENTRÉE uniquement).
         if (item.ScheduledAt is { } scheduled)
         {
             // Mode Unique : fenêtre −20/+15 autour du rendez-vous.
             if (now < scheduled.AddMinutes(-WindowBeforeMinutes))
-                return new OfflineVerdict(OfflineOutcome.TooEarly,
-                    $"TROP TÔT — fenêtre à {scheduled.AddMinutes(-WindowBeforeMinutes).LocalDateTime:HH:mm}",
-                    IsSecurityEvent: true, VisitId: item.VisitId, VisitToken: item.VisitToken);
+                return Refuse(OfflineOutcome.TooEarly,
+                    $"TROP TÔT — fenêtre à {scheduled.AddMinutes(-WindowBeforeMinutes).LocalDateTime:HH:mm}", secu: true);
 
             if (now > scheduled.AddMinutes(WindowAfterMinutes))
-                return new OfflineVerdict(OfflineOutcome.TooLate,
-                    "HORS FENÊTRE DE VALIDITÉ", IsSecurityEvent: true,
-                    VisitId: item.VisitId, VisitToken: item.VisitToken);
+                return Refuse(OfflineOutcome.TooLate, "HORS FENÊTRE DE VALIDITÉ", secu: true);
         }
         else
         {
             // Mode 30 jours : jours ouvrés uniquement (fériés indisponibles hors
             // ligne — vérifiés au retour en ligne lors de la resynchronisation).
             if (now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-                return new OfflineVerdict(OfflineOutcome.NonBusinessDay,
-                    "JOUR NON OUVRÉ", IsSecurityEvent: true,
-                    VisitId: item.VisitId, VisitToken: item.VisitToken);
+                return Refuse(OfflineOutcome.NonBusinessDay, "JOUR NON OUVRÉ", secu: true);
         }
 
-        // 6. QR reconnu et valide selon l'instantané local : l'app applique alors
-        //    l'entrée/sortie selon son état local et marque le scan pour resync.
-        return new OfflineVerdict(OfflineOutcome.Recognized,
-            "QR reconnu — appliquer entrée/sortie (état local)", IsSecurityEvent: false,
-            VisitId: item.VisitId, VisitToken: item.VisitToken);
+        // 8. Entrée autorisée : l'app marque le visiteur « sur site » localement et
+        //    met le scan en file pour resynchronisation.
+        return Refuse(OfflineOutcome.Recognized, "ACCÈS AUTORISÉ (hors ligne)", secu: false);
     }
 }
 
 public enum OfflineOutcome
 {
     Recognized,
+    CheckedOut,
+    NoActiveEntry,
+    SuspectedDuplicate,
     InvalidSignature,
     NotInLocalList,
     ListUnavailable,

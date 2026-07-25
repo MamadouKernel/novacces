@@ -49,16 +49,25 @@ public sealed class ScanViewModel
     {
         var now = DateTimeOffset.UtcNow;
         var list = _session.OfflineList ?? new OfflineListResult(false, true, Array.Empty<OfflineListItem>());
-        var verdict = OfflineScanEvaluator.Evaluate(_session.Verifier, signedQr, list, now);
+
+        // État LOCAL « sur site » (instantané serveur + scans locaux) : base de
+        // l'anti-rejeu et du cycle directionnel hors-ligne.
+        var onSite = await _session.ComputeOnSiteAsync();
+        var verdict = OfflineScanEvaluator.Evaluate(
+            _session.Verifier, signedQr, list, _session.Direction, onSite, now);
 
         // TOUT scan hors-ligne rattaché à un QR connu est PERSISTÉ pour
         // resynchronisation — accordé comme refusé (REQ-F-07 : journaliser chaque
         // tentative ; §6.2 : chaque validation dégradée marquée dans le journal).
-        // Il doit survivre à un redémarrage pendant la coupure.
+        // Il doit survivre à un redémarrage pendant la coupure, et alimente aussi
+        // le calcul de l'état « sur site » (entrée accordée / sortie effective).
         if (verdict.VisitToken is { } token)
+        {
+            var granted = verdict.Outcome is OfflineOutcome.Recognized or OfflineOutcome.CheckedOut;
             await _session.EnqueueOfflineScanAsync(new OfflineScanDto(
-                token, _session.Direction, verdict.Outcome == OfflineOutcome.Recognized, now,
+                token, _session.Direction, granted, now,
                 verdict.Outcome.ToString(), verdict.IsSecurityEvent));
+        }
 
         return ScanVerdict.FromOffline(verdict);
     }
@@ -84,7 +93,10 @@ public sealed record ScanVerdict(string Title, string Subtitle, string ColorHex,
 
     public static ScanVerdict FromOffline(OfflineVerdict v) => v.Outcome switch
     {
-        OfflineOutcome.Recognized => new("QR RECONNU (hors ligne)", "Appliquer entrée/sortie", Green, false),
+        OfflineOutcome.Recognized => new("ACCÈS AUTORISÉ", "Hors ligne", Green, false),
+        OfflineOutcome.CheckedOut => new("SORTIE ENREGISTRÉE", "Hors ligne", Blue, false),
+        OfflineOutcome.SuspectedDuplicate => new("ACCÈS REFUSÉ", "Déjà sur site — suspicion de copie", Red, true),
+        OfflineOutcome.NoActiveEntry => new("SORTIE IMPOSSIBLE", "Aucune entrée active", Orange, false),
         OfflineOutcome.InvalidSignature => new("SIGNATURE INVALIDE", "QR altéré", Red, true),
         OfflineOutcome.Excluded => new("ACCÈS REFUSÉ", "Voir poste de garde", Red, true),
         OfflineOutcome.TooEarly or OfflineOutcome.TooLate or OfflineOutcome.NonBusinessDay or OfflineOutcome.Expired

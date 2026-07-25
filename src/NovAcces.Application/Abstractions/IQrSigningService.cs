@@ -31,6 +31,7 @@ public interface IQrSigningService
 
 public sealed record QrVerificationResult(bool IsValid, Guid? VisitId, Guid? VisitToken, DateTimeOffset? ExpiresAt);
 
-public sealed record OfflineListEntry(Guid VisitId, Guid VisitToken, DateTimeOffset? ScheduledAt, bool IsExcluded);
+public sealed record OfflineListEntry(
+    Guid VisitId, Guid VisitToken, DateTimeOffset? ScheduledAt, bool IsExcluded, bool IsOnSite = false);
 
 public sealed record OfflineListVerificationResult(bool IsValid, bool IsExpired, IReadOnlyCollection<OfflineListEntry> Entries);

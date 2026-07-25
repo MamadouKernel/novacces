@@ -52,7 +52,7 @@ public sealed class OfflineQrVerifier : IDisposable
         var items = payload.Entries.Select(e => new OfflineListItem(
             e.VisitId, e.VisitToken,
             e.ScheduledAtUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.ScheduledAtUnix.Value) : null,
-            e.IsExcluded)).ToArray();
+            e.IsExcluded, e.IsOnSite)).ToArray();
 
         return new OfflineListResult(true, isExpired, items);
     }
@@ -95,7 +95,8 @@ public sealed class OfflineQrVerifier : IDisposable
     // ---- Structures miroir du format serveur (ne pas modifier isolément) ----
     private sealed record SignedEnvelope(string PayloadB64Url, string SignatureB64Url);
     private sealed record VisitTokenPayload(Guid VisitId, Guid VisitToken, long Exp);
-    private sealed record OfflineEntryDto(Guid VisitId, Guid VisitToken, long? ScheduledAtUnix, bool IsExcluded);
+    private sealed record OfflineEntryDto(
+        Guid VisitId, Guid VisitToken, long? ScheduledAtUnix, bool IsExcluded, bool IsOnSite = false);
     private sealed record OfflineListPayload(OfflineEntryDto[] Entries, long IssuedAt, long Exp);
 }
 
@@ -105,4 +106,5 @@ public sealed record OfflineTokenResult(bool IsValid, Guid? VisitId, Guid? Visit
 /// <summary>Résultat de vérification de la liste hors-ligne du jour.</summary>
 public sealed record OfflineListResult(bool IsValid, bool IsExpired, IReadOnlyList<OfflineListItem> Entries);
 
-public sealed record OfflineListItem(Guid VisitId, Guid VisitToken, DateTimeOffset? ScheduledAt, bool IsExcluded);
+public sealed record OfflineListItem(
+    Guid VisitId, Guid VisitToken, DateTimeOffset? ScheduledAt, bool IsExcluded, bool IsOnSite = false);

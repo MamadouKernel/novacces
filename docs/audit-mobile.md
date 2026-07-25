@@ -21,7 +21,7 @@ dégradé**, où se concentraient les vrais écarts. Corrigés ci-dessous.
 
 | # | Gravité | Constat | Suite |
 |---|---|---|---|
-| 1 | 🔴 Élevé | Anti-rejeu local & cycle directionnel non appliqués hors-ligne (état local « déjà sur site » non exploité par le ViewModel) | **Ouvert** — nécessite un état local (SQLite) reconstruit et une logique de cycle côté agent. À implémenter (cœur en `Shared`, câblage en VS). |
+| 1 | 🔴 Élevé | Anti-rejeu local & cycle directionnel non appliqués hors-ligne (état local « déjà sur site » non exploité par le ViewModel) | **Corrigé** — `OfflineScanEvaluator` applique le cycle directionnel + l'anti-rejeu local (miroir de `Domain/Visit.Scan`) ; `OfflineOnSiteState` reconstruit l'état sur site (instantané serveur transporté dans la liste signée + scans locaux). Testé (7 tests unitaires). Câblage `ScanViewModel`/`AgentSession` à valider en VS. |
 | 2 | 🔴 Élevé | Journalisation centrale incomplète : `/resync` ne journalisait que les conflits ; refus hors-ligne non remontés | **Corrigé** — `/resync` journalise désormais CHAQUE scan (accordé/refusé/conflit, marqué mode dégradé) ; le client met en file tous les scans porteurs d'un token. Testé (intégration + unitaire). |
 | 3 | 🟠 Moyen/Élevé | Expiration cryptographique du QR ignorée hors-ligne (mode 30 jours sans contrôle d'expiration) | **Corrigé** — `OfflineScanEvaluator` rejette `now > token.ExpiresAt` (`OfflineOutcome.Expired`). Testé (unitaire). |
 | 4 | 🟠 Moyen | Pas de resync/refresh auto à la reconnexion (`ConnectivityChanged` non écouté) | **Ouvert** — à câbler côté MAUI (vérif en VS). |
@@ -38,10 +38,13 @@ attendus limités à nom + statut + fenêtre (§11).
 
 ## Reste à faire (priorité)
 
-1. **Constat 1** — appliquer le cycle directionnel entrée/sortie et l'anti-rejeu
-   « déjà sur site » hors-ligne, à partir de l'état local persistant. C'est le
-   dernier vrai écart de sûreté du mode dégradé.
-2. **Constats 4 et 5** — resync/refresh automatiques + bandeau dynamique.
-3. **Constat 6** — externaliser la configuration du terminal.
-4. Compiler + exécuter le projet dans Visual Studio, tester le scan caméra et le
-   rendu audio sur un terminal réel du parc.
+1. **Constats 4 et 5** — resync/refresh automatiques (`ConnectivityChanged`) +
+   bandeau connectivité dynamique. Purement MAUI.
+2. **Constat 6** — externaliser la configuration du terminal (`AgentConfig`).
+3. Compiler + exécuter le projet dans Visual Studio, tester le scan caméra, le
+   rendu audio et le mode dégradé (cycle directionnel + resync) sur un terminal
+   réel du parc.
+
+Les écarts de sûreté du mode dégradé (constats 1, 2, 3) sont désormais tous
+corrigés et testés côté `Shared`/API. Ne restent que du câblage MAUI (à valider
+en VS) et de l'exploitation.

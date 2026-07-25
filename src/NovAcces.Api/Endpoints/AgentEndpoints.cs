@@ -43,7 +43,7 @@ public static class AgentEndpoints
             var today = await visits.GetTodayActiveVisitsAsync(issuedAt, ct);
 
             var entries = today
-                .Select(v => new OfflineListEntry(v.Id, v.VisitToken, v.ScheduledAt, v.IsExcluded))
+                .Select(v => new OfflineListEntry(v.Id, v.VisitToken, v.ScheduledAt, v.IsExcluded, v.IsOnSite))
                 .ToList();
 
             var signed = signing.SignDailyOfflineList(entries, issuedAt, expiresAt);

@@ -33,6 +33,18 @@ public sealed class AgentSession
     /// <summary>Met en file (persistée) un scan réalisé hors ligne.</summary>
     public Task EnqueueOfflineScanAsync(OfflineScanDto scan) => _store.EnqueueAsync(scan);
 
+    /// <summary>
+    /// Reconstruit l'ensemble des visiteurs « sur site » localement : instantané
+    /// serveur de la liste + effets des scans hors-ligne persistés. Base de
+    /// l'anti-rejeu et du cycle directionnel du mode dégradé.
+    /// </summary>
+    public async Task<HashSet<Guid>> ComputeOnSiteAsync()
+    {
+        var snapshot = OfflineList?.Entries ?? (IReadOnlyList<OfflineListItem>)Array.Empty<OfflineListItem>();
+        var scans = await _store.GetAllAsync();
+        return OfflineOnSiteState.Compute(snapshot, scans);
+    }
+
     /// <summary>Nombre de scans hors-ligne en attente de resynchronisation.</summary>
     public Task<int> PendingCountAsync() => _store.CountAsync();
 

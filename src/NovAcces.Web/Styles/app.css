@@ -224,6 +224,58 @@
   .nav-links { @apply mt-1 flex gap-3; }
   .nav-links a { @apply text-sm font-medium text-brand-600 hover:text-brand-700; }
 
+  /* ---- Modale (création groupée) ---- */
+  .overlay {
+    @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto
+           bg-brand-950/50 p-4 backdrop-blur-sm sm:p-6;
+  }
+  .modal {
+    @apply my-auto w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-pop animate-fade-in-up;
+  }
+  .modal-h {
+    @apply flex items-center justify-between border-b-[3px] border-amber-500 bg-brand-700 px-5 py-4 text-white sm:px-6;
+  }
+  .modal-h h2 { @apply font-display text-xl font-semibold tracking-tight; }
+  .modal-h .sub { @apply mt-0.5 text-xs text-white/70; }
+  .modal-h button { @apply -mr-1 rounded-md p-1 text-white/80 transition hover:bg-white/10 hover:text-white; }
+  .modal-b { @apply max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6; }
+  .modal-f {
+    @apply flex flex-col-reverse items-stretch gap-2 border-t border-line bg-paper px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6;
+  }
+
+  /* Bloc « paramètres communs » du groupe */
+  .shared-box {
+    @apply rounded-lg border border-line bg-paper/60 p-4;
+  }
+  .shared-box .eyebrow { @apply mb-3; }
+
+  /* Zone de collage intelligent */
+  .paste-hint { @apply mt-1.5 text-xs text-muted; }
+
+  /* Grille des visiteurs du lot */
+  .roster { @apply w-full border-collapse text-sm; }
+  .roster th {
+    @apply border-b border-line px-2 py-1.5 text-left font-mono text-[0.6rem]
+           font-medium uppercase tracking-[0.1em] text-muted;
+  }
+  .roster td { @apply border-b border-line px-2 py-1.5 align-middle; }
+  .roster tr.dup td { @apply bg-amber-50; }
+  .roster input {
+    @apply w-full rounded-md border-line bg-white px-2 py-1 text-sm text-ink
+           focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30;
+  }
+  .roster .rm {
+    @apply rounded-md p-1 text-muted transition hover:bg-nobg hover:text-no;
+  }
+  .roster-empty { @apply flex flex-col items-center gap-1 px-4 py-8 text-center text-sm text-muted; }
+
+  /* Résultats du lot */
+  .result-line {
+    @apply flex items-center justify-between gap-3 rounded-md border-l-4 px-3 py-2 text-sm;
+  }
+  .result-line.ok { @apply border-l-ok bg-okbg/60; }
+  .result-line.ko { @apply border-l-no bg-nobg/60; }
+
   /* ---- Œil du champ mot de passe ---- */
   .pwd-eye {
     @apply absolute inset-y-0 right-0 flex items-center pr-3 text-muted

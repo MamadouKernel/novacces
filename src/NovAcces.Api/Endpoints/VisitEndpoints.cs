@@ -77,6 +77,68 @@ public static class VisitEndpoints
         .WithName("CreateVisit")
         .WithSummary("Crée une demande de visite et génère le QR signé.");
 
+        // Création groupée : invite un lot de visiteurs en une opération.
+        // Chaque ligne passe par les MÊMES règles que la création unitaire
+        // (mode, nom requis, anti-doublon, exclusion, signature, notification).
+        // Échecs isolés par ligne — un visiteur invalide n'annule pas les autres.
+        group.MapPost("/bulk", async (
+            BulkCreateVisitsRequestDto request,
+            ClaimsPrincipal user,
+            IVisitRepository visits,
+            CreateVisitHandler handler,
+            CancellationToken ct) =>
+        {
+            if (request.Visits is null || request.Visits.Count == 0)
+                return Results.BadRequest(new { error = "Aucun visiteur à inviter." });
+
+            if (request.Visits.Count > 100)
+                return Results.BadRequest(new { error = "Lot trop volumineux (100 visiteurs maximum)." });
+
+            var hostId = user.HostIdentifier();
+            var items = new List<BulkCreateVisitItemDto>(request.Visits.Count);
+
+            foreach (var r in request.Visits)
+            {
+                var name = r.VisitorName?.Trim() ?? "";
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(name))
+                    { items.Add(Fail(name, "Nom du visiteur requis.")); continue; }
+
+                    if (!Enum.TryParse<AccessMode>(r.Mode, ignoreCase: true, out var mode))
+                    { items.Add(Fail(name, "Mode invalide.")); continue; }
+
+                    if (mode == AccessMode.Unique && r.ScheduledAt is null)
+                    { items.Add(Fail(name, "Date de rendez-vous requise (mode unique).")); continue; }
+
+                    if (await visits.HasActiveVisitForVisitorAsync(name, ct))
+                    { items.Add(Fail(name, "Une demande active existe déjà pour ce visiteur.")); continue; }
+
+                    var command = new CreateVisitCommand(
+                        name, r.VisitorCompany, r.Motif, hostId,
+                        mode, r.ScheduledAt, r.PlannedDurationMinutes,
+                        r.VisitorPhone, r.VisitorEmail);
+
+                    var result = await handler.HandleAsync(command, ct);
+                    items.Add(new BulkCreateVisitItemDto(
+                        name, true, result.VisitId, result.SignedQrPayload, result.ExpiresAt, null));
+                }
+                catch
+                {
+                    items.Add(Fail(name, "Échec de la génération."));
+                }
+            }
+
+            var created = items.Count(i => i.Success);
+            return Results.Ok(new BulkCreateVisitsResponseDto(created, items.Count - created, items));
+
+            static BulkCreateVisitItemDto Fail(string name, string error) =>
+                new(name, false, null, null, null, error);
+        })
+        .RequireAuthorization(NovAccesRoles.Hote)
+        .WithName("CreateVisitsBulk")
+        .WithSummary("Crée un lot de demandes de visite (invitation groupée) et génère un QR par visiteur.");
+
         // REQ-F-09 : révocation manuelle par l'hôte ou la sûreté, à tout moment.
         group.MapPost("/{visitId:guid}/revoke", async (
             Guid visitId,

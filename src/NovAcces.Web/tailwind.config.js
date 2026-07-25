@@ -13,6 +13,7 @@ module.exports = {
     "dot-on", "dot-off",
     "tile-warn", "tile-alert", "tile-in",
     "filter", "on", "row-security",
+    "result-line", "ok", "ko", "dup",
   ],
   theme: {
     extend: {

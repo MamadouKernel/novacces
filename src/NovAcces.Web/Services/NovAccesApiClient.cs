@@ -74,6 +74,14 @@ public sealed class NovAccesApiClient
         return await response.Content.ReadFromJsonAsync<CreateVisitResponseDto>();
     }
 
+    /// <summary>Création groupée : invite un lot de visiteurs en une opération.</summary>
+    public async Task<BulkCreateVisitsResponseDto?> CreateVisitsBulkAsync(BulkCreateVisitsRequestDto request)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/visits/bulk", request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BulkCreateVisitsResponseDto>();
+    }
+
     /// <summary>Demandes de visite de l'hôte connecté.</summary>
     public async Task<IReadOnlyList<HostVisitDto>> GetMyVisitsAsync()
     {

@@ -22,7 +22,13 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 <div class="nav-links"><a href="/surete">→ Dashboard sûreté</a></div>
             }
         </div>
-        <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
+        <div class="flex flex-wrap items-center gap-2">
+            <button class="btn-accent" @onclick="() => _showGroup = true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                Inviter un groupe
+            </button>
+            <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
+        </div>
     </header>
 
     <div class="cards">
@@ -160,10 +166,23 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
         }
     </section>
+
+    @if (_showGroup)
+    {
+        <GroupInvite OnClose="() => _showGroup = false" OnCompleted="OnGroupCompleted" />
+    }
 </div>
 }
 
 @code {
+    private bool _showGroup;
+
+    private async Task OnGroupCompleted()
+    {
+        await RefreshMyVisitsAsync();
+        StateHasChanged();
+    }
+
     private bool _loaded;
 
     private sealed class VisitForm

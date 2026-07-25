@@ -98,21 +98,43 @@ else if (CanViewDashboard)
             <h2>Flux des scans (temps réel)</h2>
             @if (_feed.Count == 0)
             {
-                <p class="muted">En attente de scans… Un passage à un poste s'affichera ici instantanément.</p>
+                <div class="empty">
+                    @EmptyIcon()
+                    <p>En attente de scans…</p>
+                    <p class="hint">Un passage à un poste s'affichera ici instantanément.</p>
+                </div>
             }
             else
             {
-                <ul class="feed">
-                    @foreach (var e in _feed)
+                <div class="filters" style="margin-bottom:.75rem;">
+                    @foreach (var f in FeedFilters)
                     {
-                        <li class="feed-item @VerdictClass(e)">
-                            <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
-                            <span class="feed-name">@e.VisitorName</span>
-                            <span class="feed-verdict">@Humanize(e)</span>
-                            <span class="feed-agent">@e.AgentId</span>
-                        </li>
+                        <button class="filter @(_feedFilter == f.Key ? "on" : "")"
+                                @onclick="() => _feedFilter = f.Key">
+                            @f.Label <span class="count">@FeedCount(f.Key)</span>
+                        </button>
                     }
-                </ul>
+                </div>
+
+                var feedRows = FilteredFeed;
+                if (feedRows.Count == 0)
+                {
+                    <div class="empty">@EmptyIcon()<p>Aucun scan de ce type pour l'instant.</p></div>
+                }
+                else
+                {
+                    <ul class="feed">
+                        @foreach (var e in feedRows)
+                        {
+                            <li class="feed-item @VerdictClass(e)">
+                                <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                                <span class="feed-name">@e.VisitorName</span>
+                                <span class="feed-verdict">@Humanize(e)</span>
+                                <span class="feed-agent">@e.AgentId</span>
+                            </li>
+                        }
+                    </ul>
+                }
             }
         </section>
 
@@ -120,12 +142,12 @@ else if (CanViewDashboard)
             <h2>Présents sur site (@_onSite.Count)</h2>
             @if (_onSite.Count == 0)
             {
-                <p class="muted">Aucun visiteur actuellement sur site.</p>
+                <div class="empty">@EmptyIcon()<p>Aucun visiteur actuellement sur site.</p></div>
             }
             else
             {
                 <ul class="onsite">
-                    @foreach (var v in _onSite)
+                    @foreach (var v in OnSiteRanked)
                     {
                         <li>
                             <strong>@v.VisitorName</strong>
@@ -195,6 +217,40 @@ else if (CanViewDashboard)
     private HubConnection? _hub;
     private bool _connected;
     private bool _loaded;
+
+    // ── Listes intelligentes : filtre du flux + tri des présents ──
+    private string _feedFilter = "all";
+
+    private static readonly (string Key, string Label)[] FeedFilters =
+    {
+        ("all", "Tous"), ("granted", "Entrées"), ("exit", "Sorties"),
+        ("denied", "Refus"), ("security", "Sécurité"),
+    };
+
+    private static bool FeedMatches(ScanEventDto e, string key) => key switch
+    {
+        "granted"  => e.IsGranted && !e.IsCheckOut,
+        "exit"     => e.IsCheckOut,
+        "security" => e.IsSecurityEvent,
+        "denied"   => !e.IsGranted && !e.IsCheckOut && !e.IsSecurityEvent,
+        _          => true,
+    };
+
+    private int FeedCount(string key) => _feed.Count(e => FeedMatches(e, key));
+
+    private IReadOnlyList<ScanEventDto> FilteredFeed =>
+        _feedFilter == "all" ? _feed : _feed.Where(e => FeedMatches(e, _feedFilter)).ToList();
+
+    // Présents : les dépassements les plus critiques remontent en tête.
+    private IReadOnlyList<OnSiteVisitorDto> OnSiteRanked =>
+        _onSite.OrderByDescending(v => v.OverstayLevel)
+               .ThenByDescending(v => v.OverstayMinutes)
+               .ThenBy(v => v.VisitorName)
+               .ToList();
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
 
     private bool CanViewDashboard =>
         Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin);

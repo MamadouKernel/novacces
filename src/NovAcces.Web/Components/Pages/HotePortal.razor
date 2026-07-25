@@ -86,40 +86,78 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     </div>
 
     <section class="card" style="margin-top:1.2rem;">
-        <h2>Mes demandes (@_myVisits.Count)</h2>
+        <h2>Mes demandes</h2>
         @if (_myVisits.Count == 0)
         {
-            <p class="muted">Aucune demande pour le moment.</p>
+            <div class="empty">
+                @EmptyIcon()
+                <p>Aucune demande pour le moment.</p>
+                <p class="hint">Générez un QR ci-dessus : la demande apparaîtra ici.</p>
+            </div>
         }
         else
         {
-            <table class="visits">
-                <thead>
-                    <tr><th>Visiteur</th><th>Société</th><th>Mode</th><th>Statut</th><th>Créée</th><th></th></tr>
-                </thead>
-                <tbody>
-                    @foreach (var v in _myVisits)
+            <div class="toolbar">
+                <input class="search" placeholder="Rechercher un visiteur, une société, un motif…"
+                       @bind="_search" @bind:event="oninput" />
+                <div class="filters">
+                    @foreach (var f in StatusFilters)
                     {
-                        <tr>
-                            <td>@v.VisitorName</td>
-                            <td class="muted">@v.VisitorCompany</td>
-                            <td>@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
-                            <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
-                            <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
-                            <td>
-                                @if (v.Status == "Valid")
-                                {
-                                    <button class="btn-danger" @onclick="() => RevokeAsync(v.VisitId)" disabled="@_revoking">Révoquer</button>
-                                }
-                                else
-                                {
-                                    <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
-                                }
-                            </td>
-                        </tr>
+                        <button class="filter @(_statusFilter == f.Key ? "on" : "")"
+                                @onclick="() => _statusFilter = f.Key">
+                            @f.Label <span class="count">@CountFor(f.Key)</span>
+                        </button>
                     }
-                </tbody>
-            </table>
+                </div>
+            </div>
+
+            var rows = FilteredVisits;
+            if (rows.Count == 0)
+            {
+                <div class="empty">
+                    @EmptyIcon()
+                    <p>Aucune demande ne correspond à la recherche.</p>
+                    <button class="btn-ghost" @onclick="ResetFilters">Réinitialiser les filtres</button>
+                </div>
+            }
+            else
+            {
+                <table class="visits">
+                    <thead>
+                        <tr>
+                            <th class="sortable" @onclick='() => SortBy("name")'>Visiteur@(Arrow("name"))</th>
+                            <th>Société</th>
+                            <th>Mode</th>
+                            <th class="sortable" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</th>
+                            <th class="sortable" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in rows)
+                        {
+                            <tr>
+                                <td>@Highlight(v.VisitorName)</td>
+                                <td class="muted">@Highlight(v.VisitorCompany)</td>
+                                <td>@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
+                                <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
+                                <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
+                                <td>
+                                    @if (v.Status == "Valid")
+                                    {
+                                        <button class="btn-danger" @onclick="() => RevokeAsync(v.VisitId)" disabled="@_revoking">Révoquer</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="hint">@rows.Count demande(s) affichée(s) sur @_myVisits.Count.</p>
+            }
         }
     </section>
 </div>
@@ -147,6 +185,81 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private bool _busy;
     private bool _revoking;
     private string? _error;
+
+    // ── Liste intelligente « Mes demandes » : recherche + filtre + tri ──
+    private string _search = "";
+    private string _statusFilter = "all";
+    private string _sortKey = "created";
+    private bool _sortAsc;
+
+    private static readonly (string Key, string Label)[] StatusFilters =
+    {
+        ("all", "Toutes"), ("Valid", "Valides"),
+        ("Revoked", "Révoquées"), ("Expired", "Expirées"),
+    };
+
+    private int CountFor(string key) =>
+        key == "all" ? _myVisits.Count : _myVisits.Count(v => v.Status == key);
+
+    private void ResetFilters() { _search = ""; _statusFilter = "all"; }
+
+    private void SortBy(string key)
+    {
+        if (_sortKey == key) { _sortAsc = !_sortAsc; }
+        else { _sortKey = key; _sortAsc = key == "name"; } // noms A→Z ; dates récentes d'abord
+    }
+
+    private MarkupString Arrow(string key) => _sortKey == key
+        ? (MarkupString)$"<span class=\"arrow\">{(_sortAsc ? "▲" : "▼")}</span>"
+        : default;
+
+    private IReadOnlyList<HostVisitDto> FilteredVisits
+    {
+        get
+        {
+            IEnumerable<HostVisitDto> q = _myVisits;
+
+            if (_statusFilter != "all")
+                q = q.Where(v => v.Status == _statusFilter);
+
+            var s = _search?.Trim();
+            if (!string.IsNullOrEmpty(s))
+                q = q.Where(v =>
+                    (v.VisitorName?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (v.VisitorCompany?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (v.Motif?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            q = _sortKey switch
+            {
+                "name"   => _sortAsc ? q.OrderBy(v => v.VisitorName) : q.OrderByDescending(v => v.VisitorName),
+                "status" => _sortAsc ? q.OrderBy(v => v.Status)      : q.OrderByDescending(v => v.Status),
+                _        => _sortAsc ? q.OrderBy(v => v.CreatedAt)   : q.OrderByDescending(v => v.CreatedAt),
+            };
+
+            return q.ToList();
+        }
+    }
+
+    // Surligne la portion recherchée (données visiteur encodées → pas d'injection).
+    private MarkupString Highlight(string? text)
+    {
+        var t = text ?? "";
+        var s = _search?.Trim();
+        if (string.IsNullOrEmpty(s))
+            return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var idx = t.IndexOf(s, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var before = System.Net.WebUtility.HtmlEncode(t[..idx]);
+        var match  = System.Net.WebUtility.HtmlEncode(t.Substring(idx, s.Length));
+        var after  = Highlight(t[(idx + s.Length)..]).Value; // gère les occurrences suivantes
+        return (MarkupString)$"{before}<mark>{match}</mark>{after}";
+    }
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
 
     protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
 

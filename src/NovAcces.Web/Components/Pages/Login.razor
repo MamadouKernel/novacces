@@ -10,20 +10,20 @@
 <div class="min-h-screen grid lg:grid-cols-2">
 
     @* ---- Panneau de marque (identité produit) — visible dès lg ---- *@
-    <aside class="relative hidden overflow-hidden bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
-        <div class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/10 blur-2xl"></div>
-        <div class="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-brand-400/20 blur-2xl"></div>
+    <aside class="relative hidden overflow-hidden border-t-[3px] border-amber-500 bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+        <div class="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-amber-500/10 blur-2xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-white/5 blur-2xl"></div>
 
         <div class="relative flex items-center gap-3">
-            <span class="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 ring-1 ring-white/20">
-                @QrMark("h-6 w-6 text-white")
+            <span class="grid h-11 w-11 place-items-center rounded-xl bg-amber-500 text-brand-700 shadow-card">
+                @QrMark("h-6 w-6")
             </span>
-            <span class="text-xl font-bold tracking-tight">NovAcces</span>
+            <span class="font-display text-2xl font-bold tracking-wide">NOV<span class="text-amber-500">ACCÈS</span></span>
         </div>
 
         <div class="relative max-w-md">
-            <h1 class="text-3xl font-bold leading-tight tracking-tight text-white xl:text-4xl">
-                Le contrôle d'accès par QR Code, sécurisé.
+            <h1 class="text-4xl font-bold leading-[1.05] text-white xl:text-5xl">
+                Le contrôle d'accès par QR&nbsp;Code, sécurisé.
             </h1>
             <p class="mt-4 text-brand-100/90">
                 Gestion des visiteurs et contrôle des accès physiques sur sites sensibles —
@@ -38,31 +38,33 @@
             </ul>
         </div>
 
-        <p class="relative text-xs text-brand-200/80">
+        <p class="relative font-mono text-[0.7rem] uppercase tracking-[0.12em] text-brand-200/80">
             Opéré par Sigasécurité · Agrément n° 344 MI
         </p>
     </aside>
 
     @* ---- Formulaire ---- *@
-    <main class="flex items-center justify-center bg-slate-100 p-6 sm:p-10">
+    <main class="flex items-center justify-center bg-paper p-6 sm:p-10">
         <div class="w-full max-w-sm animate-fade-in-up">
 
             @* En-tête de marque compact (mobile uniquement) *@
             <div class="mb-8 flex items-center gap-3 lg:hidden">
-                <span class="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-white shadow-card">
+                <span class="grid h-11 w-11 place-items-center rounded-xl bg-brand-700 text-amber-500 shadow-card">
                     @QrMark("h-6 w-6")
                 </span>
                 <div>
-                    <div class="text-lg font-bold tracking-tight text-slate-900">NovAcces</div>
-                    <div class="text-xs text-slate-500">Contrôle d'accès par QR Code</div>
+                    <div class="font-display text-xl font-bold tracking-wide text-brand-700">NOV<span class="text-amber-500">ACCÈS</span></div>
+                    <div class="text-xs text-muted">Contrôle d'accès par QR Code</div>
                 </div>
             </div>
 
-            <div class="rounded-3xl border border-slate-200/70 bg-white p-7 shadow-card sm:p-8">
-                <h2 class="text-xl font-semibold tracking-tight text-slate-900">
+            <div class="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+                <div class="h-1 bg-amber-500"></div>
+                <div class="p-7 sm:p-8">
+                <h2 class="font-display text-2xl font-semibold text-brand-700">
                     @(_twoFactorRequired ? "Vérification en deux étapes" : "Connexion au portail")
                 </h2>
-                <p class="mb-6 mt-1 text-sm text-slate-500">
+                <p class="mb-6 mt-1 text-sm text-muted">
                     @(_twoFactorRequired
                         ? "Saisissez le code de votre application d'authentification."
                         : "Accès réservé au personnel autorisé.")
@@ -100,10 +102,11 @@
                 {
                     <p class="error">@_error</p>
                 }
+                </div>
             </div>
 
-            <p class="mt-6 text-center text-xs text-slate-400">
-                © @DateTime.Now.Year NovAcces — Sigasécurité
+            <p class="mt-6 text-center font-mono text-[0.7rem] uppercase tracking-[0.1em] text-muted">
+                © @DateTime.Now.Year NovAccès — Sigasécurité
             </p>
         </div>
     </main>
@@ -191,7 +194,7 @@
     private static RenderFragment Check() => builder =>
     {
         builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'
-            class='h-5 w-5 shrink-0 text-brand-300' stroke-linecap='round' stroke-linejoin='round'>
+            class='h-5 w-5 shrink-0 text-amber-500' stroke-linecap='round' stroke-linejoin='round'>
             <path d='M20 6L9 17l-5-5'/></svg>");
     };
 }

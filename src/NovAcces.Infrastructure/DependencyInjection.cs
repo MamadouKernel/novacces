@@ -72,6 +72,7 @@ public static class DependencyInjection
         // --- Notifications (REQ-F-03) : WhatsApp Cloud API, repli email ---
         services.Configure<WhatsAppCloudApiOptions>(configuration.GetSection("WhatsApp"));
         services.Configure<SmtpNotificationOptions>(configuration.GetSection("Smtp"));
+        services.Configure<NotificationBrandingOptions>(configuration.GetSection("Notifications"));
 
         services.AddHttpClient<INotificationService, WhatsAppNotificationService>(client =>
         {

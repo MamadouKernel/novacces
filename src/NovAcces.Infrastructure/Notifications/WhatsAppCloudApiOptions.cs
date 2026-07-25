@@ -15,4 +15,15 @@ public sealed class WhatsAppCloudApiOptions
     public string AccessToken { get; set; } = default!;
     public string TemplateName { get; set; } = default!;
     public string TemplateLanguageCode { get; set; } = "fr";
+
+    /// <summary>
+    /// Mode d'envoi :
+    /// - "Image" (défaut) : le QR est envoyé en image avec une légende
+    ///   rédigée (conforme à l'accord « QR envoyé en image dans la
+    ///   conversation »). Adapté quand le visiteur a déjà une conversation
+    ///   ouverte (fenêtre de 24 h) ou pour les tests.
+    /// - "Template" : message basé sur un template Meta pré-approuvé
+    ///   (obligatoire pour un premier contact hors fenêtre de 24 h).
+    /// </summary>
+    public string SendMode { get; set; } = "Image";
 }

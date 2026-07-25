@@ -60,7 +60,7 @@
                               @bind="_paste" @bind:event="oninput"></textarea>
                     <div class="toolbar" style="margin-top:.5rem;margin-bottom:0">
                         <button class="btn-ghost" @onclick="ParsePaste" disabled="@string.IsNullOrWhiteSpace(_paste)">
-                            ＋ Ajouter à la liste
+                            ＋ Ajouter les visiteurs collés
                         </button>
                         <button class="btn-ghost" @onclick="AddEmptyRow">＋ Ligne vide</button>
                         <span class="paste-hint">Astuce : depuis Excel, copiez la colonne des noms et collez ici.</span>

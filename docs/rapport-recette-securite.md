@@ -20,7 +20,7 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **78 tests** au vert (43 unitaires + 35 d'intégration),
+- **Tests automatisés** : **79 tests** au vert (43 unitaires + 36 d'intégration),
   0 avertissement de compilation. Les tests unitaires reproduisent scénario par
   scénario la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
@@ -124,6 +124,12 @@ par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
    l'imposer à la connexion est un durcissement à activer.
 5. **Fériés hors-ligne** : la vérification de jour ouvré en mode dégradé ne
    connaît pas les fériés (confrontés au retour en ligne lors de la resync).
+6. **Énumération de comptes par canal temporel (basse sévérité)** : à la
+   connexion, un email inconnu répond sans vérifier de hash (rapide), un email
+   connu subit la vérification du mot de passe (lente) — l'écart de temps peut
+   théoriquement distinguer les deux. Le verrouillage après 5 échecs limite
+   l'exploitation. Durcissement possible : vérifier un hash factice à temps
+   constant pour les emails inconnus (comme le fait `SignInManager`).
 
 ---
 
@@ -165,6 +171,15 @@ relecture du code et vérification par tests.
   caractère de formule (reco. OWASP), sans altérer la lisibilité du nom.
   Couvert par `DashboardTests.CsvExport_NeutralizesFormulaInjection`.
 
+### Durcissement 2FA — pas de ré-exposition du secret TOTP
+
+- **Constat** : `/2fa/setup` renvoyait la clé TOTP même lorsque le 2FA était
+  déjà activé. Une session détournée (jeton volé) aurait pu lire le secret et
+  cloner l'authentificateur de la victime.
+- **Correctif** : `/2fa/setup` est refusé si le 2FA est déjà actif (il faut le
+  désactiver d'abord, ce qui exige le mot de passe). Couvert par
+  `AuthEndpointsTests.TwoFactor_Setup_WhenAlreadyEnabled_IsRejected`.
+
 ### Durcissement — isolation des tests d'intégration
 
 Les tests d'intégration écrivaient dans la base de **développement** `novacces`
@@ -179,7 +194,7 @@ surchargeable en CI (`NOVACCES_TEST_POSTGRES`). La base de dev reste intacte.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-78 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
+79 tests automatisés au vert**. La revue complémentaire du 25/07/2026 (§8) a
 identifié et **corrigé une fuite temps réel inter-tenant** (hub SignalR), avec
 test de non-régression ; les
 autres zones sensibles sont conformes. Sous réserve des recommandations du §7 —

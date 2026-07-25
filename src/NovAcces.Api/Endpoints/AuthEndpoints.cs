@@ -107,6 +107,12 @@ public static class AuthEndpoints
             if (user is null)
                 return Results.Unauthorized();
 
+            // Durcissement : ne JAMAIS ré-exposer le secret TOTP quand le 2FA est
+            // déjà actif (une session détournée pourrait cloner l'authentificateur).
+            // Pour ré-enrôler, il faut d'abord désactiver le 2FA (mot de passe requis).
+            if (await users.GetTwoFactorEnabledAsync(user))
+                return Results.BadRequest(new { error = "2FA déjà activé — désactivez-le d'abord pour ré-enrôler." });
+
             // (Re)génère une clé d'authentificateur tant que le 2FA n'est pas activé.
             var key = await users.GetAuthenticatorKeyAsync(user);
             if (string.IsNullOrEmpty(key))

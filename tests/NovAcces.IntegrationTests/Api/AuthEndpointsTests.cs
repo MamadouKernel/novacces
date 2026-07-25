@@ -125,6 +125,32 @@ public sealed class AuthEndpointsTests
         Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
     }
 
+    /// <summary>
+    /// Durcissement 2FA : une fois le 2FA activé, /2fa/setup ne doit plus
+    /// ré-exposer le secret TOTP (une session détournée pourrait sinon cloner
+    /// l'authentificateur de la victime).
+    /// </summary>
+    [SkippableFact]
+    public async Task TwoFactor_Setup_WhenAlreadyEnabled_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+        var client = _factory.CreateClient();
+        var (email, password) = await RegisterAsync(client, "Surete");
+
+        var first = await LoginAsync(client, email, password);
+        SetBearer(client, first.AccessToken);
+
+        var setup = await (await client.PostAsync("/api/auth/2fa/setup", null))
+            .Content.ReadFromJsonAsync<TwoFactorSetupDto>(Json);
+        var enable = await client.PostAsJsonAsync("/api/auth/2fa/enable",
+            new EnableTwoFactorRequestDto(Totp(setup!.SharedKey)));
+        Assert.Equal(HttpStatusCode.OK, enable.StatusCode);
+
+        // Nouvel appel avec la même session : le secret ne doit plus être renvoyé.
+        var setupAgain = await client.PostAsync("/api/auth/2fa/setup", null);
+        Assert.Equal(HttpStatusCode.BadRequest, setupAgain.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(

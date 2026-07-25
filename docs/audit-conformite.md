@@ -94,18 +94,17 @@ vérifiée par diff `jsonb` robuste aux évolutions de schéma) ; DELETE, TRUNCA
 et toute autre modification restent rejetés au niveau base. Aucun fait de
 sécurité (verdict, horodatage, agent, événement) ne peut donc être altéré.
 
-### ⚠️ POINT OUVERT — durées légales à confirmer avec le client / l'ARTCI
-Les valeurs par défaut sont des **propositions du prestataire, pas des
-exigences chiffrées du client** :
+### ✅ DÉCISION ACTÉE — durées de conservation validées par le client
+Proposées par le prestataire, **validées par le client (Sigasécurité,
+Direction des Opérations) le 25/07/2026**. Ce ne sont donc plus des défauts
+provisoires mais les durées retenues pour la phase pilote :
 
-| Paramètre | Défaut posé | À confirmer |
+| Paramètre | Durée retenue | Objet |
 |---|---|---|
-| `Retention:VisitRetentionDays` | 365 j | Durée de conservation des demandes de visite |
-| `Retention:JournalRetentionDays` | 1095 j (3 ans) | Durée de conservation du nom dans le journal des scans |
+| `Retention:VisitRetentionDays` | 365 j | Conservation des demandes de visite (PII) |
+| `Retention:JournalRetentionDays` | 1095 j (3 ans) | Conservation du nom dans le journal des scans |
 
-**Action requise avant mise en production** : faire valider ces durées par
-Sigasécurité au regard de la réglementation ivoirienne sur les données
-personnelles (ARTCI) et des obligations propres à chaque site client. Ce sont
-de simples paramètres `appsettings` (aucune reprise de code), mais la décision
-doit être **écrite** et versée au dossier de conformité. Tant que ce n'est pas
-tranché, les défauts ci-dessus s'appliquent.
+Ces valeurs sont celles par défaut dans `appsettings.json` — aucune reprise de
+code n'est nécessaire. **Réserve** : elles restent modifiables par site (simple
+paramètre) si un client tiers de Sigasécurité relève d'obligations ARTCI
+différentes ; le cas échéant, refaire valider et re-consigner ici.

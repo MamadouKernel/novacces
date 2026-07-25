@@ -37,13 +37,16 @@ public static class ExclusionEndpoints
             if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.Reason))
                 return Results.BadRequest(new { error = "Nom et motif requis." });
 
-            await exclusions.AddAsync(request.DisplayName, request.Reason, user.HostIdentifier(), ct);
+            var entryId = await exclusions.AddAsync(request.DisplayName, request.Reason, user.HostIdentifier(), ct);
 
             // Traçabilité §8.5 : l'ajout à la liste d'exclusion est un paramétrage
-            // de sûreté — inscrit au journal d'audit inaltérable.
+            // de sûreté — inscrit au journal d'audit inaltérable. Minimisation :
+            // on référence l'entrée par son identifiant opaque, sans recopier le
+            // nom du visiteur (PII) dans le journal (le nom vit dans exclusion_entries,
+            // consultable par la Sûreté tant que l'entrée existe).
             await audit.RecordAsync(
-                AdminAuditAction.ExclusionAdded, user.HostIdentifier(), null,
-                $"Ajout à la liste d'exclusion : « {request.DisplayName} ».", ct);
+                AdminAuditAction.ExclusionAdded, user.HostIdentifier(), entryId.ToString(),
+                "Ajout d'une entrée à la liste d'exclusion.", ct);
 
             return Results.Ok(new { message = "Ajouté à la liste d'exclusion." });
         })

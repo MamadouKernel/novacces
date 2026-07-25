@@ -104,7 +104,8 @@ public interface IExclusionListService
 
     Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct);
 
-    Task AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
+    /// <summary>Ajoute (ou retrouve, si déjà présent) une entrée et retourne son identifiant.</summary>
+    Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
 
     Task<bool> RemoveAsync(Guid id, CancellationToken ct);
 }

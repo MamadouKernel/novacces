@@ -6,17 +6,20 @@ namespace NovAcces.Application.Abstractions;
 /// personnelles ivoirienne / ARTCI). Balaie tous les sites, comme la
 /// supervision des dépassements.
 ///
-/// Périmètre volontairement limité aux données OPÉRATIONNELLES porteuses de
-/// PII (les demandes de visite : nom, téléphone, email). Les journaux
-/// inaltérables (scan_logs, admin_audit) ne sont PAS purgés par l'application :
-/// leur conservation relève d'une décision d'exploitation distincte et d'une
-/// procédure privilégiée en base — voir DataRetentionService pour le détail.
+/// Deux traitements complémentaires (RGPD/ARTCI) :
+///  - les demandes de visite (PII : nom, téléphone, email) sont SUPPRIMÉES
+///    au-delà de VisitRetentionDays — sauf un visiteur encore sur site ;
+///  - le NOM du visiteur dans le journal des scans (scan_logs) est ANONYMISÉ
+///    (jamais supprimé) au-delà de JournalRetentionDays : le journal reste une
+///    preuve de sécurité inaltérable, mais ne conserve plus l'identité.
+/// Le journal d'audit admin (admin_audit) ne contient aucun nom de visiteur
+/// (minimisation) : il n'a rien à anonymiser et reste totalement verrouillé.
 /// </summary>
 public interface IDataRetentionService
 {
-    /// <summary>Exécute une passe de purge sur tous les sites. Idempotente.</summary>
+    /// <summary>Exécute une passe de rétention sur tous les sites. Idempotente.</summary>
     Task<IReadOnlyList<SitePurgeResult>> PurgeOnceAsync(CancellationToken ct);
 }
 
-/// <summary>Décompte des demandes purgées pour un site lors d'une passe.</summary>
-public sealed record SitePurgeResult(string SiteId, int VisitsPurged);
+/// <summary>Décompte des opérations de rétention pour un site lors d'une passe.</summary>
+public sealed record SitePurgeResult(string SiteId, int VisitsPurged, int ScanLogsAnonymized);

@@ -46,10 +46,12 @@ public sealed class RetentionMonitor : BackgroundService
                 try
                 {
                     var results = await _retention.PurgeOnceAsync(stoppingToken);
-                    var total = results.Sum(r => r.VisitsPurged);
-                    if (total > 0)
-                        _logger.LogInformation("Purge de rétention : {Total} demande(s) supprimée(s) sur {Sites} site(s).",
-                            total, results.Count);
+                    var purged = results.Sum(r => r.VisitsPurged);
+                    var anonymized = results.Sum(r => r.ScanLogsAnonymized);
+                    if (purged > 0 || anonymized > 0)
+                        _logger.LogInformation(
+                            "Rétention : {Purged} demande(s) supprimée(s), {Anon} nom(s) anonymisé(s) sur {Sites} site(s).",
+                            purged, anonymized, results.Count);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

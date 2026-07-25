@@ -47,7 +47,7 @@ file sealed class FakeExclusionListService : IExclusionListService
     public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct) => Task.FromResult(IsExcluded);
     public Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
         => Task.FromResult<IReadOnlyList<ExclusionEntryView>>(Array.Empty<ExclusionEntryView>());
-    public Task AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.CompletedTask;
+    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
     public Task<bool> RemoveAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
 }
 

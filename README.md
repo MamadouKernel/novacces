@@ -222,18 +222,19 @@ déploiement, pas du code, et ne sont pas listées ici).
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
 | 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (codes de récupération) ; persistance de session |
 | 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Policies ASP.NET Core + rôles Identity ; moindre privilège appliqué |
-| 7.3 | Rétention limitée + purge automatique paramétrable | ✅ `IDataRetentionService` (purge des demandes > `VisitRetentionDays`, jamais un visiteur sur site) + `RetentionMonitor` ; journaux inaltérables exclus (décision de sûreté documentée) |
-| 8.5 | Journal d'audit des actions d'administration | ✅ `admin_audit` par site, append-only (trigger) : révocation, ajout/retrait d'exclusion, purge ; consultation Sûreté/Admin |
+| 7.3 | Rétention limitée + purge automatique paramétrable | ✅ `IDataRetentionService` + `RetentionMonitor` : suppression des demandes > `VisitRetentionDays` (jamais un visiteur sur site) ET anonymisation du nom dans `scan_logs` > `JournalRetentionDays` (RGPD/ARTCI, journal conservé mais sans identité) |
+| 8.5 | Journal d'audit des actions d'administration | ✅ `admin_audit` par site, append-only (trigger), minimisé (aucun nom de visiteur) : révocation, ajout/retrait d'exclusion, purge/anonymisation ; consultation Sûreté/Admin |
+| 7.5 | Journal inaltérable | ✅ Triggers PostgreSQL : `scan_logs` et `admin_audit` bloquent DELETE/TRUNCATE et toute modification, sauf l'anonymisation contrôlée du nom (nom → sentinel) dans `scan_logs` |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)
 
 ### État Jalon 2 (mise à jour)
 
-- **API** : complète et testée (86 tests : 43 unitaires + 43 d'intégration, dont
+- **API** : complète et testée (88 tests : 43 unitaires + 45 d'intégration, dont
   auth/RBAC, cloisonnement, anti-rejeu concurrent, 2FA, dashboard temps réel,
-  exclusion, rétention/purge, journal d'audit inaltérable). **REQ-SEC-06 (mode
-  dégradé)** : la signature de liste hors ligne est côté API ; la consommation
-  hors-ligne relève de l'app agent MAUI.
+  exclusion, rétention/purge, anonymisation RGPD des journaux, immuabilité des
+  journaux d'audit). **REQ-SEC-06 (mode dégradé)** : la signature de liste hors
+  ligne est côté API ; la consommation hors-ligne relève de l'app agent MAUI.
 - **Web (`NovAcces.Web`, Blazor Server)** : portail hôte (création + QR + liste +
   révocation + autocomplétion), dashboard sûreté (temps réel + présents + synthèse
   + export CSV + liste d'exclusion), administration (comptes + provisionnement de

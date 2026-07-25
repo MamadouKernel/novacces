@@ -11,5 +11,8 @@ public enum AdminAuditAction
     VisitRevoked,
     ExclusionAdded,
     ExclusionRemoved,
-    DataPurged
+    DataPurged,
+
+    /// <summary>Anonymisation des noms de visiteurs dans le journal des scans après la fenêtre de conservation (§7.3).</summary>
+    JournalAnonymized
 }

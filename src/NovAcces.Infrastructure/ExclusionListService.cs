@@ -32,17 +32,22 @@ public sealed class ExclusionListService : IExclusionListService
             .ToListAsync(ct);
     }
 
-    public async Task AddAsync(string displayName, string reason, string addedBy, CancellationToken ct)
+    public async Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
 
         var normalized = ExclusionEntry.Normalize(displayName);
-        var already = await _db.ExclusionEntries.AnyAsync(e => e.NormalizedName == normalized, ct);
-        if (already)
-            return; // idempotent : déjà exclu
+        var existing = await _db.ExclusionEntries
+            .Where(e => e.NormalizedName == normalized)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+        if (existing is { } id)
+            return id; // idempotent : déjà exclu
 
-        _db.ExclusionEntries.Add(ExclusionEntry.Create(displayName, reason, addedBy, DateTimeOffset.UtcNow));
+        var entry = ExclusionEntry.Create(displayName, reason, addedBy, DateTimeOffset.UtcNow);
+        _db.ExclusionEntries.Add(entry);
         await _db.SaveChangesAsync(ct);
+        return entry.Id;
     }
 
     public async Task<bool> RemoveAsync(Guid id, CancellationToken ct)

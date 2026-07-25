@@ -88,11 +88,39 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     // DROP IF EXISTS). Une seule fonction générique, réutilisée par les deux
     // journaux (scan_logs et admin_audit) — le message cite la table via
     // TG_TABLE_NAME pour rester exact quel que soit le déclencheur.
+    //
+    // SEULE EXCEPTION tolérée à l'immuabilité (RGPD/ARTCI, §7.3) : dans
+    // scan_logs uniquement, le nom du visiteur peut être remplacé par le
+    // sentinel '[anonymisé]' après la fenêtre de conservation — en avant
+    // seulement (OLD <> sentinel), et à la stricte condition qu'AUCUNE autre
+    // colonne ne change (comparaison via jsonb, robuste à toute évolution de
+    // schéma : une colonne ajoutée plus tard reste automatiquement protégée).
+    // Aucun fait de sécurité (verdict, horodatage, agent, événement) ne peut
+    // donc être altéré, et rien ne peut être supprimé. admin_audit ne comporte
+    // pas de nom de visiteur (minimisation) : il reste totalement verrouillé.
+    //
+    // ATTENTION : le sentinel ci-dessous DOIT rester identique à
+    // RetentionOptions.AnonymizationSentinel (côté application).
     private const string AppendOnlyJournalDdl = """
         CREATE OR REPLACE FUNCTION forbid_journal_mutation() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
-            RAISE EXCEPTION '% est append-only : UPDATE/DELETE/TRUNCATE interdits (journal inaltérable, CDC §7.5/8.5).', TG_TABLE_NAME;
+            -- Suppression / troncature : toujours interdites, sur tous les journaux.
+            IF TG_OP <> 'UPDATE' THEN
+                RAISE EXCEPTION '% est append-only : DELETE/TRUNCATE interdits (journal inaltérable, CDC §7.5/8.5).', TG_TABLE_NAME;
+            END IF;
+
+            -- Unique modification permise : l'anonymisation du nom dans scan_logs.
+            IF TG_TABLE_NAME = 'scan_logs' THEN
+                IF NEW."VisitorName" = '[anonymisé]'
+                   AND OLD."VisitorName" <> '[anonymisé]'
+                   AND (to_jsonb(OLD) - 'VisitorName') = (to_jsonb(NEW) - 'VisitorName')
+                THEN
+                    RETURN NEW;
+                END IF;
+            END IF;
+
+            RAISE EXCEPTION '% est append-only : seule l''anonymisation du nom de visiteur (RGPD/ARTCI) est permise, aucune autre modification (journal inaltérable, CDC §7.5/8.5).', TG_TABLE_NAME;
         END;
         $$;
 

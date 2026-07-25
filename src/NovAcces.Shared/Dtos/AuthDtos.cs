@@ -80,9 +80,11 @@ public sealed record AdminAuditDto(
 // ---- Rétention / purge des données (§7.3) ----
 
 /// <summary>État de la politique de rétention (consultation Admin).</summary>
-public sealed record RetentionStatusDto(bool Enabled, int VisitRetentionDays, int RunIntervalHours);
+public sealed record RetentionStatusDto(
+    bool Enabled, int VisitRetentionDays, int JournalRetentionDays, int RunIntervalHours);
 
-/// <summary>Résultat d'une purge déclenchée manuellement, par site.</summary>
-public sealed record RetentionRunResultDto(int TotalPurged, IReadOnlyList<SitePurgeDto> Sites);
+/// <summary>Résultat d'une passe de rétention déclenchée manuellement, par site.</summary>
+public sealed record RetentionRunResultDto(
+    int TotalPurged, int TotalAnonymized, IReadOnlyList<SitePurgeDto> Sites);
 
-public sealed record SitePurgeDto(string SiteId, int VisitsPurged);
+public sealed record SitePurgeDto(string SiteId, int VisitsPurged, int ScanLogsAnonymized);

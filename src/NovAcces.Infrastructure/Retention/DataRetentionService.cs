@@ -16,10 +16,25 @@ namespace NovAcces.Infrastructure.Retention;
 /// </summary>
 public sealed class RetentionOptions
 {
+    /// <summary>
+    /// Sentinel d'anonymisation du nom de visiteur dans scan_logs. DOIT rester
+    /// identique à la valeur codée dans le trigger append-only
+    /// (TenantProvisioningService.AppendOnlyJournalDdl) : c'est la seule valeur
+    /// que le trigger accepte comme nouvelle valeur du nom.
+    /// </summary>
+    public const string AnonymizationSentinel = "[anonymisé]";
+
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Durée de conservation des demandes de visite, en jours.</summary>
+    /// <summary>Durée de conservation des demandes de visite (PII), en jours. &lt;= 0 désactive la purge.</summary>
     public int VisitRetentionDays { get; set; } = 365;
+
+    /// <summary>
+    /// Durée de conservation du NOM du visiteur dans le journal des scans, en
+    /// jours (fenêtre plus longue : le journal reste une preuve de sécurité, mais
+    /// le nom est anonymisé au-delà). &lt;= 0 désactive l'anonymisation.
+    /// </summary>
+    public int JournalRetentionDays { get; set; } = 1095;
 
     /// <summary>Intervalle entre deux passes de purge automatique, en heures.</summary>
     public int RunIntervalHours { get; set; } = 24;
@@ -30,12 +45,13 @@ public sealed class RetentionOptions
 /// site. Orchestré comme <c>OverstayScanner</c> : un scope + tenant résolu par
 /// site, sur des DbContext scoped.
 ///
-/// DÉCISION DE SÛRETÉ (à valider — voir CLAUDE.md) : cette purge ne touche QUE
-/// la table <c>visits</c>. Les journaux inaltérables (scan_logs, admin_audit)
-/// sont délibérément épargnés — les purger depuis l'application contredirait
-/// leur inaltérabilité (triggers append-only) et ouvrirait une voie de
-/// suppression de preuves. La conservation/anonymisation de ces journaux relève
-/// d'une procédure d'exploitation privilégiée et documentée, hors application.
+/// DÉCISION DE SÛRETÉ : on ne SUPPRIME que la table <c>visits</c> (données
+/// opérationnelles). Les journaux ne sont jamais supprimés (leur inaltérabilité
+/// est le socle de la non-répudiation). Pour concilier §7.5 (inaltérable) et
+/// §7.3 (rétention limitée), le nom du visiteur dans <c>scan_logs</c> est
+/// ANONYMISÉ au-delà de JournalRetentionDays : le trigger append-only autorise
+/// exclusivement cette transition (nom → sentinel), rien d'autre. admin_audit
+/// ne porte aucun nom de visiteur (minimisation) et reste totalement verrouillé.
 /// </summary>
 public sealed class DataRetentionService : IDataRetentionService
 {
@@ -63,64 +79,93 @@ public sealed class DataRetentionService : IDataRetentionService
     {
         var results = new List<SitePurgeResult>();
 
-        // Garde-fou : une durée nulle/négative ou la désactivation explicite
-        // n'entraîne aucune suppression.
-        if (!_options.Enabled || _options.VisitRetentionDays <= 0)
+        // Garde-fou : rien à faire si le traitement est désactivé, ou si les deux
+        // fenêtres sont neutralisées.
+        if (!_options.Enabled || (_options.VisitRetentionDays <= 0 && _options.JournalRetentionDays <= 0))
         {
             _logger.LogInformation(
-                "Purge de rétention désactivée (Enabled={Enabled}, VisitRetentionDays={Days}).",
-                _options.Enabled, _options.VisitRetentionDays);
+                "Rétention désactivée (Enabled={Enabled}, VisitRetentionDays={Visit}, JournalRetentionDays={Journal}).",
+                _options.Enabled, _options.VisitRetentionDays, _options.JournalRetentionDays);
             return results;
         }
 
-        var cutoff = _clock.UtcNow.AddDays(-_options.VisitRetentionDays);
+        var now = _clock.UtcNow;
 
         foreach (var siteId in await _sites.GetSiteIdsAsync(ct))
         {
             try
             {
-                var purged = await PurgeSiteAsync(siteId, cutoff, ct);
-                results.Add(new SitePurgeResult(siteId, purged));
+                results.Add(await PurgeSiteAsync(siteId, now, ct));
             }
             catch (Exception ex)
             {
-                // Un site en erreur ne doit pas empêcher la purge des autres.
-                _logger.LogWarning(ex, "Purge de rétention : échec pour le site {SiteId}.", siteId);
+                // Un site en erreur ne doit pas empêcher le traitement des autres.
+                _logger.LogWarning(ex, "Rétention : échec pour le site {SiteId}.", siteId);
             }
         }
 
         return results;
     }
 
-    private async Task<int> PurgeSiteAsync(string siteId, DateTimeOffset cutoff, CancellationToken ct)
+    private async Task<SitePurgeResult> PurgeSiteAsync(string siteId, DateTimeOffset now, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var sp = scope.ServiceProvider;
 
         sp.GetRequiredService<CurrentTenant>().Resolve(siteId);
         var db = sp.GetRequiredService<NovAccesDbContext>();
+        var audit = sp.GetRequiredService<IAdminAuditLog>();
 
-        // On ne purge que des demandes TERMINÉES : jamais un visiteur encore sur
-        // site (IsOnSite), quelle que soit son ancienneté — la sécurité prime.
-        var purged = await db.Visits
-            .Where(v => v.CreatedAt < cutoff && !v.IsOnSite)
-            .ExecuteDeleteAsync(ct);
+        var purged = 0;
+        var anonymized = 0;
 
-        if (purged > 0)
+        // 1) Suppression des demandes de visite (PII) au-delà de la conservation.
+        //    Jamais un visiteur encore sur site (IsOnSite) — la sécurité prime.
+        if (_options.VisitRetentionDays > 0)
         {
-            _logger.LogInformation(
-                "Purge de rétention site {SiteId} : {Count} demande(s) supprimée(s) (antérieures au {Cutoff:yyyy-MM-dd}).",
-                siteId, purged, cutoff);
+            var cutoff = now.AddDays(-_options.VisitRetentionDays);
+            purged = await db.Visits
+                .Where(v => v.CreatedAt < cutoff && !v.IsOnSite)
+                .ExecuteDeleteAsync(ct);
 
-            // Trace §8.5 : la purge est une action privilégiée, inscrite au
-            // journal d'audit inaltérable du site (acteur = traitement système).
-            var audit = sp.GetRequiredService<IAdminAuditLog>();
-            await audit.RecordAsync(
-                AdminAuditAction.DataPurged, "système (rétention)", null,
-                $"{purged} demande(s) purgée(s) (conservation {_options.VisitRetentionDays} j, seuil {cutoff:yyyy-MM-dd}).",
-                ct);
+            if (purged > 0)
+            {
+                _logger.LogInformation(
+                    "Rétention site {SiteId} : {Count} demande(s) supprimée(s) (antérieures au {Cutoff:yyyy-MM-dd}).",
+                    siteId, purged, cutoff);
+                await audit.RecordAsync(
+                    AdminAuditAction.DataPurged, "système (rétention)", null,
+                    $"{purged} demande(s) purgée(s) (conservation {_options.VisitRetentionDays} j, seuil {cutoff:yyyy-MM-dd}).",
+                    ct);
+            }
         }
 
-        return purged;
+        // 2) Anonymisation du nom du visiteur dans le journal des scans au-delà de
+        //    la conservation du journal. Le trigger append-only n'autorise QUE le
+        //    passage du nom au sentinel : cette requête est la seule mutation
+        //    possible sur scan_logs. Le search_path (tenant) est posé par
+        //    l'intercepteur, donc « scan_logs » vise bien le schéma du site.
+        if (_options.JournalRetentionDays > 0)
+        {
+            var journalCutoff = now.AddDays(-_options.JournalRetentionDays);
+            anonymized = await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                 UPDATE scan_logs SET "VisitorName" = {RetentionOptions.AnonymizationSentinel}
+                 WHERE "Timestamp" < {journalCutoff} AND "VisitorName" <> {RetentionOptions.AnonymizationSentinel}
+                 """, ct);
+
+            if (anonymized > 0)
+            {
+                _logger.LogInformation(
+                    "Rétention site {SiteId} : {Count} nom(s) anonymisé(s) dans le journal des scans (antérieurs au {Cutoff:yyyy-MM-dd}).",
+                    siteId, anonymized, journalCutoff);
+                await audit.RecordAsync(
+                    AdminAuditAction.JournalAnonymized, "système (rétention)", null,
+                    $"{anonymized} nom(s) anonymisé(s) dans scan_logs (conservation {_options.JournalRetentionDays} j, seuil {journalCutoff:yyyy-MM-dd}).",
+                    ct);
+            }
+        }
+
+        return new SitePurgeResult(siteId, purged, anonymized);
     }
 }

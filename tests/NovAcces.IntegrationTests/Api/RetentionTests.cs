@@ -4,6 +4,11 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NovAcces.Application.Abstractions;
+using NovAcces.Domain.Entities;
+using NovAcces.Domain.Enums;
+using NovAcces.Infrastructure.Persistence;
+using NovAcces.Infrastructure.Persistence.Tenancy;
+using NovAcces.Infrastructure.Retention;
 using NovAcces.Shared.Dtos;
 using Xunit;
 
@@ -53,10 +58,63 @@ public sealed class RetentionTests
         Assert.True(await VisitExistsAsync(oldOnSite), "Un visiteur encore sur site ne doit jamais être purgé.");
 
         // La purge est inscrite au journal d'audit inaltérable.
-        Assert.True(await HasPurgeAuditSinceAsync(since), "La purge aurait dû être tracée au journal d'audit (§8.5).");
+        Assert.True(await HasAuditSinceAsync("DataPurged", since), "La purge aurait dû être tracée au journal d'audit (§8.5).");
+    }
+
+    [SkippableFact]
+    public async Task OldScanLog_VisitorName_IsAnonymized_RowKept_AndAudited()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var since = DateTimeOffset.UtcNow;
+        var token = Guid.NewGuid().ToString("N")[..8];
+
+        // Une entrée de journal ancienne (au-delà de la conservation du journal,
+        // 1095 j par défaut) et une récente. On insère directement le journal
+        // avec un horodatage voulu : l'INSERT n'est pas couvert par le trigger
+        // append-only (seuls UPDATE/DELETE le sont).
+        var oldLogId = await InsertScanLogAsync($"Vieux Visiteur {token}", DateTimeOffset.UtcNow.AddDays(-1200));
+        var recentName = $"Recent Visiteur {token}";
+        var recentLogId = await InsertScanLogAsync(recentName, DateTimeOffset.UtcNow.AddDays(-10));
+
+        // Act : passe de rétention.
+        var retention = _factory.Services.GetRequiredService<IDataRetentionService>();
+        await retention.PurgeOnceAsync(CancellationToken.None);
+
+        // La ligne ancienne est CONSERVÉE mais son nom est anonymisé ; la récente
+        // est intacte ; l'anonymisation est tracée au journal d'audit.
+        Assert.Equal(RetentionOptions.AnonymizationSentinel, await ReadScanLogNameAsync(oldLogId));
+        Assert.Equal(recentName, await ReadScanLogNameAsync(recentLogId));
+        Assert.True(await HasAuditSinceAsync("JournalAnonymized", since),
+            "L'anonymisation du journal aurait dû être tracée (§8.5).");
     }
 
     // ---- Aides ----
+
+    private async Task<Guid> InsertScanLogAsync(string visitorName, DateTimeOffset when)
+    {
+        using var scope = _factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(NovAccesApiFactory.TestSite);
+        var db = scope.ServiceProvider.GetRequiredService<NovAccesDbContext>();
+
+        var entry = ScanLogEntry.Create(
+            Guid.NewGuid(), visitorName, "agent-test", CheckpointDirection.Entry,
+            ScanOutcome.Granted(), degradedMode: false, "Test rétention", when);
+        db.ScanLogs.Add(entry);
+        await db.SaveChangesAsync();
+        return entry.Id;
+    }
+
+    private static async Task<string?> ReadScanLogNameAsync(Guid scanLogId)
+    {
+        await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"SELECT \"VisitorName\" FROM \"site_{NovAccesApiFactory.TestSite}\".scan_logs WHERE \"Id\" = @id";
+        cmd.Parameters.AddWithValue("id", scanLogId);
+        return (string?)await cmd.ExecuteScalarAsync();
+    }
 
     private async Task<Guid> CreateVisitAsync(HttpClient hote)
     {
@@ -122,14 +180,15 @@ public sealed class RetentionTests
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
     }
 
-    private static async Task<bool> HasPurgeAuditSinceAsync(DateTimeOffset since)
+    private static async Task<bool> HasAuditSinceAsync(string action, DateTimeOffset since)
     {
         await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             $"SELECT count(*) FROM \"site_{NovAccesApiFactory.TestSite}\".admin_audit " +
-            "WHERE \"Action\" = 'DataPurged' AND \"Timestamp\" >= @since";
+            "WHERE \"Action\" = @action AND \"Timestamp\" >= @since";
+        cmd.Parameters.AddWithValue("action", action);
         cmd.Parameters.AddWithValue("since", since);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
     }

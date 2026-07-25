@@ -68,24 +68,26 @@ public static class AdminEndpoints
         group.MapGet("/retention", (IOptions<RetentionOptions> options) =>
         {
             var o = options.Value;
-            return Results.Ok(new RetentionStatusDto(o.Enabled, o.VisitRetentionDays, o.RunIntervalHours));
+            return Results.Ok(new RetentionStatusDto(
+                o.Enabled, o.VisitRetentionDays, o.JournalRetentionDays, o.RunIntervalHours));
         })
         .WithName("AdminRetentionStatus")
-        .WithSummary("Politique de rétention en vigueur (durée de conservation, intervalle).");
+        .WithSummary("Politique de rétention en vigueur (conservation, anonymisation, intervalle).");
 
-        // Déclenchement manuel d'une passe de purge (en plus de la passe
+        // Déclenchement manuel d'une passe de rétention (en plus de la passe
         // automatique du RetentionMonitor). Action privilégiée : chaque site
-        // purgé est inscrit à son journal d'audit inaltérable.
+        // traité est inscrit à son journal d'audit inaltérable.
         group.MapPost("/retention/run", async (IDataRetentionService retention, CancellationToken ct) =>
         {
             var results = await retention.PurgeOnceAsync(ct);
             var dto = new RetentionRunResultDto(
                 results.Sum(r => r.VisitsPurged),
-                results.Select(r => new SitePurgeDto(r.SiteId, r.VisitsPurged)).ToList());
+                results.Sum(r => r.ScanLogsAnonymized),
+                results.Select(r => new SitePurgeDto(r.SiteId, r.VisitsPurged, r.ScanLogsAnonymized)).ToList());
             return Results.Ok(dto);
         })
         .WithName("AdminRetentionRun")
-        .WithSummary("Déclenche une purge immédiate des données au-delà de la conservation (§7.3).");
+        .WithSummary("Déclenche une passe immédiate de rétention : purge + anonymisation des journaux (§7.3).");
 
         return group;
     }

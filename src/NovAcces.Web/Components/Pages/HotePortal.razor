@@ -4,6 +4,7 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 @inject ToastService Toasts
+@inject IJSRuntime JS
 
 <PageTitle>NovAcces — Portail hôte</PageTitle>
 
@@ -97,10 +98,22 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
             else
             {
-                <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
-                <p class="muted">Visite <code>@_result.VisitId</code></p>
-                <p>Valide jusqu'à : <strong>@_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</strong></p>
-                <p class="hint">En production, ce QR est envoyé automatiquement au visiteur par WhatsApp (repli email).</p>
+                <div class="badge-doc" id="visitor-badge">
+                    <div class="badge-head">NOV<span>ACCÈS</span></div>
+                    <div class="badge-site">@((Auth.SiteId ?? "").ToUpperInvariant())</div>
+                    <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
+                    <div class="badge-name">@_form.VisitorName</div>
+                    <div class="badge-company">@_form.VisitorCompany</div>
+                    <div class="badge-valid">Valide jusqu'au @_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
+                    <div class="badge-foot">Présentez ce badge au poste de contrôle · Sigasécurité</div>
+                </div>
+
+                <p class="muted" style="margin-top:.6rem">Visite <code>@_result.VisitId</code></p>
+                <button class="btn-primary" style="max-width:220px" @onclick="PrintBadgeAsync">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+                    Imprimer le badge
+                </button>
+                <p class="hint">Le QR est aussi envoyé automatiquement au visiteur (WhatsApp, repli email).</p>
             }
         </section>
     </div>
@@ -226,6 +239,13 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     {
         await RefreshMyVisitsAsync();
         StateHasChanged();
+    }
+
+    // Impression du badge : la feuille de style @media print n'imprime que
+    // l'élément #visitor-badge (le reste de la page est masqué).
+    private async Task PrintBadgeAsync()
+    {
+        try { await JS.InvokeVoidAsync("print"); } catch { /* best-effort */ }
     }
 
     private async Task ConfirmRevokeAsync()

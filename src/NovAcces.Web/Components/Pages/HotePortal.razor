@@ -33,6 +33,16 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         </div>
     </header>
 
+    @if (_myVisits.Count > 0)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_myVisits.Count</span><span class="tile-l">Demandes</span></div>
+            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status == "Valid")</span><span class="tile-l">Valides</span></div>
+            <div class="tile tile-in"><span class="tile-n">@_myVisits.Count(v => v.IsOnSite)</span><span class="tile-l">Sur site</span></div>
+            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status is "Revoked" or "Expired")</span><span class="tile-l">Closes</span></div>
+        </div>
+    }
+
     <div class="cards">
         <section class="card">
             <h2>Visiteur</h2>

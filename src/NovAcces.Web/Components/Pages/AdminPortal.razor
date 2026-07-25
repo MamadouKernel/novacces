@@ -22,6 +22,16 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         <button class="btn-ghost" @onclick="SignOut">Se déconnecter</button>
     </header>
 
+    @if (_overview.Count > 0)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_overview.Count</span><span class="tile-l">Sites actifs</span></div>
+            <div class="tile tile-in"><span class="tile-n">@_overview.Sum(s => s.OnSite)</span><span class="tile-l">Présents (tous sites)</span></div>
+            <div class="tile"><span class="tile-n">@_overview.Sum(s => s.ScansToday)</span><span class="tile-l">Scans aujourd'hui</span></div>
+            <div class="tile"><span class="tile-n">@_users.Count</span><span class="tile-l">Comptes</span></div>
+        </div>
+    }
+
     @if (_loaded && _overview.Count == 0 && _users.Count <= 1)
     {
         <section class="card" style="margin-bottom:1.2rem;border-left:4px solid #f5a300;">

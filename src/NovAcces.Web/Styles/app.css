@@ -279,6 +279,15 @@
   .result-line.ok { @apply border-l-ok bg-okbg/60; }
   .result-line.ko { @apply border-l-no bg-nobg/60; }
 
+  /* ---- Mini-graphique en barres (activité par site) ---- */
+  .chart { @apply space-y-2.5; }
+  .chart-row { @apply grid grid-cols-[6rem,1fr,auto] items-center gap-3 text-sm; }
+  .chart-label { @apply truncate font-semibold text-ink; }
+  .chart-track { @apply h-2.5 overflow-hidden rounded-full bg-paper; }
+  .chart-fill { @apply h-full rounded-full bg-brand-600 transition-[width]; }
+  .chart-fill.peak { @apply bg-amber-500; }
+  .chart-val { @apply whitespace-nowrap font-mono text-xs tabular-nums text-muted; }
+
   /* ---- Notifications (toasts) ---- */
   .toasts {
     @apply pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2;

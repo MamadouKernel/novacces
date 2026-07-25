@@ -63,6 +63,27 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
         }
     </section>
 
+    @if (_overview.Count > 0 && _overview.Any(s => s.ScansToday > 0))
+    {
+        var maxScans = _overview.Max(s => s.ScansToday);
+        <section class="card" style="margin-bottom:1.2rem;">
+            <h2>Affluence par site (scans aujourd'hui)</h2>
+            <div class="chart">
+                @foreach (var s in _overview.OrderByDescending(s => s.ScansToday))
+                {
+                    <div class="chart-row">
+                        <span class="chart-label">@s.SiteId</span>
+                        <div class="chart-track">
+                            <div class="chart-fill @(s.ScansToday == maxScans ? "peak" : "")"
+                                 style="width:@(maxScans > 0 ? (int)Math.Round(s.ScansToday * 100.0 / maxScans) : 0)%"></div>
+                        </div>
+                        <span class="chart-val">@s.ScansToday scans · @s.OnSite présents</span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <div class="cards">
         <section class="card">
             <h2>Créer un compte</h2>

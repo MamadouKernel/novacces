@@ -52,6 +52,7 @@ public static class MauiProgram
         builder.Services.AddTransient<ScanViewModel>();
         builder.Services.AddTransient<ScanPage>();
         builder.Services.AddTransient<ExpectedTodayPage>();
+        builder.Services.AddTransient<EnrollmentPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();

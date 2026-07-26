@@ -20,6 +20,18 @@ public sealed record OfflineListDto(
     DateTimeOffset ExpiresAt,
     int EntryCount);
 
+// ---- Prise de poste de l'agent (matricule + PIN) ----
+
+/// <summary>Prise de poste : l'agent s'identifie sur le terminal.</summary>
+public sealed record ShiftStartRequestDto(string Matricule, string Pin);
+
+/// <summary>Poste ouvert : identité de l'agent + jeton de poste à joindre aux scans.</summary>
+public sealed record ShiftStartResponseDto(
+    string Matricule, string DisplayName, string ShiftToken, DateTimeOffset ExpiresAt);
+
+/// <summary>Création d'un agent (administration) : matricule + nom + PIN, pour un site.</summary>
+public sealed record CreateAgentRequestDto(string SiteId, string Matricule, string DisplayName, string Pin);
+
 /// <summary>
 /// Un scan effectué hors ligne, remonté à la resynchronisation. Porte le verdict
 /// local (VerdictCode) et le marqueur d'événement de sécurité, pour que le

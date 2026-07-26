@@ -8,6 +8,7 @@
 
     <ContentPage.ToolbarItems>
         <ToolbarItem Text="Attendus" Clicked="OnOpenExpected" />
+        <ToolbarItem Text="Fin de poste" Clicked="OnEndShift" />
     </ContentPage.ToolbarItems>
 
     <Grid>
@@ -39,7 +40,7 @@
         <!-- Pied : poste + compteur de scans du jour -->
         <Grid VerticalOptions="End" Padding="16,12,16,20" ColumnDefinitions="*,Auto"
               BackgroundColor="#B3101820">
-            <Label Text="Poste de contrôle" TextColor="{StaticResource BrandMuted}"
+            <Label x:Name="AgentLabel" Text="Poste de contrôle" TextColor="{StaticResource BrandMuted}"
                    FontSize="12" VerticalOptions="Center" />
             <Label x:Name="CountLabel" Grid.Column="1" Text="0 scan aujourd'hui"
                    TextColor="{StaticResource BrandMuted}" FontSize="12" VerticalOptions="Center" />

@@ -31,8 +31,10 @@ public partial class App : Application
 		try { await config.LoadFromSecureStorageAsync(); }
 		catch { /* stockage indisponible : on partira sur l'enrôlement */ }
 
+		// Terminal non enrôlé → enrôlement. Sinon, l'agent doit PRENDRE SON POSTE
+		// (matricule + PIN) avant d'accéder au scan — traçabilité individuelle.
 		Page root = config.IsEnrolled
-			? _services.GetRequiredService<ScanPage>()
+			? _services.GetRequiredService<ShiftPage>()
 			: _services.GetRequiredService<EnrollmentPage>();
 
 		await MainThread.InvokeOnMainThreadAsync(() => window.Page = new NavigationPage(root));

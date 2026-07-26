@@ -26,6 +26,31 @@ public sealed class AgentSession
     /// <summary>Sens du poste. Bascule Entrée ⇄ Sortie toujours visible (§11).</summary>
     public string Direction { get; set; } = "Entry";
 
+    // --- Prise de poste (l'agent identifié sur le terminal) ---
+    public string? ShiftToken { get; private set; }
+    public string? AgentMatricule { get; private set; }
+    public string? AgentDisplayName { get; private set; }
+    public bool IsShiftActive => !string.IsNullOrWhiteSpace(ShiftToken);
+
+    /// <summary>Prise de poste : vérifie matricule + PIN côté serveur et ouvre le poste.</summary>
+    public async Task<bool> StartShiftAsync(string matricule, string pin, CancellationToken ct = default)
+    {
+        var shift = await _api.StartShiftAsync(matricule, pin, ct);
+        if (shift is null) return false;
+        ShiftToken = shift.ShiftToken;
+        AgentMatricule = shift.Matricule;
+        AgentDisplayName = shift.DisplayName;
+        return true;
+    }
+
+    /// <summary>Fin de poste : l'agent quitte, le prochain devra reprendre le poste.</summary>
+    public void EndShift()
+    {
+        ShiftToken = null;
+        AgentMatricule = null;
+        AgentDisplayName = null;
+    }
+
     /// <summary>
     /// Vérificateur ES256 construit paresseusement à la première utilisation
     /// hors-ligne : un terminal non enrôlé (clé publique absente) ne plante donc

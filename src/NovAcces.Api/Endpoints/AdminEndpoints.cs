@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
+using NovAcces.Domain.Enums;
 using NovAcces.Infrastructure.Identity;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 using NovAcces.Infrastructure.Retention;
@@ -88,6 +91,44 @@ public static class AdminEndpoints
         })
         .WithName("AdminRetentionRun")
         .WithSummary("Déclenche une passe immédiate de rétention : purge + anonymisation des journaux (§7.3).");
+
+        // --- Agents (prise de poste matricule + PIN) ---
+        // Création réservée à l'Admin. Le PIN est haché côté annuaire. On résout
+        // le tenant du site cible dans un scope dédié (comme le provisionnement).
+        group.MapPost("/agents", async (
+            CreateAgentRequestDto request,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(request.SiteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+            if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.DisplayName))
+                return Results.BadRequest(new { error = "Matricule et nom requis." });
+            if ((request.Pin ?? string.Empty).Trim().Length < 4)
+                return Results.BadRequest(new { error = "PIN d'au moins 4 chiffres requis." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(request.SiteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+            var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+
+            try
+            {
+                await agents.AddAsync(request.Matricule, request.DisplayName, request.Pin, ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
+
+            await audit.RecordAsync(AdminAuditAction.AgentCreated, user.HostIdentifier(), request.Matricule,
+                $"Création de l'agent « {request.DisplayName} » (matricule {request.Matricule}).", ct);
+
+            return Results.Ok(new { message = $"Agent {request.Matricule} créé pour le site {request.SiteId}." });
+        })
+        .WithName("AdminCreateAgent")
+        .WithSummary("Crée un agent (matricule + PIN) pour la prise de poste sur un site.");
 
         return group;
     }

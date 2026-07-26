@@ -49,6 +49,7 @@ public static class MauiProgram
         builder.Services.AddTransient<ScanPage>();
         builder.Services.AddTransient<ExpectedTodayPage>();
         builder.Services.AddTransient<EnrollmentPage>();
+        builder.Services.AddTransient<ShiftPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();

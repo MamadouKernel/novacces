@@ -11,4 +11,7 @@ public sealed class JwtOptions
     public string Audience { get; set; } = "NovAcces";
     public string SigningKey { get; set; } = default!;
     public int ExpiryMinutes { get; set; } = 60;
+
+    /// <summary>Durée d'un poste d'agent (jeton de prise de poste), en heures.</summary>
+    public int ShiftExpiryHours { get; set; } = 12;
 }

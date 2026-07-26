@@ -16,7 +16,9 @@ public static class ScanEndpoints
         group.MapPost("/", async (
             ScanRequestDto request,
             ClaimsPrincipal user,
+            HttpRequest http,
             ScanQrHandler handler,
+            IJwtTokenService jwt,
             IBusinessDayService businessDays,
             IDateTimeProvider clock,
             CancellationToken ct) =>
@@ -27,9 +29,13 @@ public static class ScanEndpoints
             // Jour ouvré (REQ-F-05) : week-end + jours fériés du site.
             var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
 
-            // L'agent est identifié par le terminal enrôlé (claim), pas par une
-            // valeur du corps de requête : traçabilité fiable du poste de contrôle.
-            var agentId = user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
+            // Attribution du scan : si un jeton de poste valide est présent
+            // (prise de poste matricule + PIN), on trace au MATRICULE de l'agent
+            // (traçabilité individuelle, §8.5) ; sinon, repli sur le terminal.
+            var siteId = user.FindFirstValue(NovAccesClaimTypes.SiteId) ?? string.Empty;
+            var shiftToken = http.Headers["X-Shift-Token"].ToString();
+            var shift = string.IsNullOrWhiteSpace(shiftToken) ? null : jwt.ValidateShiftToken(shiftToken, siteId);
+            var agentId = shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
 
             var command = new ScanQrCommand(
                 request.SignedQrPayload, direction, agentId,

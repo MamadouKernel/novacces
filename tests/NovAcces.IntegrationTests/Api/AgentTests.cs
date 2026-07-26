@@ -102,7 +102,79 @@ public sealed class AgentTests
         Assert.True(journaled >= 2, $"Attendu >= 2 entrées de journal en mode dégradé, obtenu {journaled}.");
     }
 
+    [SkippableFact]
+    public async Task Scan_WithShiftToken_IsAttributedToAgentMatricule()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "4917";
+
+        // 1. L'Admin crée l'agent (matricule + PIN) pour le site.
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        // 2. Prise de poste sur le terminal (clé API) : matricule + PIN → jeton.
+        var agent = AgentClient();
+        var shiftResp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, pin));
+        shiftResp.EnsureSuccessStatusCode();
+        var shift = await shiftResp.Content.ReadFromJsonAsync<ShiftStartResponseDto>(Json);
+        Assert.Equal(matricule, shift!.Matricule);
+
+        // 3. Une visite + son QR signé.
+        var (visitId, payload) = await CreateVisitWithQrAsync($"ScanShift-{Guid.NewGuid():N}");
+
+        // 4. Scan AVEC le jeton de poste → tracé au matricule de l'agent.
+        agent.DefaultRequestHeaders.Add("X-Shift-Token", shift.ShiftToken);
+        (await agent.PostAsJsonAsync("/api/scan", new ScanRequestDto(payload, "Entry", "ignore")))
+            .EnsureSuccessStatusCode();
+
+        Assert.True(await CountScanLogsByAgentAsync(visitId, matricule) >= 1,
+            "Le scan aurait dû être tracé au matricule de l'agent.");
+    }
+
+    [SkippableFact]
+    public async Task ShiftStart_WithWrongPin_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", "1111")))
+            .EnsureSuccessStatusCode();
+
+        var resp = await AgentClient().PostAsJsonAsync("/api/agent/shift/start",
+            new ShiftStartRequestDto(matricule, "9999"));
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+    }
+
     // ---- Aides ----
+
+    private async Task<(Guid VisitId, string Payload)> CreateVisitWithQrAsync(string visitorName)
+    {
+        var hote = await LoginNewUserAsync("Hote");
+        var resp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            visitorName, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        resp.EnsureSuccessStatusCode();
+        var created = await resp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+        return (created!.VisitId, created.SignedQrPayload);
+    }
+
+    private static async Task<long> CountScanLogsByAgentAsync(Guid visitId, string agentId)
+    {
+        await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"SELECT count(*) FROM \"site_{NovAccesApiFactory.TestSite}\".scan_logs " +
+            "WHERE \"VisitId\" = @id AND \"AgentId\" = @agent";
+        cmd.Parameters.AddWithValue("id", visitId);
+        cmd.Parameters.AddWithValue("agent", agentId);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
 
     private static async Task<long> CountDegradedScanLogsAsync(Guid visitId)
     {

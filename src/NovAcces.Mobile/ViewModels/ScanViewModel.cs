@@ -32,7 +32,7 @@ public sealed class ScanViewModel
         {
             try
             {
-                var r = await _api.ScanAsync(signedQr, _session.Direction, ct);
+                var r = await _api.ScanAsync(signedQr, _session.Direction, _session.ShiftToken, ct);
                 if (r is not null)
                     return ScanVerdict.FromApi(r.VerdictCode, r.IsGranted, r.IsCheckOut, r.IsSecurityEvent, r.VisitorName);
             }

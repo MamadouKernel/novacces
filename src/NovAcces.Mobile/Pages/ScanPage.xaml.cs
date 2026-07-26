@@ -49,6 +49,11 @@ public partial class ScanPage : ContentPage
         _connectivity.ConnectivityChanged += OnConnectivityChanged;
         UpdateConnectivityLabel();
 
+        // Agent en poste (matricule) affiché en pied — traçabilité visible.
+        AgentLabel.Text = _session.IsShiftActive
+            ? $"Agent : {_session.AgentMatricule}"
+            : "Poste de contrôle";
+
         // Précharge la liste hors-ligne signée pour préparer une éventuelle coupure.
         try { await _session.RefreshOfflineListAsync(); } catch { /* best-effort */ }
     }
@@ -152,6 +157,18 @@ public partial class ScanPage : ContentPage
     // Ouvre l'écran « attendus du jour » + resynchronisation (résolu par DI).
     private async void OnOpenExpected(object? sender, EventArgs e)
         => await Navigation.PushAsync(_services.GetRequiredService<Pages.ExpectedTodayPage>());
+
+    // Fin de poste : l'agent quitte, retour à la prise de poste (le suivant devra
+    // s'identifier). Les scans ne seront plus tracés à ce matricule.
+    private async void OnEndShift(object? sender, EventArgs e)
+    {
+        if (!await DisplayAlert("Fin de poste", "Quitter votre poste ?", "Oui", "Non"))
+            return;
+        _session.EndShift();
+        var shift = _services.GetRequiredService<Pages.ShiftPage>();
+        if (Application.Current?.Windows.Count > 0)
+            Application.Current.Windows[0].Page = new NavigationPage(shift);
+    }
 
     private void UpdateConnectivityLabel()
     {

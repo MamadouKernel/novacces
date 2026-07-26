@@ -20,6 +20,32 @@ public static class AgentEndpoints
         var group = app.MapGroup("/api/agent").WithTags("Agent")
             .RequireAuthorization(NovAccesRoles.Agent);
 
+        // Prise de poste : l'agent s'identifie (matricule + PIN) sur le terminal
+        // déjà authentifié. Vérification serveur → jeton de poste signé, à joindre
+        // aux scans pour les tracer à CET agent (traçabilité individuelle, §8.5).
+        group.MapPost("/shift/start", async (
+            ShiftStartRequestDto request,
+            ClaimsPrincipal user,
+            IAgentDirectory agents,
+            IJwtTokenService jwt,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.Pin))
+                return Results.BadRequest(new { error = "Matricule et PIN requis." });
+
+            var agent = await agents.VerifyAsync(request.Matricule, request.Pin, ct);
+            if (agent is null)
+                return Results.Json(new { error = "Matricule ou PIN incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
+
+            var siteId = user.FindFirstValue(NovAccesClaimTypes.SiteId) ?? string.Empty;
+            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, siteId);
+
+            return Results.Ok(new ShiftStartResponseDto(agent.Matricule, agent.DisplayName, token, expiresAt));
+        })
+        .RequireRateLimiting("sensitive")
+        .WithName("ShiftStart")
+        .WithSummary("Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.");
+
         // §11 — Attendus du jour : nom + statut + fenêtre UNIQUEMENT.
         group.MapGet("/expected-today", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {

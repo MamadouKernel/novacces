@@ -20,11 +20,30 @@ public sealed class AgentApiClient
         _http.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
     }
 
-    /// <summary>Scan nominal (en ligne) : l'API applique toute la logique de sûreté.</summary>
-    public async Task<ScanResponseDto?> ScanAsync(string signedQr, string direction, CancellationToken ct = default)
+    /// <summary>Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.</summary>
+    public async Task<ShiftStartResponseDto?> StartShiftAsync(string matricule, string pin, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/scan",
-            new ScanRequestDto(signedQr, direction, "terminal"), ct);
+        var response = await _http.PostAsJsonAsync("/api/agent/shift/start",
+            new ShiftStartRequestDto(matricule, pin), ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ShiftStartResponseDto>(cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Scan nominal (en ligne) : l'API applique toute la logique de sûreté. Le
+    /// jeton de poste (s'il existe) est joint pour tracer le scan au matricule
+    /// de l'agent (§8.5).
+    /// </summary>
+    public async Task<ScanResponseDto?> ScanAsync(string signedQr, string direction, string? shiftToken, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/scan")
+        {
+            Content = JsonContent.Create(new ScanRequestDto(signedQr, direction, "terminal")),
+        };
+        if (!string.IsNullOrWhiteSpace(shiftToken))
+            req.Headers.Add("X-Shift-Token", shiftToken);
+
+        using var response = await _http.SendAsync(req, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ScanResponseDto>(cancellationToken: ct);
     }

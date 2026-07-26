@@ -14,5 +14,8 @@ public enum AdminAuditAction
     DataPurged,
 
     /// <summary>Anonymisation des noms de visiteurs dans le journal des scans après la fenêtre de conservation (§7.3).</summary>
-    JournalAnonymized
+    JournalAnonymized,
+
+    /// <summary>Création d'un agent (matricule + PIN) pour la prise de poste.</summary>
+    AgentCreated
 }

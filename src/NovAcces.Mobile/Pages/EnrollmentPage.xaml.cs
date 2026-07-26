@@ -52,11 +52,10 @@ public partial class EnrollmentPage : ContentPage
             _config.PublicKeyPem = pem;
             await _config.SaveAsync();
 
-            // Bascule sur le poste de contrôle (résolu maintenant que la config est
-            // renseignée, pour que l'API client et le vérificateur soient bien câblés).
-            var scan = _services.GetRequiredService<ScanPage>();
+            // Terminal enrôlé → prise de poste (l'agent s'identifie avant le scan).
+            var shift = _services.GetRequiredService<ShiftPage>();
             if (Application.Current?.Windows.Count > 0)
-                Application.Current.Windows[0].Page = new NavigationPage(scan);
+                Application.Current.Windows[0].Page = new NavigationPage(shift);
         }
         catch (Exception ex)
         {

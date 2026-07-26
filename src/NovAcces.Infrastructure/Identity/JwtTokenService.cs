@@ -60,4 +60,69 @@ public sealed class JwtTokenService : IJwtTokenService
 
         return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
     }
+
+    // Claims du jeton de poste — noms CUSTOM (préfixe nva_) pour qu'ils ne
+    // subissent PAS le remappage in/out de JwtSecurityTokenHandler (qui
+    // transforme p.ex. "sub" en NameIdentifier et casserait la relecture).
+    private const string ClaimMatricule = "nva_mat";
+    private const string ClaimAgentName = "nva_name";
+    private const string ClaimShiftMarker = "nva_shift"; // "1" = jeton de poste
+
+    public (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.AddHours(Math.Max(1, _options.ShiftExpiryHours));
+
+        var claims = new List<Claim>
+        {
+            new(ClaimMatricule, matricule),
+            new(ClaimAgentName, displayName),
+            new(NovAccesClaimTypes.SiteId, siteId),
+            new(ClaimShiftMarker, "1"),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _options.Issuer, audience: _options.Audience, claims: claims,
+            notBefore: now.UtcDateTime, expires: expiresAt.UtcDateTime, signingCredentials: credentials);
+
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
+    }
+
+    public ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
+        var parameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true, ValidIssuer = _options.Issuer,
+            ValidateAudience = true, ValidAudience = _options.Audience,
+            ValidateIssuerSigningKey = true, IssuerSigningKey = key,
+            ValidateLifetime = true, ClockSkew = TimeSpan.FromMinutes(1),
+        };
+
+        try
+        {
+            var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
+            var principal = handler.ValidateToken(token, parameters, out _);
+
+            // Doit être un jeton de POSTE, et rattaché au site attendu (celui du
+            // terminal) — un jeton d'un autre site ne vaut rien ici.
+            if (principal.FindFirst(ClaimShiftMarker)?.Value != "1") return null;
+            var siteId = principal.FindFirst(NovAccesClaimTypes.SiteId)?.Value;
+            if (!string.Equals(siteId, expectedSiteId, StringComparison.Ordinal)) return null;
+
+            var matricule = principal.FindFirst(ClaimMatricule)?.Value;
+            var name = principal.FindFirst(ClaimAgentName)?.Value ?? matricule;
+            return string.IsNullOrWhiteSpace(matricule) ? null : new ShiftIdentity(matricule, name!, siteId!);
+        }
+        catch
+        {
+            return null; // signature invalide, expiré, ou malformé
+        }
+    }
 }

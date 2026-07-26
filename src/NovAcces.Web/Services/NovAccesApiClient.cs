@@ -196,6 +196,21 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Liste les agents (matricule + nom) d'un site.</summary>
+    public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(string siteId)
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<AgentSummaryDto>>($"/api/admin/agents/{siteId}");
+        return result ?? new List<AgentSummaryDto>();
+    }
+
+    /// <summary>Crée un agent (matricule + PIN) pour la prise de poste sur un site.</summary>
+    public async Task<(bool Success, string? Error)> CreateAgentAsync(string siteId, string matricule, string displayName, string pin)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(siteId, matricule, displayName, pin));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
     {
         try

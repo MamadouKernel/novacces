@@ -148,6 +148,51 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
     </div>
 
     <section class="card" style="margin-top:1.2rem;">
+        <h2>Agents (prise de poste)</h2>
+        <p class="muted">Matricule + PIN pour l'identification de l'agent sur le terminal. Le PIN sert au « prendre le poste » et n'est jamais affiché après création.</p>
+
+        <div class="field" style="max-width:22rem"><label>Site</label>
+            <select @bind="_agentSite" @bind:after="RefreshAgentsAsync">
+                <option value="">— choisir un site —</option>
+                @foreach (var s in _overview)
+                {
+                    <option value="@s.SiteId">@s.SiteId</option>
+                }
+            </select>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_agentSite))
+        {
+            <div class="row">
+                <div class="field"><label>Matricule</label>
+                    <input @bind="_newAgent.Matricule" placeholder="ex. SG-0417" /></div>
+                <div class="field"><label>Nom</label>
+                    <input @bind="_newAgent.DisplayName" placeholder="ex. A. Traoré" /></div>
+                <div class="field"><label>Code PIN</label>
+                    <input type="password" inputmode="numeric" @bind="_newAgent.Pin" placeholder="4 à 8 chiffres" /></div>
+            </div>
+            <button class="btn-primary" @onclick="CreateAgentAsync" disabled="@_busy">Créer l'agent</button>
+            @if (_agentMsg is not null) { <p class="@(_agentOk ? "info" : "error")">@_agentMsg</p> }
+
+            <div class="table-wrap" style="margin-top:1rem">
+            <table class="visits">
+                <thead><tr><th>Matricule</th><th>Nom</th></tr></thead>
+                <tbody>
+                    @foreach (var a in _agents)
+                    {
+                        <tr><td><strong>@a.Matricule</strong></td><td class="muted">@a.DisplayName</td></tr>
+                    }
+                    @if (_agents.Count == 0)
+                    {
+                        <tr><td colspan="2" class="muted">Aucun agent pour ce site.</td></tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    </section>
+
+    <section class="card" style="margin-top:1.2rem;">
         <h2>Comptes</h2>
         @if (_users.Count == 0)
         {
@@ -221,6 +266,14 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
     }
 
     private readonly NewUser _newUser = new();
+
+    // Agents (prise de poste) : sélection de site + ajout matricule/PIN.
+    private sealed class NewAgent { public string Matricule = ""; public string DisplayName = ""; public string Pin = ""; }
+    private readonly NewAgent _newAgent = new();
+    private string _agentSite = "";
+    private IReadOnlyList<AgentSummaryDto> _agents = Array.Empty<AgentSummaryDto>();
+    private string? _agentMsg; private bool _agentOk;
+
     private string _siteInput = "";
     private string SiteSlugValue => SiteSlug.From(_siteInput);
     private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
@@ -365,6 +418,40 @@ else if (Auth.IsInRole(NovAccesRoles.Admin))
                 await RefreshUsersAsync(); // recharge la liste des sites (menu déroulant)
             }
             else { Toasts.Error(error ?? "Provisionnement refusé."); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RefreshAgentsAsync()
+    {
+        _agents = Array.Empty<AgentSummaryDto>();
+        if (string.IsNullOrEmpty(_agentSite)) return;
+        try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        if (string.IsNullOrEmpty(_agentSite))
+        {
+            _agentOk = false; _agentMsg = "Choisissez un site.";
+            return;
+        }
+
+        _busy = true; _agentMsg = null;
+        try
+        {
+            var (ok, error) = await Api.CreateAgentAsync(
+                _agentSite, _newAgent.Matricule.Trim(), _newAgent.DisplayName.Trim(), _newAgent.Pin.Trim());
+
+            _agentOk = ok;
+            _agentMsg = ok ? "Agent créé." : error;
+            if (ok)
+            {
+                Toasts.Success($"Agent « {_newAgent.Matricule.Trim()} » créé.");
+                _newAgent.Matricule = _newAgent.DisplayName = _newAgent.Pin = "";
+                await RefreshAgentsAsync();
+            }
+            else { Toasts.Error(error ?? "Création refusée."); }
         }
         finally { _busy = false; }
     }

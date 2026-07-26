@@ -130,6 +130,24 @@ public static class AdminEndpoints
         .WithName("AdminCreateAgent")
         .WithSummary("Crée un agent (matricule + PIN) pour la prise de poste sur un site.");
 
+        group.MapGet("/agents/{siteId}", async (
+            string siteId,
+            IServiceScopeFactory scopeFactory,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+
+            var list = await agents.ListAsync(ct);
+            return Results.Ok(list.Select(a => new AgentSummaryDto(a.Matricule, a.DisplayName)).ToList());
+        })
+        .WithName("AdminListAgents")
+        .WithSummary("Liste les agents (matricule + nom) d'un site.");
+
         return group;
     }
 }

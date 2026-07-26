@@ -32,6 +32,9 @@ public sealed record ShiftStartResponseDto(
 /// <summary>Création d'un agent (administration) : matricule + nom + PIN, pour un site.</summary>
 public sealed record CreateAgentRequestDto(string SiteId, string Matricule, string DisplayName, string Pin);
 
+/// <summary>Agent listé dans la console d'administration (sans le PIN).</summary>
+public sealed record AgentSummaryDto(string Matricule, string DisplayName);
+
 /// <summary>
 /// Un scan effectué hors ligne, remonté à la resynchronisation. Porte le verdict
 /// local (VerdictCode) et le marqueur d'événement de sécurité, pour que le

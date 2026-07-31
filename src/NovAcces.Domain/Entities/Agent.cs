@@ -24,6 +24,12 @@ public sealed class Agent
     /// <summary>Un agent désactivé ne peut plus prendre de poste (départ, suspension).</summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>Nombre d'échecs PIN depuis la dernière authentification réussie.</summary>
+    public int FailedPinAttempts { get; private set; }
+
+    /// <summary>Fin du verrouillage temporaire après trop d'échecs PIN.</summary>
+    public DateTimeOffset? PinLockoutEnd { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     private Agent() { } // EF Core
@@ -38,6 +44,33 @@ public sealed class Agent
         CreatedAt = now,
     };
 
-    public void UpdatePin(string pinHash) => PinHash = pinHash;
+    public void UpdatePin(string pinHash)
+    {
+        PinHash = pinHash;
+        ResetPinFailures();
+    }
+
+    public bool IsPinLocked(DateTimeOffset now) =>
+        PinLockoutEnd is { } until && until > now;
+
+    public void RegisterFailedPin(DateTimeOffset now, int maxAttempts, TimeSpan lockout)
+    {
+        if (IsPinLocked(now))
+            return;
+
+        FailedPinAttempts++;
+        if (FailedPinAttempts >= Math.Max(1, maxAttempts))
+        {
+            PinLockoutEnd = now.Add(lockout);
+            FailedPinAttempts = 0;
+        }
+    }
+
+    public void ResetPinFailures()
+    {
+        FailedPinAttempts = 0;
+        PinLockoutEnd = null;
+    }
+
     public void Deactivate() => IsActive = false;
 }

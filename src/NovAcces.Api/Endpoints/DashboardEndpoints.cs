@@ -1,3 +1,4 @@
+using NovAcces.Shared.Auth;
 using System.Globalization;
 using System.Text;
 using NovAcces.Application.Abstractions;
@@ -16,7 +17,7 @@ public static class DashboardEndpoints
     public static RouteGroupBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard")
-            .RequireAuthorization("Dashboard");
+            .RequireAuthorization(NovAccesPolicies.DashboardApi);
 
         group.MapGet("/journal", async (IScanLogRepository logs, int? limit, string? q, CancellationToken ct) =>
         {

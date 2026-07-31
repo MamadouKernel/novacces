@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure.Auth;
 using NovAcces.Infrastructure.Identity;
 using NovAcces.Shared.Auth;
@@ -91,37 +92,45 @@ public static class AuthSetup
     public static IServiceCollection AddNovAccesAuthorization(this IServiceCollection services)
     {
         services.AddAuthorizationBuilder()
-            .AddPolicy(NovAccesRoles.Hote, p => p.RequireRole(NovAccesRoles.Hote, NovAccesRoles.SuperAdmin))
-            .AddPolicy(NovAccesRoles.Agent, p => p.RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin))
-            .AddPolicy(NovAccesRoles.Surete, p => p.RequireRole(NovAccesRoles.Surete, NovAccesRoles.SuperAdmin))
+            .AddPolicy(NovAccesRoles.Hote, p => p.RequireRole(NovAccesRoles.Hote, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
+            .AddPolicy(NovAccesRoles.Agent, p => p.RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
+            .AddPolicy(NovAccesRoles.Surete, p => p.RequireRole(NovAccesRoles.Surete, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
             .AddPolicy(NovAccesRoles.Admin, p => p.RequireRole(NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // SuperAdmin reçoit AUSSI le rôle Admin à la création (voir AuthEndpoints
             // /register) : cette policy sert uniquement à des vérifications strictes
             // qui doivent exclure un Admin simple (ex. création d'un compte Admin).
             .AddPolicy(NovAccesRoles.SuperAdmin, p => p.RequireRole(NovAccesRoles.SuperAdmin))
             // Révocation (REQ-F-09) : Hôte (ses propres QR), Sûreté ou Admin.
-            .AddPolicy("RevokeVisit", p => p.RequireRole(
-                NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
-            // Dashboard temps réel (REQ-F-06) : Sûreté, Hôte ou Admin.
-            .AddPolicy("Dashboard", p => p.RequireRole(
+            .AddPolicy(NovAccesPolicies.RevokeVisit, p => p.RequireRole(
+                NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
+            // Hub temps réel : le site est validé par ScanEventsHub (le middleware
+            // tenant est volontairement exempté pour la durée WebSocket).
+            .AddPolicy(NovAccesPolicies.Dashboard, p => p.RequireRole(
                 NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
+            // API dashboard : les dépôts métier exigent un tenant résolu.
+            .AddPolicy(NovAccesPolicies.DashboardApi, p => p.RequireRole(
+                NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
             // Hub du contrat mobile : l'agent reçoit les événements de sa liste locale.
-            .AddPolicy("AgentEvents", p => p.RequireRole(
+            .AddPolicy(NovAccesPolicies.AgentEvents, p => p.RequireRole(
                 NovAccesRoles.Agent, NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // Liste d'exclusion (REQ-F-11) : gestion réservée à la Sûreté et l'Admin
             // (le motif ne doit pas être exposé aux hôtes — moindre privilège).
-            .AddPolicy("ManageExclusions", p => p.RequireRole(
-                NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
+            .AddPolicy(NovAccesPolicies.ManageExclusions, p => p.RequireRole(
+                NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
 
             // Les opérations d'un poste de contrôle restent liées à un terminal
             // enrôlé. Le SuperAdmin bénéficie de la capacité Agent, mais un JWT
             // du portail ne peut pas usurper un terminal : il doit s'authentifier
             // avec la clé API issue de l'enrôlement QR et son claim TerminalId.
-            .AddPolicy("AgentTerminal", p => p
+            .AddPolicy(NovAccesPolicies.AgentTerminal, p => p
                 .RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin)
                 .RequireClaim(NovAccesClaimTypes.TerminalId)
                 .RequireAssertion(context => context.Resource is HttpContext http
                     && http.Request.Headers.ContainsKey(ApiKeyOptions.HeaderName)));
         return services;
     }
+
+    private static bool HasResolvedTenant(Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext context) =>
+        context.Resource is HttpContext http
+        && http.RequestServices.GetRequiredService<ICurrentTenant>().IsResolved;
 }

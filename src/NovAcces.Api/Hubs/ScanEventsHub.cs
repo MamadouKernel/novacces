@@ -46,6 +46,31 @@ public sealed class ScanEventsHub : Hub
             return;
         }
 
+        var allowedSites = Context.User?.FindAll(NovAccesClaimTypes.AllowedSite)
+            .Select(c => c.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        // Un terminal multi-sites ne possède volontairement pas de claim SiteId :
+        // son abonnement doit toutefois rester borné à AllowedSite.
+        if (allowedSites.Count > 0
+            && !allowedSites.Contains(requested!, StringComparer.OrdinalIgnoreCase))
+        {
+            Context.Abort();
+            return;
+        }
+
+        // Une identité sans site ni liste autorisée est globale uniquement pour
+        // Admin/SuperAdmin. Toute autre identité est refusée par défaut.
+        if (string.IsNullOrWhiteSpace(claimSite)
+            && allowedSites.Count == 0
+            && !NovAccesAuthorizationMatrix.IsGlobalOperator(
+                Context.User ?? new ClaimsPrincipal()))
+        {
+            Context.Abort();
+            return;
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, requested!.ToLowerInvariant());
         await base.OnConnectedAsync();
     }

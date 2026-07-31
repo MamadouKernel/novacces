@@ -177,7 +177,7 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = $"Rôle invalide. Attendus : {string.Join(", ", NovAccesRoles.All)}." });
 
             var isElevatedRole = role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
-            if (isElevatedRole && !caller.IsInRole(NovAccesRoles.SuperAdmin))
+            if (isElevatedRole && !NovAccesAuthorizationMatrix.CanCreateElevatedAccount(caller))
                 return Results.Json(
                     new { error = "Seul le SuperAdmin peut créer un compte Admin ou SuperAdmin." },
                     statusCode: StatusCodes.Status403Forbidden);

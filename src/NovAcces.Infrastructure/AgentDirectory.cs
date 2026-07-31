@@ -1,38 +1,62 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
 using NovAcces.Infrastructure.Persistence;
 
 namespace NovAcces.Infrastructure;
 
-/// <summary>
-/// Annuaire des agents du site courant. Le PIN est haché avec le hacheur
-/// d'ASP.NET Core Identity (PBKDF2 salé) — jamais stocké ni comparé en clair.
-/// Toutes les requêtes passent par le DbContext cantonné au tenant.
-/// </summary>
 public sealed class AgentDirectory : IAgentDirectory
 {
     private readonly NovAccesDbContext _db;
+    private readonly IOptions<AgentSecurityOptions> _security;
+    private readonly IDateTimeProvider _clock;
 
-    // Le hacheur n'utilise pas l'instance passée : on peut le partager.
     private static readonly PasswordHasher<Agent> Hasher = new();
+    private static readonly Agent DummyAgent = Agent.Create("__dummy__", "__dummy__", string.Empty, DateTimeOffset.UnixEpoch);
+    private static readonly string DummyPinHash = Hasher.HashPassword(DummyAgent, "__dummy-pin__");
 
-    public AgentDirectory(NovAccesDbContext db) => _db = db;
+    public AgentDirectory(NovAccesDbContext db, IOptions<AgentSecurityOptions> security, IDateTimeProvider clock)
+    {
+        _db = db;
+        _security = security;
+        _clock = clock;
+    }
 
     public async Task<AgentIdentity?> VerifyAsync(string matricule, string pin, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
         var m = (matricule ?? string.Empty).Trim();
 
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m && a.IsActive, ct);
-        if (agent is null)
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m, ct);
+        if (agent is null || !agent.IsActive)
+        {
+            Hasher.VerifyHashedPassword(DummyAgent, DummyPinHash, pin ?? string.Empty);
             return null;
+        }
+
+        var now = _clock.UtcNow;
+        if (agent.IsPinLocked(now))
+        {
+            Hasher.VerifyHashedPassword(agent, agent.PinHash, pin ?? string.Empty);
+            return null;
+        }
 
         var result = Hasher.VerifyHashedPassword(agent, agent.PinHash, pin ?? string.Empty);
         if (result == PasswordVerificationResult.Failed)
+        {
+            agent.RegisterFailedPin(now, _security.Value.MaxPinFailures, _security.Value.Lockout);
+            await _db.SaveChangesAsync(ct);
             return null;
+        }
 
+        if (result == PasswordVerificationResult.SuccessRehashNeeded)
+            agent.UpdatePin(Hasher.HashPassword(agent, pin ?? string.Empty));
+        else
+            agent.ResetPinFailures();
+
+        await _db.SaveChangesAsync(ct);
         return new AgentIdentity(agent.Matricule, agent.DisplayName);
     }
 

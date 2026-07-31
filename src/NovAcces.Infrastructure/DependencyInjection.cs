@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IScanLogRepository, ScanLogRepository>();
         services.AddScoped<IExclusionListService, ExclusionListService>();
         services.AddScoped<IAdminAuditLog, AdminAuditLog>();
+        services.Configure<AgentSecurityOptions>(configuration.GetSection("AgentSecurity"));
         services.AddScoped<IAgentDirectory, AgentDirectory>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 

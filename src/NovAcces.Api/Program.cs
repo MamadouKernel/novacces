@@ -1,3 +1,4 @@
+using NovAcces.Shared.Auth;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -48,12 +49,18 @@ builder.Services.AddHostedService<RetentionMonitor>();
 var rateLimitPermit = builder.Configuration.GetValue<int?>("RateLimiting:PermitLimit") ?? 30;
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("sensitive", opt =>
-    {
-        opt.PermitLimit = rateLimitPermit;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueLimit = 0;
-    });
+    options.AddPolicy("sensitive", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            "sensitive:"
+                + (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown")
+                + ":"
+                + (httpContext.User.FindFirst("novacces:terminal_id")?.Value ?? "anonymous"),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = rateLimitPermit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 
     // Politique dédiée à l'authentification, partitionnée PAR IP : limite le
     // brute-force / password-spraying sur /api/auth (login, 2FA) — au-delà du
@@ -137,6 +144,9 @@ if (!app.Configuration.GetValue<bool>("DisableHttpsRedirection"))
 
 // L'authentification DOIT précéder la résolution de tenant : celle-ci lit le
 // claim SiteId du principal authentifié.
+// Le journal global enveloppe tout le pipeline : les refus d'authentification,
+// de tenant et de rate limiting sont eux aussi traçables.
+app.UseApplicationAudit();
 app.UseAuthentication();
 app.UseTenantResolution();
 
@@ -147,8 +157,6 @@ if (!app.Configuration.GetValue<bool>("RateLimiting:Disabled"))
 
 app.UseAuthorization();
 
-// Traçabilité transversale : chaque action API est inscrite dans le journal global.
-app.UseApplicationAudit();
 app.UseActiveUser();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow, serverTimeUtc = DateTimeOffset.UtcNow }));
@@ -162,8 +170,8 @@ app.MapAuditEndpoints();
 app.MapAgentEndpoints();
 app.MapDeviceEnrollmentEndpoints();
 app.MapAdminEndpoints();
-app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
-app.MapHub<ScanEventsHub>("/hubs/scan-events").RequireAuthorization("AgentEvents");
+app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization(NovAccesPolicies.Dashboard);
+app.MapHub<ScanEventsHub>("/hubs/scan-events").RequireAuthorization(NovAccesPolicies.AgentEvents);
 app.MapAgentContractEndpoints();
 
 app.Run();

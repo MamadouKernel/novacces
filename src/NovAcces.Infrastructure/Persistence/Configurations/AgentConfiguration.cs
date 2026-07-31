@@ -14,6 +14,8 @@ public sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         builder.Property(a => a.Matricule).HasMaxLength(40).IsRequired();
         builder.Property(a => a.DisplayName).HasMaxLength(200).IsRequired();
         builder.Property(a => a.PinHash).HasMaxLength(400).IsRequired();
+        builder.Property(a => a.FailedPinAttempts).IsRequired();
+        builder.Property(a => a.PinLockoutEnd);
 
         // Matricule unique par site (schéma tenant).
         builder.HasIndex(a => a.Matricule).IsUnique();

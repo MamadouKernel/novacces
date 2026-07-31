@@ -175,7 +175,7 @@ public static class VisitEndpoints
             if (visit is null)
                 return Results.NotFound(new { error = "Demande introuvable." });
 
-            var canViewAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin) || user.IsInRole(NovAccesRoles.SuperAdmin);
+            var canViewAny = NovAccesAuthorizationMatrix.CanViewAnyVisit(user);
             if (!canViewAny && visit.HostUserId != user.HostIdentifier())
                 return Results.Json(new { error = "Accès refusé." }, statusCode: StatusCodes.Status403Forbidden);
 
@@ -207,7 +207,7 @@ public static class VisitEndpoints
             var ordered = events.OrderBy(e => e.At).ToList();
             return Results.Ok(new VisitHistoryDto(visit.Id, visit.VisitorName, visit.Status.ToString(), ordered));
         })
-        .RequireAuthorization("Dashboard")
+        .RequireAuthorization(NovAccesPolicies.DashboardApi)
         .WithName("VisitHistory")
         .WithSummary("Chronologie des statuts d'une demande de visite.");
 
@@ -222,7 +222,7 @@ public static class VisitEndpoints
         {
             // Moindre privilège (section 8.5) : Sûreté/Admin révoquent tout QR du
             // site ; un Hôte uniquement ses propres demandes (vérifié dans le handler).
-            var canRevokeAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin) || user.IsInRole(NovAccesRoles.SuperAdmin);
+            var canRevokeAny = NovAccesAuthorizationMatrix.CanRevokeAnyVisit(user);
 
             var result = await handler.HandleAsync(
                 new RevokeVisitCommand(visitId, user.HostIdentifier(), user.HostIdentifier(), canRevokeAny), ct);
@@ -237,7 +237,7 @@ public static class VisitEndpoints
                 ? Results.Ok(new { message = "QR révoqué." })
                 : Results.NotFound(new { error = result.Error });
         })
-        .RequireAuthorization("RevokeVisit")
+        .RequireAuthorization(NovAccesPolicies.RevokeVisit)
         .WithName("RevokeVisit")
         .WithSummary("Révoque un QR à tout moment (REQ-F-09).");
 

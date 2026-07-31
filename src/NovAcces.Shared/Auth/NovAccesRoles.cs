@@ -55,3 +55,17 @@ public static class NovAccesClaimTypes
     /// <summary>Identifiant du terminal qui a authentifié une requête API key.</summary>
     public const string TerminalId = "novacces:terminal_id";
 }
+
+/// <summary>
+/// Noms centralisés des policies d'autorisation transversales.
+/// Les endpoints et hubs ne doivent pas recopier des chaînes de policy.
+/// </summary>
+public static class NovAccesPolicies
+{
+    public const string RevokeVisit = "RevokeVisit";
+    public const string Dashboard = "Dashboard";
+    public const string DashboardApi = "DashboardApi";
+    public const string AgentEvents = "AgentEvents";
+    public const string ManageExclusions = "ManageExclusions";
+    public const string AgentTerminal = "AgentTerminal";
+}

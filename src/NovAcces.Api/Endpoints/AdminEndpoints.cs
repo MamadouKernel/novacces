@@ -40,7 +40,7 @@ public static class AdminEndpoints
             CancellationToken ct) =>
         {
             var all = await users.Users.OrderBy(u => u.Email).ToListAsync(ct);
-            var callerIsSuperAdmin = caller.IsInRole(NovAccesRoles.SuperAdmin);
+            var callerIsSuperAdmin = NovAccesAuthorizationMatrix.CanViewAllUsers(caller);
 
             var result = new List<AdminUserDto>(all.Count);
             foreach (var u in all)

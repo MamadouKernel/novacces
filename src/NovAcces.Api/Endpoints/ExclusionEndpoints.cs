@@ -1,3 +1,4 @@
+using NovAcces.Shared.Auth;
 using System.Security.Claims;
 using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
@@ -16,7 +17,7 @@ public static class ExclusionEndpoints
     public static RouteGroupBuilder MapExclusionEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/exclusions").WithTags("Exclusions")
-            .RequireAuthorization("ManageExclusions");
+            .RequireAuthorization(NovAccesPolicies.ManageExclusions);
 
         group.MapGet("/", async (IExclusionListService exclusions, CancellationToken ct) =>
         {

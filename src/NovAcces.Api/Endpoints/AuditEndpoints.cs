@@ -17,7 +17,7 @@ public static class AuditEndpoints
     public static RouteGroupBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/audit").WithTags("Audit")
-            .RequireAuthorization("ManageExclusions");
+            .RequireAuthorization();
 
         group.MapGet("/application", async (
             NovAccesIdentityDbContext db,
@@ -91,6 +91,7 @@ public static class AuditEndpoints
                 .ToList();
             return Results.Ok(dto);
         })
+        .RequireAuthorization(NovAccesPolicies.ManageExclusions)
         .WithName("ListAuditEntries")
         .WithSummary("Journal d'audit des actions privilégiées du site (§8.5).");
 

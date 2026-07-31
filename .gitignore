@@ -24,3 +24,7 @@ secrets.json
 
 ## Front-end (Tailwind)
 node_modules/
+
+# Instructions locales de développement — ne jamais publier
+CLAUDE.md
+**/CLAUDE.md

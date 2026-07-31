@@ -26,7 +26,7 @@ public sealed class ApplicationAuditMiddleware
         }
         finally
         {
-            if (context.Request.Path.StartsWithSegments("/api"))
+            if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/hubs"))
             {
                 var actor = context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
                     ?? context.User?.FindFirstValue(ClaimTypes.Name)

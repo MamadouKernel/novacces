@@ -4,7 +4,7 @@ using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Hubs;
 
-public sealed class ScanEventBroadcaster : IScanEventBroadcaster
+public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBroadcaster
 {
     private readonly IHubContext<ScanEventsHub> _hub;
     private readonly ICurrentTenant _tenant;
@@ -36,4 +36,12 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster
 
         return _hub.Clients.Group(_tenant.SiteId).SendAsync("OverstayAlert", dto, ct);
     }
+
+    public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct) =>
+        _hub.Clients.Group(_tenant.SiteId).SendAsync(
+            "VisitCreated", new AgentVisitEventDto(visitId, visitorName, occurredAt), ct);
+
+    public Task BroadcastVisitRevokedAsync(Guid visitId, DateTimeOffset occurredAt, CancellationToken ct) =>
+        _hub.Clients.Group(_tenant.SiteId).SendAsync(
+            "VisitRevoked", new AgentVisitEventDto(visitId, null, occurredAt), ct);
 }

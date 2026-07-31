@@ -2,7 +2,7 @@ namespace NovAcces.Shared.Offline;
 
 /// <summary>
 /// Décision de scan en MODE DÉGRADÉ (hors ligne), côté agent. Pur, sans état ni
-/// dépendance : le MAUI l'appelle avec le QR scanné, la liste locale signée du
+/// dépendance : l'application mobile React Native l'appelle avec le QR scanné, la liste locale signée du
 /// jour, le SENS du poste (Entrée/Sortie) et l'ensemble des visiteurs
 /// considérés « sur site » localement (cf. <see cref="OfflineOnSiteState"/>).
 /// Reproduit la doctrine §6 des scénarios ET, en miroir de Domain/Visit.Scan,

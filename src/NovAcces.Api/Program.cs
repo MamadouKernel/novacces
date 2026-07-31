@@ -29,6 +29,7 @@ builder.Services.AddSwaggerGen();
 // il vit donc dans Api et non dans Infrastructure (Clean Architecture).
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IScanEventBroadcaster, ScanEventBroadcaster>();
+builder.Services.AddScoped<IAgentEventBroadcaster, ScanEventBroadcaster>();
 
 // Supervision des dépassements de durée (§7) : service de fond périodique.
 builder.Services.AddHostedService<OverstayMonitor>();
@@ -90,7 +91,12 @@ if (args.Length >= 1 && args[0] == "provision-site")
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        // Swagger est accessible directement à la racine de l'API : http://localhost:<port>/
+        options.RoutePrefix = string.Empty;
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "NovAcces.Api v1");
+    });
 
     // Applique le schéma Identity (schéma partagé) et amorce rôles + Admin de
     // développement, pour que la connexion soit testable immédiatement. En
@@ -132,7 +138,10 @@ if (!app.Configuration.GetValue<bool>("RateLimiting:Disabled"))
 
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow }));
+// Traçabilité transversale : chaque action API est inscrite dans le journal global.
+app.UseApplicationAudit();
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow, serverTimeUtc = DateTimeOffset.UtcNow }));
 
 app.MapAuthEndpoints().RequireRateLimiting("auth");
 app.MapScanEndpoints().RequireRateLimiting("sensitive");
@@ -141,8 +150,11 @@ app.MapDashboardEndpoints();
 app.MapExclusionEndpoints();
 app.MapAuditEndpoints();
 app.MapAgentEndpoints();
+app.MapDeviceEnrollmentEndpoints();
 app.MapAdminEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization("Dashboard");
+app.MapHub<ScanEventsHub>("/hubs/scan-events").RequireAuthorization("AgentEvents");
+app.MapAgentContractEndpoints();
 
 app.Run();
 

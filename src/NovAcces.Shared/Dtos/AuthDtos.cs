@@ -1,7 +1,15 @@
 namespace NovAcces.Shared.Dtos;
 
 /// <summary>Demande de connexion (portail web : Hôte / Sûreté / Admin).</summary>
-public sealed record LoginRequestDto(string Email, string Password);
+public sealed record LoginRequestDto(string? Email, string? Password)
+{
+    public string? Matricule { get; init; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("motDePasse")]
+    public string? MotDePasse { get; init; }
+
+    public string EffectivePassword => string.IsNullOrWhiteSpace(MotDePasse) ? Password ?? string.Empty : MotDePasse;
+}
 
 /// <summary>
 /// Réponse de connexion. AccessToken = JWT à présenter en Bearer sur les appels
@@ -12,7 +20,13 @@ public sealed record LoginResponseDto(
     DateTimeOffset ExpiresAt,
     string DisplayName,
     IReadOnlyList<string> Roles,
-    string? SiteId);
+    string? SiteId,
+    string? RefreshToken = null,
+    int ExpiresIn = 0);
+
+public sealed record RefreshTokenRequestDto(string RefreshToken);
+public sealed record AgentLoginResponseDto(string AccessToken, string RefreshToken, int ExpiresIn, AgentLoginIdentityDto Agent);
+public sealed record AgentLoginIdentityDto(string Matricule, string Nom, string Role = "Agent");
 
 /// <summary>
 /// Création d'un compte (réservée à l'Admin). SiteId null = compte global
@@ -74,6 +88,11 @@ public sealed record AdminSiteOverviewDto(string SiteId, int OnSite, int ScansTo
 // ---- Journal d'audit des actions d'administration/sûreté (§8.5) ----
 
 /// <summary>Entrée du journal d'audit inaltérable, telle qu'affichée à la Sûreté/Admin.</summary>
+/// <summary>Entrée technique globale tracée pour chaque requête API.</summary>
+public sealed record ApplicationAuditDto(
+    Guid Id, string Actor, string Method, string Path, int StatusCode,
+    string? SiteId, string? IpAddress, DateTimeOffset Timestamp);
+
 public sealed record AdminAuditDto(
     Guid Id, string Actor, string Action, string? TargetId, string Detail, DateTimeOffset Timestamp);
 

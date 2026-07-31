@@ -4,7 +4,7 @@ namespace NovAcces.Infrastructure.Identity;
 
 /// <summary>
 /// Compte utilisateur du portail web (Hôte / Sûreté / Admin). Les agents de
-/// contrôle n'ont PAS de compte ici : l'app MAUI s'authentifie par clé API de
+/// contrôle n'ont PAS de compte ici : le client mobile React Native s'authentifie par jeton agent (les routes API Key restent historiques)
 /// terminal enrôlé (voir Auth/ApiKeyAuthenticationHandler).
 ///
 /// Modèle multi-tenant : tables Identity dans un schéma PARTAGÉ (« identity »),

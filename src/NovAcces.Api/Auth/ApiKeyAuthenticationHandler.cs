@@ -1,81 +1,77 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure.Auth;
 using NovAcces.Shared.Auth;
 
 namespace NovAcces.Api.Auth;
 
 /// <summary>
-/// Authentifie un terminal agent par clé API (en-tête X-Api-Key), contre la
-/// liste des terminaux enrôlés. En cas de succès, le principal reçoit le rôle
-/// Agent et le claim SiteId du terminal — c'est ce SiteId (et non un en-tête
-/// X-Site-Id) qui détermine le tenant du scan.
+/// Authentifie un terminal agent par clé API (en-tête X-Api-Key), contre
+/// l'annuaire des terminaux enrôlés en base (<see cref="ITerminalDirectory"/>).
+/// En cas de succès :
+///  - terminal à un seul site (cas courant) : le principal reçoit directement
+///    le claim SiteId de ce site — c'est lui (et non un en-tête X-Site-Id)
+///    qui détermine le tenant, comme avant.
+///  - terminal partagé entre plusieurs sites : le principal reçoit un claim
+///    AllowedSite par site autorisé (pas de SiteId unique, ambigu). Le tenant
+///    est alors résolu par TenantResolutionMiddleware à partir de l'en-tête
+///    X-Site-Id, choisi par l'agent à la prise de poste, mais REVALIDÉ contre
+///    cette liste de claims — jamais un site arbitraire.
 ///
-/// La comparaison des clés est à temps constant (FixedTimeEquals) pour ne pas
-/// fuiter d'information par mesure de durée. C'est un concern web (ASP.NET
-/// Core Authentication), d'où sa place dans la couche Api et non Infrastructure.
+/// La recherche du terminal compare une EMPREINTE (SHA-256) de la clé, jamais
+/// la clé en clair — voir NovAcces.Infrastructure.Identity.TerminalDirectory
+/// pour le choix de hachage rapide (recherche directe) plutôt que PBKDF2.
 /// </summary>
 public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    private readonly ApiKeyOptions _apiKeys;
+    private readonly ITerminalDirectory _terminals;
 
     public ApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IOptions<ApiKeyOptions> apiKeys)
+        ITerminalDirectory terminals)
         : base(options, logger, encoder)
     {
-        _apiKeys = apiKeys.Value;
+        _terminals = terminals;
     }
 
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Pas d'en-tête = ce n'est pas une tentative par clé API : on laisse la
         // main aux autres schémas (NoResult, pas Fail).
         if (!Request.Headers.TryGetValue(ApiKeyOptions.HeaderName, out var provided)
             || string.IsNullOrWhiteSpace(provided))
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
 
-        var presented = provided.ToString();
-        var terminal = FindMatchingTerminal(presented);
-
+        var terminal = await _terminals.VerifyAsync(provided.ToString(), Context.RequestAborted);
         if (terminal is null)
-            return Task.FromResult(AuthenticateResult.Fail("Clé API inconnue."));
+            return AuthenticateResult.Fail("Clé API inconnue ou révoquée.");
 
-        var claims = new[]
+        if (terminal.SiteIds.Count == 0)
+            return AuthenticateResult.Fail("Terminal mal configuré : aucun site autorisé.");
+
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.Name, string.IsNullOrWhiteSpace(terminal.Label) ? "terminal" : terminal.Label),
-            new Claim(ClaimTypes.Role, NovAccesRoles.Agent),
-            new Claim(NovAccesClaimTypes.SiteId, terminal.SiteId),
+            new(ClaimTypes.Name, string.IsNullOrWhiteSpace(terminal.Label) ? "terminal" : terminal.Label),
+            new(ClaimTypes.Role, NovAccesRoles.Agent),
         };
+
+        if (terminal.SiteIds.Count == 1)
+        {
+            claims.Add(new Claim(NovAccesClaimTypes.SiteId, terminal.SiteIds[0]));
+        }
+        else
+        {
+            foreach (var siteId in terminal.SiteIds)
+                claims.Add(new Claim(NovAccesClaimTypes.AllowedSite, siteId));
+        }
 
         var identity = new ClaimsIdentity(claims, ApiKeyOptions.Scheme);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), ApiKeyOptions.Scheme);
-        return Task.FromResult(AuthenticateResult.Success(ticket));
-    }
-
-    private EnrolledTerminal? FindMatchingTerminal(string presentedKey)
-    {
-        var presentedBytes = Encoding.UTF8.GetBytes(presentedKey);
-        EnrolledTerminal? match = null;
-
-        // On parcourt TOUS les terminaux même après avoir trouvé, pour ne pas
-        // court-circuiter et introduire une différence de durée exploitable.
-        foreach (var terminal in _apiKeys.Terminals)
-        {
-            var candidateBytes = Encoding.UTF8.GetBytes(terminal.Key ?? string.Empty);
-            if (candidateBytes.Length == presentedBytes.Length
-                && CryptographicOperations.FixedTimeEquals(candidateBytes, presentedBytes))
-            {
-                match = terminal;
-            }
-        }
-
-        return match;
+        return AuthenticateResult.Success(ticket);
     }
 }

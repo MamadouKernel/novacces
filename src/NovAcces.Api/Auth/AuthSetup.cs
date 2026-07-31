@@ -14,7 +14,7 @@ public static class AuthSetup
     /// <summary>
     /// Deux schémas d'authentification :
     ///  - JWT Bearer : utilisateurs du portail web (Hôte / Sûreté / Admin) ;
-    ///  - ApiKey : terminaux agents (app MAUI), en-tête X-Api-Key.
+    ///  - ApiKey : terminaux agents (client mobile React Native), en-tête X-Api-Key.
     /// Un « policy scheme » par défaut aiguille automatiquement vers le bon
     /// schéma selon la présence de l'en-tête X-Api-Key, afin que HttpContext.User
     /// (et donc le claim SiteId) soit renseigné AVANT la résolution de tenant.
@@ -95,12 +95,19 @@ public static class AuthSetup
             .AddPolicy(NovAccesRoles.Agent, p => p.RequireRole(NovAccesRoles.Agent))
             .AddPolicy(NovAccesRoles.Surete, p => p.RequireRole(NovAccesRoles.Surete))
             .AddPolicy(NovAccesRoles.Admin, p => p.RequireRole(NovAccesRoles.Admin))
+            // SuperAdmin reçoit AUSSI le rôle Admin à la création (voir AuthEndpoints
+            // /register) : cette policy sert uniquement à des vérifications strictes
+            // qui doivent exclure un Admin simple (ex. création d'un compte Admin).
+            .AddPolicy(NovAccesRoles.SuperAdmin, p => p.RequireRole(NovAccesRoles.SuperAdmin))
             // Révocation (REQ-F-09) : Hôte (ses propres QR), Sûreté ou Admin.
             .AddPolicy("RevokeVisit", p => p.RequireRole(
                 NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin))
             // Dashboard temps réel (REQ-F-06) : Sûreté, Hôte ou Admin.
             .AddPolicy("Dashboard", p => p.RequireRole(
                 NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin))
+            // Hub du contrat mobile : l'agent reçoit les événements de sa liste locale.
+            .AddPolicy("AgentEvents", p => p.RequireRole(
+                NovAccesRoles.Agent, NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin))
             // Liste d'exclusion (REQ-F-11) : gestion réservée à la Sûreté et l'Admin
             // (le motif ne doit pas être exposé aux hôtes — moindre privilège).
             .AddPolicy("ManageExclusions", p => p.RequireRole(

@@ -53,7 +53,7 @@ public static class ExclusionEndpoints
         .WithName("AddExclusion")
         .WithSummary("Ajoute une personne à la liste d'exclusion.");
 
-        group.MapDelete("/{id:guid}", async (
+        group.MapPost("/{id:guid}/remove", async (
             Guid id,
             ClaimsPrincipal user,
             IExclusionListService exclusions,

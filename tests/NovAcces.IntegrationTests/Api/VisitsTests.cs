@@ -96,6 +96,49 @@ public sealed class VisitsTests
     }
 
     [SkippableFact]
+    public async Task SameVisitorName_DifferentCompanies_BothSucceed()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Homonymie : deux personnes réelles différentes peuvent partager le
+        // même nom. Le garde-fou anti-doublon est porté sur nom + société,
+        // donc deux sociétés différentes ne doivent JAMAIS se bloquer.
+        var hote = await LoginNewUserAsync("Hote");
+        var name = $"Homonyme-{Guid.NewGuid():N}";
+
+        var first = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, "Société A", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, "Société B", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ConcurrentCreate_ForSameVisitorAndCompany_OnlyOneSucceeds()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Condition de course : la vérification applicative amont ("lire puis
+        // écrire") ne suffit pas seule à empêcher deux créations strictement
+        // concurrentes du même visiteur. C'est l'index unique partiel en base
+        // (IX_visits_ActiveVisitorKey) qui tranche — exactement une des deux
+        // requêtes doit réussir, l'autre doit recevoir 409.
+        var hote = await LoginNewUserAsync("Hote");
+        var name = $"Course-{Guid.NewGuid():N}";
+        var request = new CreateVisitRequestDto(
+            name, "Société Concurrente", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null);
+
+        var responses = await Task.WhenAll(
+            hote.PostAsJsonAsync("/api/visits", request),
+            hote.PostAsJsonAsync("/api/visits", request));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Conflict);
+    }
+
+    [SkippableFact]
     public async Task KnownVisitors_ReturnsPrefillData()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

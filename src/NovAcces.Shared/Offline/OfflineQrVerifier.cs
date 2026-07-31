@@ -5,7 +5,7 @@ namespace NovAcces.Shared.Offline;
 
 /// <summary>
 /// Vérification ES256 HORS LIGNE des QR et de la liste du jour, avec la seule
-/// CLÉ PUBLIQUE. Destiné à être embarqué dans l'application agent (MAUI) : la clé
+/// CLÉ PUBLIQUE. Destiné à être embarqué dans le client mobile agent (React Native) : la clé
 /// privée ne quitte jamais le serveur. C'est une opération purement mathématique
 /// (aucune base, aucun réseau) — le socle du mode dégradé (§5, §6).
 ///

@@ -8,7 +8,7 @@ using NovAcces.Shared.Dtos;
 namespace NovAcces.Api.Endpoints;
 
 /// <summary>
-/// Endpoints consommés par l'application agent (MAUI), authentifiée par clé API
+/// Endpoints consommés par le client mobile React Native, authentifié par jeton Agent
 /// de terminal (rôle Agent). Fournissent : la liste des attendus du jour (§11,
 /// moindre privilège), la liste hors-ligne signée (§6), et la resynchronisation
 /// des scans effectués hors ligne (§6.5).
@@ -25,9 +25,9 @@ public static class AgentEndpoints
         // aux scans pour les tracer à CET agent (traçabilité individuelle, §8.5).
         group.MapPost("/shift/start", async (
             ShiftStartRequestDto request,
-            ClaimsPrincipal user,
             IAgentDirectory agents,
             IJwtTokenService jwt,
+            ICurrentTenant tenant,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.Pin))
@@ -37,14 +37,32 @@ public static class AgentEndpoints
             if (agent is null)
                 return Results.Json(new { error = "Matricule ou PIN incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
 
-            var siteId = user.FindFirstValue(NovAccesClaimTypes.SiteId) ?? string.Empty;
-            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, siteId);
+            // Le site vient du tenant déjà résolu par TenantResolutionMiddleware
+            // (claim SiteId du terminal, ou en-tête X-Site-Id revalidé contre la
+            // liste AllowedSite pour un terminal partagé) — jamais relu du claim
+            // brut, qui peut être absent pour un terminal multi-sites.
+            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, tenant.SiteId);
 
             return Results.Ok(new ShiftStartResponseDto(agent.Matricule, agent.DisplayName, token, expiresAt));
         })
         .RequireRateLimiting("sensitive")
         .WithName("ShiftStart")
         .WithSummary("Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.");
+
+        // Sites que CE terminal est autorisé à servir — alimente le sélecteur de
+        // site à la prise de poste (un seul site : aucun sélecteur affiché côté
+        // agent). Ne lit que les claims du principal, aucune donnée de tenant.
+        group.MapGet("/sites", (ClaimsPrincipal user) =>
+        {
+            var single = user.FindFirstValue(NovAccesClaimTypes.SiteId);
+            var sites = !string.IsNullOrWhiteSpace(single)
+                ? new List<string> { single }
+                : user.FindAll(NovAccesClaimTypes.AllowedSite).Select(c => c.Value).Distinct().ToList();
+
+            return Results.Ok(sites);
+        })
+        .WithName("AgentTerminalSites")
+        .WithSummary("Sites que ce terminal est autorisé à servir (choix du site si plusieurs).");
 
         // §11 — Attendus du jour : nom + statut + fenêtre UNIQUEMENT.
         group.MapGet("/expected-today", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>

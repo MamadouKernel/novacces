@@ -17,6 +17,7 @@ public sealed class ScanLogEntry
     public CheckpointDirection Direction { get; private set; }
     public bool WasGranted { get; private set; }
     public bool WasCheckOut { get; private set; }
+    public string? CheckpointId { get; private set; }
     public bool IsSecurityEvent { get; private set; }
     public ScanDenialReason? DenialReason { get; private set; }
     public bool RecordedInDegradedMode { get; private set; }
@@ -28,7 +29,7 @@ public sealed class ScanLogEntry
 
     public static ScanLogEntry Create(
         Guid visitId, string visitorName, string agentId, CheckpointDirection direction,
-        ScanOutcome outcome, bool degradedMode, string detail, DateTimeOffset now)
+        ScanOutcome outcome, bool degradedMode, string detail, DateTimeOffset now, string? checkpointId = null)
     {
         return new ScanLogEntry
         {
@@ -41,6 +42,7 @@ public sealed class ScanLogEntry
             WasCheckOut = outcome.IsCheckOut,
             IsSecurityEvent = outcome.IsSecurityEvent,
             DenialReason = outcome.DenialReason,
+            CheckpointId = checkpointId,
             RecordedInDegradedMode = degradedMode,
             OverstayMinutes = outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null,
             Detail = detail,

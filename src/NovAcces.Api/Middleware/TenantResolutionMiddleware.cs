@@ -10,10 +10,16 @@ namespace NovAcces.Api.Middleware;
 /// authentifié (JWT d'un utilisateur web, ou clé API d'un terminal agent), et NON
 /// d'un en-tête X-Site-Id falsifiable.
 ///
-///  - Utilisateur rattaché à un site (Hôte / Sûreté / Agent) : tenant = son claim
-///    SiteId. Un en-tête X-Site-Id divergent est rejeté (tentative d'accès à un
-///    autre site que le sien = 403).
-///  - Admin global (aucun claim SiteId) : peut cibler un site via X-Site-Id.
+///  - Utilisateur rattaché à un site (Hôte / Sûreté / Agent, terminal à un seul
+///    site) : tenant = son claim SiteId. Un en-tête X-Site-Id divergent est
+///    rejeté (tentative d'accès à un autre site que le sien = 403).
+///  - Terminal partagé entre plusieurs sites (claims AllowedSite, pas de claim
+///    SiteId unique) : l'en-tête X-Site-Id est OBLIGATOIRE et DOIT figurer
+///    dans la liste AllowedSite du terminal — un site hors liste est un 403,
+///    tout comme une requête sans en-tête. C'est le choix fait par l'agent à
+///    la prise de poste, mais jamais un site arbitraire (cloisonnement §7.3).
+///  - Admin global (aucun claim SiteId ni AllowedSite) : peut cibler un site
+///    via X-Site-Id, sans restriction (confiance déjà accordée par le rôle).
 ///  - Requête non authentifiée : aucun tenant résolu ; l'autorisation rejettera
 ///    l'accès aux endpoints protégés (401/403). Les endpoints publics (login,
 ///    health, hub) sont exemptés ci-dessous.
@@ -51,9 +57,29 @@ public sealed class TenantResolutionMiddleware
         }
         else
         {
-            // Pas de site dans l'identité (Admin global, ou requête non encore
-            // authentifiée arrivant sur un endpoint qui sera protégé plus loin).
-            siteId = headerSite;
+            var allowedSites = context.User?.FindAll(NovAccesClaimTypes.AllowedSite)
+                .Select(c => c.Value).ToList() ?? new List<string>();
+
+            if (allowedSites.Count > 0)
+            {
+                // Terminal partagé entre plusieurs sites : l'agent DOIT avoir choisi
+                // un site (X-Site-Id), et UNIQUEMENT parmi ceux autorisés pour ce
+                // terminal — jamais un site quelconque du parc.
+                if (string.IsNullOrWhiteSpace(headerSite)
+                    || !allowedSites.Contains(headerSite, StringComparer.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Site non autorisé pour ce terminal." });
+                    return;
+                }
+                siteId = headerSite;
+            }
+            else
+            {
+                // Pas de site dans l'identité (Admin global, ou requête non encore
+                // authentifiée arrivant sur un endpoint qui sera protégé plus loin).
+                siteId = headerSite;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(siteId))
@@ -75,9 +101,15 @@ public sealed class TenantResolutionMiddleware
 
     private static bool IsExempt(PathString path) =>
         path.StartsWithSegments("/health")
+        || path.StartsWithSegments("/api/health")
         || path.StartsWithSegments("/hubs")
         || path.StartsWithSegments("/swagger")
-        || path.StartsWithSegments("/api/auth");
+        || path.StartsWithSegments("/api/auth")
+        // Lit uniquement les claims du terminal (sites qu'il est autorisé à
+        // servir) pour peupler le sélecteur de site à la prise de poste — ne
+        // touche aucune donnée de tenant, donc pas besoin de site résolu.
+        || path.StartsWithSegments("/api/agent/sites")
+        || path.StartsWithSegments("/api/keys/public");
 }
 
 public static class TenantResolutionMiddlewareExtensions

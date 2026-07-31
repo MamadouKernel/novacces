@@ -12,6 +12,7 @@ public sealed class ScanLogEntryConfiguration : IEntityTypeConfiguration<ScanLog
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.VisitorName).HasMaxLength(200).IsRequired();
+        builder.Property(e => e.CheckpointId).HasMaxLength(100);
         builder.Property(e => e.AgentId).HasMaxLength(100).IsRequired();
         builder.Property(e => e.Detail).HasMaxLength(1000).IsRequired();
 

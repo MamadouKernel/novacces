@@ -2,7 +2,7 @@ namespace NovAcces.Application.Abstractions;
 
 /// <summary>
 /// Le site client (tenant) de la requête en cours. Résolu par le middleware
-/// (sous-domaine pour le web, en-tête X-Site-Id + clé API pour l'app agent).
+/// (sous-domaine pour le web, claim du jeton agent et X-Site-Id pour le client mobile).
 /// Chaque tenant correspond à un schéma PostgreSQL isolé (REQ-F-10 du CDC) —
 /// voir Infrastructure/Persistence/Tenancy/TenantSchemaResolver.
 /// </summary>

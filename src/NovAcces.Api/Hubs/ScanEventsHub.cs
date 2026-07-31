@@ -25,7 +25,10 @@ public sealed class ScanEventsHub : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var requested = Context.GetHttpContext()?.Request.Query["site"].ToString();
+        var http = Context.GetHttpContext();
+        var requested = http?.Request.Query["site"].ToString();
+        if (string.IsNullOrWhiteSpace(requested))
+            requested = http?.Request.Headers["X-Site-Id"].ToString();
 
         if (!CurrentTenant.IsValidSiteId(requested))
         {

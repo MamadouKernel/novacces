@@ -10,10 +10,11 @@ using QRCoder;
 namespace NovAcces.Infrastructure.Notifications;
 
 /// <summary>
-/// Envoi du QR d'invitation (REQ-F-03) : WhatsApp Business Platform en
-/// canal principal, email en repli automatique si WhatsApp échoue ou si le
-/// visiteur n'a pas de téléphone. Les messages (email et légende WhatsApp)
-/// sont rédigés dans <see cref="InvitationMessage"/>.
+/// Envoi du QR d'invitation (REQ-F-03) sur WhatsApp Business Platform et par
+/// email. Les deux canaux sont tentés indépendamment : l'email n'est plus un
+/// simple repli, car le contrat prévoit une double délivrance. Les messages
+/// (email et légende WhatsApp) sont rédigés dans
+/// <see cref="InvitationMessage"/>.
 ///
 /// PngByteQRCode (et non le rendu System.Drawing de QRCoder) est utilisé
 /// volontairement : l'hébergement cible est un VPS Linux (Contabo), où
@@ -44,31 +45,71 @@ public sealed class WhatsAppNotificationService : INotificationService
     public async Task SendVisitInvitationAsync(VisitInvitationNotification notification, CancellationToken ct)
     {
         var qrPng = GenerateQrPng(notification.SignedQrPayload);
+        var attempted = 0;
+        var succeeded = 0;
+        var failures = new List<Exception>();
 
         if (!string.IsNullOrWhiteSpace(notification.VisitorPhone))
         {
+            attempted++;
             try
             {
                 await SendViaWhatsAppAsync(notification, qrPng, ct);
-                return;
+                succeeded++;
+                _logger.LogInformation(
+                    "QR envoyé par WhatsApp pour la visite {VisitId}.", notification.VisitId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "Échec de l'envoi WhatsApp du QR pour la visite {VisitId}, repli sur email.",
+                    "Échec de l'envoi WhatsApp du QR pour la visite {VisitId}.",
                     notification.VisitId);
+                failures.Add(ex);
             }
         }
 
         if (!string.IsNullOrWhiteSpace(notification.VisitorEmail))
         {
-            await SendViaEmailAsync(notification, qrPng, ct);
+            attempted++;
+            try
+            {
+                await SendViaEmailAsync(notification, qrPng, ct);
+                succeeded++;
+                _logger.LogInformation(
+                    "QR envoyé par email pour la visite {VisitId}.", notification.VisitId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Échec de l'envoi email du QR pour la visite {VisitId}.",
+                    notification.VisitId);
+                failures.Add(ex);
+            }
+        }
+
+        if (attempted == 0)
+        {
+            _logger.LogWarning(
+                "Aucun canal de notification configuré pour la visite {VisitId} (téléphone et email absents) — QR non transmis automatiquement.",
+                notification.VisitId);
             return;
         }
 
-        _logger.LogWarning(
-            "Aucun canal de notification n'a abouti pour la visite {VisitId} (téléphone et/ou email manquant ou en échec) — QR non transmis automatiquement.",
-            notification.VisitId);
+        // Le handler de création journalise l'échec global sans annuler la
+        // visite. Si un seul canal a réussi, on conserve le succès partiel et
+        // l'hôte peut relancer uniquement le canal défaillant ultérieurement.
+        if (succeeded == 0 && failures.Count > 0)
+            throw new AggregateException(
+                $"Tous les canaux de notification ont échoué pour la visite {notification.VisitId}.",
+                failures);
     }
 
     private static byte[] GenerateQrPng(string signedPayload)

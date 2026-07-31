@@ -50,6 +50,8 @@ public static class VisitEndpoints
             ClaimsPrincipal user,
             IVisitRepository visits,
             CreateVisitHandler handler,
+            IAgentEventBroadcaster events,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             if (!Enum.TryParse<AccessMode>(request.Mode, ignoreCase: true, out var mode))
@@ -59,8 +61,8 @@ public static class VisitEndpoints
                 return Results.BadRequest(new { error = "Nom du visiteur requis." });
 
             // Garde-fou anti-doublon (maquette du 22/07/2026) : une seule demande
-            // active par visiteur sur le site.
-            if (await visits.HasActiveVisitForVisitorAsync(request.VisitorName, ct))
+            // active par visiteur (nom + société) sur le site.
+            if (await visits.HasActiveVisitForVisitorAsync(request.VisitorName, request.VisitorCompany, ct))
                 return Results.Conflict(new { error = "Une demande active existe déjà pour ce visiteur." });
 
             var command = new CreateVisitCommand(
@@ -69,9 +71,19 @@ public static class VisitEndpoints
                 mode, request.ScheduledAt, request.PlannedDurationMinutes,
                 request.VisitorPhone, request.VisitorEmail);
 
-            var result = await handler.HandleAsync(command, ct);
-
-            return Results.Ok(new CreateVisitResponseDto(result.VisitId, result.SignedQrPayload, result.ExpiresAt));
+            try
+            {
+                var result = await handler.HandleAsync(command, ct);
+                await events.BroadcastVisitCreatedAsync(result.VisitId, request.VisitorName, clock.UtcNow, ct);
+                return Results.Ok(new CreateVisitResponseDto(result.VisitId, result.SignedQrPayload, result.ExpiresAt));
+            }
+            catch (DuplicateActiveVisitException ex)
+            {
+                // Deux créations concurrentes du même visiteur : la vérification
+                // ci-dessus les a toutes les deux laissées passer, la contrainte
+                // base a tranché — même message que le garde-fou applicatif.
+                return Results.Conflict(new { error = ex.Message });
+            }
         })
         .RequireAuthorization(NovAccesRoles.Hote)
         .WithName("CreateVisit")
@@ -86,6 +98,8 @@ public static class VisitEndpoints
             ClaimsPrincipal user,
             IVisitRepository visits,
             CreateVisitHandler handler,
+            IAgentEventBroadcaster events,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             if (request.Visits is null || request.Visits.Count == 0)
@@ -111,7 +125,7 @@ public static class VisitEndpoints
                     if (mode == AccessMode.Unique && r.ScheduledAt is null)
                     { items.Add(Fail(name, "Date de rendez-vous requise (mode unique).")); continue; }
 
-                    if (await visits.HasActiveVisitForVisitorAsync(name, ct))
+                    if (await visits.HasActiveVisitForVisitorAsync(name, r.VisitorCompany, ct))
                     { items.Add(Fail(name, "Une demande active existe déjà pour ce visiteur.")); continue; }
 
                     var command = new CreateVisitCommand(
@@ -120,8 +134,17 @@ public static class VisitEndpoints
                         r.VisitorPhone, r.VisitorEmail);
 
                     var result = await handler.HandleAsync(command, ct);
+                    await events.BroadcastVisitCreatedAsync(result.VisitId, name, clock.UtcNow, ct);
                     items.Add(new BulkCreateVisitItemDto(
                         name, true, result.VisitId, result.SignedQrPayload, result.ExpiresAt, null));
+                }
+                catch (DuplicateActiveVisitException)
+                {
+                    // Deux lignes du même lot pour le même visiteur (nom +
+                    // société) ne peuvent normalement pas arriver ici — la
+                    // boucle est séquentielle donc la vérification amont les
+                    // aurait déjà distinguées — mais reste correct si jamais.
+                    items.Add(Fail(name, "Une demande active existe déjà pour ce visiteur."));
                 }
                 catch
                 {
@@ -193,6 +216,8 @@ public static class VisitEndpoints
             Guid visitId,
             ClaimsPrincipal user,
             RevokeVisitHandler handler,
+            IAgentEventBroadcaster events,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             // Moindre privilège (section 8.5) : Sûreté/Admin révoquent tout QR du
@@ -204,6 +229,9 @@ public static class VisitEndpoints
 
             if (result.Forbidden)
                 return Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status403Forbidden);
+
+            if (result.Success)
+                await events.BroadcastVisitRevokedAsync(visitId, clock.UtcNow, ct);
 
             return result.Success
                 ? Results.Ok(new { message = "QR révoqué." })

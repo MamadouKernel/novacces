@@ -17,5 +17,20 @@ public enum AdminAuditAction
     JournalAnonymized,
 
     /// <summary>Création d'un agent (matricule + PIN) pour la prise de poste.</summary>
-    AgentCreated
+    AgentCreated,
+
+    /// <summary>Enrôlement d'un terminal (clé API générée pour un ou plusieurs sites).</summary>
+    TerminalCreated,
+
+    /// <summary>Création d'un ticket QR d'enrôlement temporaire.</summary>
+    EnrollmentTicketCreated,
+
+    /// <summary>Activation d'un terminal sur un appareil précis.</summary>
+    TerminalActivated,
+
+    /// <summary>Révocation d'un terminal (clé désactivée).</summary>
+    TerminalRevoked,
+
+    /// <summary>Suppression volontaire du compte par son propre titulaire.</summary>
+    AccountSelfDeleted
 }

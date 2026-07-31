@@ -38,12 +38,31 @@ public interface IVisitRepository
 
     /// <summary>
     /// Vrai s'il existe déjà une demande ACTIVE (statut Valid) pour ce visiteur —
-    /// garde-fou anti-doublon à la création (une seule demande active par visiteur,
-    /// cf. maquette du 22/07/2026).
+    /// garde-fou anti-doublon à la création (une seule demande active par
+    /// visiteur, cf. maquette du 22/07/2026). Portée sur nom + société : deux
+    /// personnes homonymes de sociétés différentes ne doivent pas se bloquer
+    /// mutuellement (comparaison insensible à la casse et aux espaces).
     /// </summary>
-    Task<bool> HasActiveVisitForVisitorAsync(string visitorName, CancellationToken ct);
+    Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct);
 
     Task SaveChangesAsync(CancellationToken ct);
+}
+
+/// <summary>
+/// Levée par l'implémentation de <see cref="IVisitRepository.SaveChangesAsync"/>
+/// quand la contrainte unique "une seule demande active par visiteur" est
+/// violée EN BASE (ceinture de sécurité derrière la vérification applicative
+/// de <see cref="IVisitRepository.HasActiveVisitForVisitorAsync"/>, qui ne
+/// protège pas seule contre deux créations strictement concurrentes du même
+/// visiteur). L'Api la traduit en 409 Conflict, avec le même message que la
+/// vérification amont — l'appelant ne voit aucune différence de comportement.
+/// </summary>
+public sealed class DuplicateActiveVisitException : Exception
+{
+    public DuplicateActiveVisitException()
+        : base("Une demande active existe déjà pour ce visiteur.")
+    {
+    }
 }
 
 public interface IScanLogRepository

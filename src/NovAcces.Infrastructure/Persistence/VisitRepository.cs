@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
 
@@ -6,6 +7,11 @@ namespace NovAcces.Infrastructure.Persistence;
 
 public sealed class VisitRepository : IVisitRepository
 {
+    // Doit rester strictement identique à l'expression de l'index unique
+    // partiel posé par la migration AddActiveVisitorUniqueIndex
+    // (lower(btrim(...))) : une divergence romprait la garantie que la
+    // vérification applicative et la contrainte base voient le même doublon.
+    private const string ActiveVisitorIndexName = "IX_visits_ActiveVisitorKey";
     private readonly NovAccesDbContext _db;
 
     public VisitRepository(NovAccesDbContext db) => _db = db;
@@ -100,15 +106,37 @@ public sealed class VisitRepository : IVisitRepository
             .ToList();
     }
 
-    public async Task<bool> HasActiveVisitForVisitorAsync(string visitorName, CancellationToken ct)
+    public async Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
-        var name = visitorName.Trim();
+        var name = visitorName.Trim().ToLower();
+        var company = (visitorCompany ?? "").Trim().ToLower();
         return await _db.Visits.AnyAsync(
-            v => v.Status == Domain.Enums.VisitStatus.Valid && v.VisitorName.ToLower() == name.ToLower(), ct);
+            v => v.Status == Domain.Enums.VisitStatus.Valid
+              && v.VisitorName.ToLower() == name
+              && v.VisitorCompany.ToLower() == company, ct);
     }
 
-    public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
+    public async Task SaveChangesAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsActiveVisitorUniqueViolation(ex))
+        {
+            // Deux créations strictement concurrentes du même visiteur (même
+            // nom + société) ont toutes deux passé la vérification applicative
+            // avant que l'une des deux n'écrive : la contrainte base tranche,
+            // celle qui perd la course reçoit exactement l'erreur qu'elle
+            // aurait eue si la vérification amont l'avait détectée en premier.
+            throw new DuplicateActiveVisitException();
+        }
+    }
+
+    private static bool IsActiveVisitorUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg
+        && pg.ConstraintName == ActiveVisitorIndexName;
 }
 
 public sealed class ScanLogRepository : IScanLogRepository

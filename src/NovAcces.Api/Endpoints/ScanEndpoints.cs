@@ -11,7 +11,9 @@ public static class ScanEndpoints
 {
     public static RouteGroupBuilder MapScanEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/scan").WithTags("Scan");
+        var group = app.MapGroup("/api/scan")
+            .WithTags("Scan")
+            .AddEndpointFilter<ContractSiteHeaderFilter>();
 
         group.MapPost("/", async (
             ScanRequestDto request,
@@ -21,6 +23,7 @@ public static class ScanEndpoints
             IJwtTokenService jwt,
             IBusinessDayService businessDays,
             IDateTimeProvider clock,
+            ICurrentTenant tenant,
             CancellationToken ct) =>
         {
             if (!Enum.TryParse<CheckpointDirection>(request.Direction, ignoreCase: true, out var direction))
@@ -32,7 +35,10 @@ public static class ScanEndpoints
             // Attribution du scan : si un jeton de poste valide est présent
             // (prise de poste matricule + PIN), on trace au MATRICULE de l'agent
             // (traçabilité individuelle, §8.5) ; sinon, repli sur le terminal.
-            var siteId = user.FindFirstValue(NovAccesClaimTypes.SiteId) ?? string.Empty;
+            // Le site vient du tenant déjà résolu (claim du terminal, ou en-tête
+            // X-Site-Id revalidé pour un terminal multi-sites) — jamais relu du
+            // claim brut, absent pour un terminal partagé entre plusieurs sites.
+            var siteId = tenant.SiteId;
             var shiftToken = http.Headers["X-Shift-Token"].ToString();
             var shift = string.IsNullOrWhiteSpace(shiftToken) ? null : jwt.ValidateShiftToken(shiftToken, siteId);
             var agentId = shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
@@ -40,7 +46,8 @@ public static class ScanEndpoints
             var command = new ScanQrCommand(
                 request.SignedQrPayload, direction, agentId,
                 IsDegradedMode: false, // en jalon 2 : distinction scan temps réel / resynchronisation différée
-                isBusinessDay);
+                isBusinessDay,
+                request.CheckpointId);
 
             var result = await handler.HandleAsync(command, ct);
 

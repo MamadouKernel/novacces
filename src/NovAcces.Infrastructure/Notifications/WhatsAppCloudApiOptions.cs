@@ -2,7 +2,8 @@ namespace NovAcces.Infrastructure.Notifications;
 
 /// <summary>
 /// Paramètres WhatsApp Business Platform (Meta Cloud API), retenue en
-/// remplacement du SMS (accord-commercial.md). En production, ces valeurs
+/// remplacement du SMS (accord-commercial.md). WhatsApp est utilisé en
+/// complément de l'email, et non comme un simple repli. En production, ces valeurs
 /// viennent d'une variable d'environnement ou d'un secret manager — jamais
 /// commitées. Le template doit être pré-approuvé par Meta (catégorie
 /// "Utility" recommandée), avec un composant "header" de type image (pour

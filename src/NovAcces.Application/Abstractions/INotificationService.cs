@@ -1,11 +1,11 @@
 namespace NovAcces.Application.Abstractions;
 
 /// <summary>
-/// Envoi du QR signé au visiteur (REQ-F-03). WhatsApp Business Platform en
-/// canal principal, email en repli automatique (accord-commercial.md — SMS
-/// abandonné). Une panne du canal de notification ne doit jamais empêcher
-/// la création de la visite : le QR signé reste valide même si son envoi
-/// échoue, à charge pour l'hôte de le retransmettre manuellement.
+/// Envoi du QR signé au visiteur (REQ-F-03) sur les deux canaux convenus :
+/// WhatsApp Business Platform et email. Les deux tentatives sont indépendantes
+/// : une panne d'un canal ne doit jamais empêcher l'autre tentative ni la
+/// création de la visite. Le QR signé reste valide même si les deux envois
+/// échouent, à charge pour l'hôte de le retransmettre manuellement.
 /// </summary>
 public interface INotificationService
 {

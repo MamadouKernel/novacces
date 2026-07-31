@@ -139,6 +139,10 @@ namespace NovAcces.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("CheckpointId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int?>("DenialReason")
                         .HasColumnType("integer");
 

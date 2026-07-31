@@ -14,4 +14,6 @@ public sealed class JwtOptions
 
     /// <summary>Durée d'un poste d'agent (jeton de prise de poste), en heures.</summary>
     public int ShiftExpiryHours { get; set; } = 12;
+    public int AgentExpiryHours { get; set; } = 8;
+    public int RefreshExpiryHours { get; set; } = 24;
 }

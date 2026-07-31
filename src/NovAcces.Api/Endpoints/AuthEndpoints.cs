@@ -1,8 +1,11 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using NovAcces.Application.Abstractions;
+using NovAcces.Domain.Enums;
 using NovAcces.Infrastructure.Identity;
 using NovAcces.Shared.Auth;
+using NovAcces.Infrastructure.Persistence.Tenancy;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
@@ -15,22 +18,41 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
-        // --- Connexion, étape 1 (anonyme) ---
+        // --- Connexion, étape 1 (Web ou agent mobile) ---
         group.MapPost("/login", async (
             LoginRequestDto request,
             UserManager<ApplicationUser> users,
-            IJwtTokenService jwt) =>
+            IAgentDirectory agents,
+            IJwtTokenService jwt,
+            IRefreshTokenService refresh,
+            CurrentTenant tenant,
+            HttpRequest http,
+            CancellationToken ct) =>
         {
-            var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
+            if (!string.IsNullOrWhiteSpace(request.Matricule))
+            {
+                var siteId = http.Headers["X-Site-Id"].ToString();
+                if (!CurrentTenant.IsValidSiteId(siteId))
+                    return Results.BadRequest(new { error = "X-Site-Id requis et invalide pour la connexion agent." });
+
+                tenant.Resolve(siteId);
+                var agent = await agents.VerifyAsync(request.Matricule, request.EffectivePassword, ct);
+                if (agent is null)
+                    return InvalidCredentials();
+
+                var (agentToken, agentExpiresAt) = jwt.CreateAgentToken(agent.Matricule, agent.DisplayName, tenant.SiteId);
+                var agentRefresh = await refresh.IssueAsync("agent", $"{tenant.SiteId}:{agent.Matricule}", agent.DisplayName, tenant.SiteId, ct);
+                return Results.Ok(new AgentLoginResponseDto(agentToken, agentRefresh.Token, SecondsUntil(agentExpiresAt), new AgentLoginIdentityDto(agent.Matricule, agent.DisplayName)));
+            }
+
+            var user = await AuthenticatePasswordAsync(users, request.Email, request.EffectivePassword);
             if (user is null)
                 return InvalidCredentials();
 
-            // 2FA activé : on ne délivre AUCUN jeton ici ; le client doit fournir
-            // le second facteur via /login/2fa.
             if (await users.GetTwoFactorEnabledAsync(user))
                 return Results.Ok(new TwoFactorRequiredDto());
 
-            return Results.Ok(await BuildLoginResponseAsync(users, jwt, user));
+            return Results.Ok(await BuildLoginResponseAsync(users, jwt, refresh, user, ct));
         })
         .WithName("Login")
         .WithSummary("Authentifie un utilisateur ; signale si un second facteur est requis.");
@@ -39,7 +61,9 @@ public static class AuthEndpoints
         group.MapPost("/login/2fa", async (
             TwoFactorLoginRequestDto request,
             UserManager<ApplicationUser> users,
-            IJwtTokenService jwt) =>
+            IJwtTokenService jwt,
+            IRefreshTokenService refresh,
+            CancellationToken ct) =>
         {
             var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
             if (user is null || !await users.GetTwoFactorEnabledAsync(user))
@@ -61,20 +85,30 @@ public static class AuthEndpoints
             }
 
             await users.ResetAccessFailedCountAsync(user);
-            return Results.Ok(await BuildLoginResponseAsync(users, jwt, user));
+            return Results.Ok(await BuildLoginResponseAsync(users, jwt, refresh, user, ct));
         })
         .WithName("LoginTwoFactor")
         .WithSummary("Valide le second facteur (TOTP ou code de récupération) et délivre le JWT.");
 
-        // --- Création de compte (Admin uniquement) ---
+        // --- Création de compte (Admin uniquement, sauf Admin/SuperAdmin) ---
         group.MapPost("/register", async (
             RegisterUserRequestDto request,
+            System.Security.Claims.ClaimsPrincipal caller,
             UserManager<ApplicationUser> users) =>
         {
             if (!NovAccesRoles.All.Contains(request.Role))
                 return Results.BadRequest(new { error = $"Rôle invalide. Attendus : {string.Join(", ", NovAccesRoles.All)}." });
 
-            var isGlobal = request.Role == NovAccesRoles.Admin;
+            // Un compte Admin ou SuperAdmin donne un accès global : seul un
+            // SuperAdmin peut en créer un (jamais un Admin simple, même pour
+            // lui-même) — protection contre l'auto-escalade côté client.
+            var isElevatedRole = request.Role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
+            if (isElevatedRole && !caller.IsInRole(NovAccesRoles.SuperAdmin))
+                return Results.Json(
+                    new { error = "Seul le SuperAdmin peut créer un compte Admin ou SuperAdmin." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            var isGlobal = isElevatedRole;
             if (!isGlobal && string.IsNullOrWhiteSpace(request.SiteId))
                 return Results.BadRequest(new { error = "SiteId requis pour un rôle rattaché à un site." });
 
@@ -92,12 +126,102 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "Création refusée.", details = created.Errors.Select(e => e.Description) });
 
             await users.AddToRoleAsync(user, request.Role);
+            // SuperAdmin hérite AUSSI du rôle Admin : toutes les policies existantes
+            // qui exigent Admin restent satisfaites sans devoir toucher à chacune.
+            if (request.Role == NovAccesRoles.SuperAdmin)
+                await users.AddToRoleAsync(user, NovAccesRoles.Admin);
+
             return Results.Ok(new { user.Id, user.Email, user.DisplayName, request.Role, user.SiteId });
         })
         .RequireAuthorization(NovAccesRoles.Admin)
         .WithName("RegisterUser")
-        .WithSummary("Crée un compte utilisateur (réservé à l'Admin).");
+        .WithSummary("Crée un compte utilisateur (réservé à l'Admin ; Admin/SuperAdmin réservés au SuperAdmin).");
 
+        group.MapPost("/refresh", async (
+            RefreshTokenRequestDto request,
+            IRefreshTokenService refresh,
+            UserManager<ApplicationUser> users,
+            IJwtTokenService jwt,
+            CancellationToken ct) =>
+        {
+            var subject = await refresh.RotateAsync(request.RefreshToken, ct);
+            if (subject is null)
+                return Results.Json(new { error = "Refresh token invalide, expiré ou révoqué." }, statusCode: StatusCodes.Status401Unauthorized);
+
+            if (subject.SubjectType == "user")
+            {
+                var user = await users.FindByIdAsync(subject.SubjectId);
+                if (user is null) return InvalidCredentials();
+                var roles = await users.GetRolesAsync(user);
+                var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
+                var next = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
+                return Results.Ok(new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, next.Token, SecondsUntil(expiresAt)));
+            }
+
+            if (subject.SubjectType == "agent" && !string.IsNullOrWhiteSpace(subject.SiteId))
+            {
+                var separator = subject.SubjectId.IndexOf(':');
+                var matricule = separator >= 0 ? subject.SubjectId[(separator + 1)..] : subject.SubjectId;
+                var name = subject.DisplayName ?? matricule;
+                var (token, expiresAt) = jwt.CreateAgentToken(matricule, name, subject.SiteId);
+                var next = await refresh.IssueAsync("agent", subject.SubjectId, name, subject.SiteId, ct);
+                return Results.Ok(new AgentLoginResponseDto(token, next.Token, SecondsUntil(expiresAt), new AgentLoginIdentityDto(matricule, name)));
+            }
+
+            return InvalidCredentials();
+        })
+        .WithName("Refresh")
+        .WithSummary("Fait tourner un refresh token et délivre une nouvelle session.");
+
+        group.MapPost("/logout", async (RefreshTokenRequestDto request, IRefreshTokenService refresh, CancellationToken ct) =>
+        {
+            await refresh.RevokeAsync(request.RefreshToken, ct);
+            return Results.NoContent();
+        })
+        .WithName("Logout")
+        .WithSummary("Révoque le refresh token de la session.");
+
+        // --- Suppression de compte : self-delete uniquement ---
+        group.MapDelete("/me", async (
+            ClaimsPrincipal principal,
+            UserManager<ApplicationUser> users,
+            IRefreshTokenService refresh,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var user = await users.GetUserAsync(principal);
+            if (user is null)
+                return Results.Unauthorized();
+
+            var actor = user.Id.ToString();
+            // Le compte ne peut supprimer que son propre compte : aucun id cible
+            // n'est accepté par cette route. L'action est journalisée avant la
+            // suppression afin de conserver une preuve même si Identity échoue.
+            if (!string.IsNullOrWhiteSpace(user.SiteId))
+            {
+                tenant.Resolve(user.SiteId);
+                await audit.RecordAsync(
+                    AdminAuditAction.AccountSelfDeleted, actor, actor,
+                    "Demande de suppression volontaire du compte par son titulaire.", ct);
+            }
+            else
+            {
+                loggerFactory.CreateLogger("NovAcces.Auth")
+                    .LogWarning("Self-delete demandé par le compte global {Actor}.", actor);
+            }
+
+            await refresh.RevokeAllForSubjectAsync("user", actor, ct);
+            var deleted = await users.DeleteAsync(user);
+            if (!deleted.Succeeded)
+                return Results.BadRequest(new { error = "Suppression du compte refusée.", details = deleted.Errors.Select(e => e.Description) });
+
+            return Results.NoContent();
+        })
+        .RequireAuthorization()
+        .WithName("SelfDeleteAccount")
+        .WithSummary("Supprime uniquement le compte de l'utilisateur authentifié (self-delete)." );
         // --- Profil : modifier son nom affiché (authentifié) ---
         group.MapPost("/me/display-name", async (
             UpdateDisplayNameRequestDto request,
@@ -234,8 +358,13 @@ public static class AuthEndpoints
         DummyHasher.HashPassword(new ApplicationUser(), "leurre-" + Guid.NewGuid().ToString("N"));
 
     private static async Task<ApplicationUser?> AuthenticatePasswordAsync(
-        UserManager<ApplicationUser> users, string email, string password)
+        UserManager<ApplicationUser> users, string? email, string? password)
     {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            DummyHasher.VerifyHashedPassword(new ApplicationUser(), DummyHash, password ?? string.Empty);
+            return null;
+        }
         var user = await users.FindByEmailAsync(email);
         if (user is null)
         {
@@ -247,7 +376,7 @@ public static class AuthEndpoints
         if (await users.IsLockedOutAsync(user))
             return null;
 
-        if (!await users.CheckPasswordAsync(user, password))
+        if (!await users.CheckPasswordAsync(user, password ?? string.Empty))
         {
             await users.AccessFailedAsync(user);
             return null;
@@ -257,13 +386,18 @@ public static class AuthEndpoints
     }
 
     private static async Task<LoginResponseDto> BuildLoginResponseAsync(
-        UserManager<ApplicationUser> users, IJwtTokenService jwt, ApplicationUser user)
+        UserManager<ApplicationUser> users, IJwtTokenService jwt, IRefreshTokenService refresh,
+        ApplicationUser user, CancellationToken ct)
     {
         await users.ResetAccessFailedCountAsync(user);
         var roles = await users.GetRolesAsync(user);
         var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
-        return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId);
+        var refreshToken = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
+        return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt));
     }
+
+    private static int SecondsUntil(DateTimeOffset expiresAt) =>
+        Math.Max(0, (int)Math.Ceiling((expiresAt - DateTimeOffset.UtcNow).TotalSeconds));
 
     // Message d'échec toujours générique (anti-énumération de comptes).
     private static IResult InvalidCredentials() =>

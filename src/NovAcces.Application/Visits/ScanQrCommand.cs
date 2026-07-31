@@ -10,7 +10,8 @@ public sealed record ScanQrCommand(
     CheckpointDirection Direction,
     string AgentId,
     bool IsDegradedMode,
-    bool IsBusinessDayOverride // fourni par l'appelant (calculé serveur ou depuis la liste hors ligne)
+    bool IsBusinessDayOverride, // fourni par l'appelant (calculé serveur ou depuis la liste hors ligne)
+    string? CheckpointId = null
 );
 
 public sealed record ScanQrResult(
@@ -107,7 +108,7 @@ public sealed class ScanQrHandler
             //    atomiquement la mutation de la visite ET l'entrée de journal.
             var logEntry = ScanLogEntry.Create(
                 visit.Id, visit.VisitorName, command.AgentId, command.Direction,
-                outcome, command.IsDegradedMode, BuildDetail(outcome), now);
+                outcome, command.IsDegradedMode, BuildDetail(outcome), now, command.CheckpointId);
 
             await _logs.AddAsync(logEntry, token);
             await _visits.SaveChangesAsync(token);

@@ -27,6 +27,14 @@ public sealed class AgentTests
         return agent;
     }
 
+    /// <summary>Terminal enrôlé pour DEUX sites (TestSite + TestSite2) — voir NovAccesApiFactory.</summary>
+    private HttpClient MultiSiteAgentClient()
+    {
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKeyMultiSite);
+        return agent;
+    }
+
     [SkippableFact]
     public async Task ExpectedToday_ListsVisitors_ForAgentOnly()
     {
@@ -136,6 +144,98 @@ public sealed class AgentTests
     }
 
     [SkippableFact]
+    public async Task TerminalSites_ReturnsSingleSite_ForSingleSiteTerminal()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var sites = await AgentClient().GetFromJsonAsync<List<string>>("/api/agent/sites", Json);
+        Assert.Equal(new[] { NovAccesApiFactory.TestSite }, sites);
+    }
+
+    [SkippableFact]
+    public async Task TerminalSites_ReturnsAllAllowedSites_ForMultiSiteTerminal()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var sites = await MultiSiteAgentClient().GetFromJsonAsync<List<string>>("/api/agent/sites", Json);
+        Assert.Equal(
+            new[] { NovAccesApiFactory.TestSite, NovAccesApiFactory.TestSite2 }.OrderBy(s => s),
+            sites!.OrderBy(s => s));
+    }
+
+    [SkippableFact]
+    public async Task ShiftStart_MultiSiteTerminal_WithoutSiteHeader_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", "2468")))
+            .EnsureSuccessStatusCode();
+
+        // Terminal multi-sites : sans X-Site-Id, impossible de savoir quel site
+        // l'agent a choisi → refusé (jamais un site par défaut deviné).
+        var resp = await MultiSiteAgentClient().PostAsJsonAsync(
+            "/api/agent/shift/start", new ShiftStartRequestDto(matricule, "2468"));
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ShiftStart_MultiSiteTerminal_WithSiteOutsideAllowList_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", "2468")))
+            .EnsureSuccessStatusCode();
+
+        var agent = MultiSiteAgentClient();
+        agent.DefaultRequestHeaders.Add("X-Site-Id", "site-non-autorise-pour-ce-terminal");
+        var resp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, "2468"));
+
+        // Un terminal ne peut jamais ouvrir un poste sur un site hors de sa
+        // liste autorisée, même avec un matricule/PIN valides ailleurs.
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ShiftStart_MultiSiteTerminal_WithAllowedSite_AttributesScanToThatSiteSchema()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "3141";
+
+        // L'agent est créé sur TestSite2 : le second site que ce terminal peut
+        // servir (pas le premier), pour bien prouver que le choix fait foi.
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite2, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        var agent = MultiSiteAgentClient();
+        agent.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite2);
+
+        var shiftResp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, pin));
+        shiftResp.EnsureSuccessStatusCode();
+        var shift = await shiftResp.Content.ReadFromJsonAsync<ShiftStartResponseDto>(Json);
+
+        var (visitId, payload) = await CreateVisitWithQrAsync(
+            $"ScanMultiSite-{Guid.NewGuid():N}", NovAccesApiFactory.TestSite2);
+
+        agent.DefaultRequestHeaders.Add("X-Shift-Token", shift!.ShiftToken);
+        (await agent.PostAsJsonAsync("/api/scan", new ScanRequestDto(payload, "Entry", "ignore")))
+            .EnsureSuccessStatusCode();
+
+        Assert.True(
+            await CountScanLogsByAgentAsync(visitId, matricule, NovAccesApiFactory.TestSite2) >= 1,
+            "Le scan aurait dû être tracé dans le schéma du site choisi à la prise de poste (TestSite2), pas TestSite.");
+    }
+
+    [SkippableFact]
     public async Task ShiftStart_WithWrongPin_IsRejected()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
@@ -153,9 +253,10 @@ public sealed class AgentTests
 
     // ---- Aides ----
 
-    private async Task<(Guid VisitId, string Payload)> CreateVisitWithQrAsync(string visitorName)
+    private async Task<(Guid VisitId, string Payload)> CreateVisitWithQrAsync(
+        string visitorName, string site = NovAccesApiFactory.TestSite)
     {
-        var hote = await LoginNewUserAsync("Hote");
+        var hote = await LoginNewUserAsync("Hote", site);
         var resp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
             visitorName, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
         resp.EnsureSuccessStatusCode();
@@ -163,13 +264,14 @@ public sealed class AgentTests
         return (created!.VisitId, created.SignedQrPayload);
     }
 
-    private static async Task<long> CountScanLogsByAgentAsync(Guid visitId, string agentId)
+    private static async Task<long> CountScanLogsByAgentAsync(
+        Guid visitId, string agentId, string site = NovAccesApiFactory.TestSite)
     {
         await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
-            $"SELECT count(*) FROM \"site_{NovAccesApiFactory.TestSite}\".scan_logs " +
+            $"SELECT count(*) FROM \"site_{site}\".scan_logs " +
             "WHERE \"VisitId\" = @id AND \"AgentId\" = @agent";
         cmd.Parameters.AddWithValue("id", visitId);
         cmd.Parameters.AddWithValue("agent", agentId);
@@ -207,7 +309,7 @@ public sealed class AgentTests
         return (Guid)(await cmd.ExecuteScalarAsync())!;
     }
 
-    private async Task<HttpClient> LoginNewUserAsync(string role)
+    private async Task<HttpClient> LoginNewUserAsync(string role, string site = NovAccesApiFactory.TestSite)
     {
         var admin = _factory.CreateClient();
         var adminLogin = await admin.PostAsJsonAsync("/api/auth/login",
@@ -219,7 +321,7 @@ public sealed class AgentTests
         var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@sicopa.local";
         const string password = "Test!Passw0rd2026";
         var reg = await admin.PostAsJsonAsync("/api/auth/register",
-            new RegisterUserRequestDto(email, password, $"{role} Test", role, NovAccesApiFactory.TestSite));
+            new RegisterUserRequestDto(email, password, $"{role} Test", role, site));
         reg.EnsureSuccessStatusCode();
 
         var client = _factory.CreateClient();

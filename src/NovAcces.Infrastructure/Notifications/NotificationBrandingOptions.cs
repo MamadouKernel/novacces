@@ -11,7 +11,7 @@ public sealed class NotificationBrandingOptions
     public string OrganizationName { get; set; } = "Sigasécurité";
 
     /// <summary>Nom du service/produit, pour la mention de bas de message.</summary>
-    public string ProductName { get; set; } = "NovAccès";
+    public string ProductName { get; set; } = "NovAcces";
 
     /// <summary>Contact d'assistance affiché en cas de question (optionnel).</summary>
     public string? SupportContact { get; set; }

@@ -73,6 +73,35 @@ public sealed class AuthEndpointsTests
     }
 
     [SkippableFact]
+    public async Task Admin_CannotCreateAnotherAdmin_OnlySuperAdminCan()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Un Admin "simple" (créé par le SuperAdmin de seed, sans le rôle
+        // SuperAdmin lui-même) ne doit jamais pouvoir créer un autre compte
+        // Admin ni s'auto-promouvoir SuperAdmin — sinon Sigasécurité pourrait
+        // s'accorder un accès global que le prestataire ne contrôle plus.
+        var plainAdmin = await CreateAndLoginAsync(_factory.CreateClient(), "Admin");
+
+        var client = _factory.CreateClient();
+        SetBearer(client, plainAdmin.AccessToken);
+
+        var tryCreateAdmin = await client.PostAsJsonAsync("/api/auth/register", new RegisterUserRequestDto(
+            $"wannabe-admin-{Guid.NewGuid():N}@sicopa.local", "Test!Passw0rd2026", "Wannabe Admin", "Admin", null));
+        Assert.Equal(HttpStatusCode.Forbidden, tryCreateAdmin.StatusCode);
+
+        var tryCreateSuperAdmin = await client.PostAsJsonAsync("/api/auth/register", new RegisterUserRequestDto(
+            $"wannabe-super-{Guid.NewGuid():N}@sicopa.local", "Test!Passw0rd2026", "Wannabe Super", "SuperAdmin", null));
+        Assert.Equal(HttpStatusCode.Forbidden, tryCreateSuperAdmin.StatusCode);
+
+        // Mais un Admin simple peut toujours créer des comptes de site normaux.
+        var canStillCreateHote = await client.PostAsJsonAsync("/api/auth/register", new RegisterUserRequestDto(
+            $"hote-by-admin-{Guid.NewGuid():N}@sicopa.local", "Test!Passw0rd2026", "Hôte Test",
+            "Hote", NovAccesApiFactory.TestSite));
+        Assert.Equal(HttpStatusCode.OK, canStillCreateHote.StatusCode);
+    }
+
+    [SkippableFact]
     public async Task Hote_TargetingAnotherSite_ViaHeader_Is403()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
@@ -202,6 +231,77 @@ public sealed class AuthEndpointsTests
         Assert.Equal(HttpStatusCode.OK, relogin.StatusCode);
     }
 
+    [SkippableFact]
+    public async Task Admin_CannotSeeSuperAdmins_ButSuperAdminCanSeeAll()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var (adminEmail, adminPassword) = await RegisterAsync(_factory.CreateClient(), "Admin");
+        var plainAdmin = await LoginAsync(_factory.CreateClient(), adminEmail, adminPassword);
+        var adminClient = _factory.CreateClient();
+        SetBearer(adminClient, plainAdmin.AccessToken);
+        var hidden = await adminClient.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        Assert.DoesNotContain(hidden!, u => u.Roles.Contains("SuperAdmin"));
+
+        var superAdmin = await LoginAsync(_factory.CreateClient(), NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
+        var superClient = _factory.CreateClient();
+        SetBearer(superClient, superAdmin.AccessToken);
+        var complete = await superClient.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        Assert.Contains(complete!, u => u.Roles.Contains("SuperAdmin"));
+        Assert.Contains(complete!, u => u.Email == adminEmail);
+    }
+
+    [SkippableFact]
+    public async Task SelfDelete_RemovesOnlyCurrentAccount_RevokesRefreshAndIsAudited()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var (email, password) = await RegisterAsync(_factory.CreateClient(), "Hote");
+        var session = await LoginAsync(_factory.CreateClient(), email, password);
+        var client = _factory.CreateClient();
+        SetBearer(client, session.AccessToken);
+
+        var deleted = await client.DeleteAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+
+        var relogin = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/auth/login", new LoginRequestDto(email, password));
+        Assert.Equal(HttpStatusCode.Unauthorized, relogin.StatusCode);
+
+        var refresh = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/auth/refresh", new RefreshTokenRequestDto(session.RefreshToken!));
+        Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
+
+        var superAdmin = await LoginAsync(_factory.CreateClient(), NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
+        var auditClient = _factory.CreateClient();
+        SetBearer(auditClient, superAdmin.AccessToken);
+        var audit = await auditClient.GetFromJsonAsync<List<ApplicationAuditDto>>("/api/audit/application", Json);
+        Assert.Contains(audit!, e => e.Path == "/api/auth/me" && e.Method == "DELETE");
+    }
+    [SkippableFact]
+    public async Task SuperAdmin_CanViewAndExportCompleteApplicationAudit()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var superLogin = await LoginAsync(_factory.CreateClient(),
+            NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
+        var superAdmin = _factory.CreateClient();
+        SetBearer(superAdmin, superLogin.AccessToken);
+
+        var export = await superAdmin.GetAsync("/api/audit/application.csv");
+        Assert.Equal(HttpStatusCode.OK, export.StatusCode);
+        Assert.Equal("text/csv", export.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("novacces-audit.csv", export.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        var csv = await export.Content.ReadAsStringAsync();
+        Assert.StartsWith("Id;Timestamp;Actor;Method;Path;StatusCode;SiteId;IpAddress", csv);
+        Assert.Contains("/api/auth/login", csv);
+
+        var hote = await CreateAndLoginAsync(_factory.CreateClient(), "Hote");
+        var hoteClient = _factory.CreateClient();
+        SetBearer(hoteClient, hote.AccessToken);
+        var forbidden = await hoteClient.GetAsync("/api/audit/application.csv");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(

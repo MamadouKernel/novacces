@@ -10,6 +10,37 @@ public sealed record ExpectedVisitorDto(
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd);
 
+/// <summary>Réponse exacte de la liste hors-ligne du contrat mobile.</summary>
+public sealed record ContractOfflineListDto(
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    IReadOnlyList<ContractOfflineVisitDto> Visits,
+    string SignedList);
+
+/// <summary>Projection minimale d'une visite utilisable hors connexion.</summary>
+public sealed record ContractOfflineVisitDto(
+    Guid VisitId,
+    string Nom,
+    string Mode,
+    DateTimeOffset? FenetreDebut,
+    DateTimeOffset? FenetreFin,
+    string Statut,
+    bool Present);
+
+/// <summary>Scan remonté par l'application après une période hors-ligne.</summary>
+public sealed record ContractOfflineScanDto(
+    string SignedQrPayload,
+    string Direction,
+    string AgentId,
+    DateTimeOffset ScannedAtUtc,
+    string OfflineVerdict);
+
+public sealed record ContractSyncConflictDto(Guid VisitId, string Raison);
+
+public sealed record ContractScanSyncResponse(
+    int Accepted,
+    IReadOnlyList<ContractSyncConflictDto> Conflicts);
+
 /// <summary>
 /// Liste hors-ligne signée (§6) : le jeton signé à charger dans l'app agent, plus
 /// les instants d'émission et d'expiration (TTL) affichés hors ligne.

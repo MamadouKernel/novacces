@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Npgsql;
 using NovAcces.Shared.Dtos;
@@ -78,6 +79,112 @@ public sealed class AdminTests
         var surete = await NewUserClientAsync("Surete");
         var resp = await surete.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto("whatever"));
         Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task CreateTerminal_ByAdmin_ApiKeyAuthenticatesAndMatchesSites()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var label = $"Terminal-{Guid.NewGuid():N}";
+
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto(label, new[] { NovAccesApiFactory.TestSite }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        Assert.False(string.IsNullOrWhiteSpace(created!.ApiKey));
+
+        // La clé nouvellement générée authentifie réellement le terminal.
+        var terminalClient = _factory.CreateClient();
+        terminalClient.DefaultRequestHeaders.Add("X-Api-Key", created.ApiKey);
+        var sites = await terminalClient.GetFromJsonAsync<List<string>>("/api/agent/sites", Json);
+        Assert.Equal(new[] { NovAccesApiFactory.TestSite }, sites);
+
+        // Le terminal apparaît dans la liste, actif, sans exposer sa clé.
+        var listed = await admin.GetFromJsonAsync<List<TerminalSummaryDto>>("/api/admin/terminals", Json);
+        var summary = listed!.Single(t => t.Id == created.Id);
+        Assert.Equal(label, summary.Label);
+        Assert.True(summary.IsActive);
+    }
+
+    [SkippableFact]
+    public async Task TerminalEnrollmentTicket_IsOneTimeAndActivatesDevice()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"QR-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        Assert.NotNull(created);
+
+        var ticketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        Assert.Equal(HttpStatusCode.OK, ticketResponse.StatusCode);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        Assert.NotNull(ticket);
+        Assert.Contains("novacces://enroll", ticket!.QrPayload);
+        Assert.True(ticket.ExpiresAt > DateTimeOffset.UtcNow);
+
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var deviceId = Guid.NewGuid().ToString("D");
+        var activation = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(ticket.Ticket, deviceId, ecdsa.ExportSubjectPublicKeyInfoPem()));
+        Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
+        var activated = await activation.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
+        Assert.NotNull(activated);
+        Assert.False(string.IsNullOrWhiteSpace(activated!.ApiKey));
+
+        var terminal = _factory.CreateClient();
+        terminal.DefaultRequestHeaders.Add("X-Api-Key", activated.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, (await terminal.GetAsync("/api/agent/sites")).StatusCode);
+
+        // Le même ticket ne peut plus activer un deuxième téléphone.
+        var second = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(ticket.Ticket, Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+        Assert.Equal(HttpStatusCode.Gone, second.StatusCode);
+
+        // L'activation a fait tourner la clé historique remise à la création.
+        var oldKey = _factory.CreateClient();
+        oldKey.DefaultRequestHeaders.Add("X-Api-Key", created.ApiKey);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await oldKey.GetAsync("/api/agent/sites")).StatusCode);
+    }
+    [SkippableFact]
+    public async Task CreateTerminal_ForbiddenForNonAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var surete = await NewUserClientAsync("Surete");
+        var resp = await surete.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto("Intrus", new[] { NovAccesApiFactory.TestSite }));
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task RevokeTerminal_DisablesFutureAuthentication()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"ARévoquer-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+
+        var terminalClient = _factory.CreateClient();
+        terminalClient.DefaultRequestHeaders.Add("X-Api-Key", created!.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, (await terminalClient.GetAsync("/api/agent/sites")).StatusCode);
+
+        var revoke = await admin.PostAsync($"/api/admin/terminals/{created.Id}/revoke", null);
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+
+        // Même clé, présentée après révocation : refusée.
+        var afterRevoke = await terminalClient.GetAsync("/api/agent/sites");
+        Assert.Equal(HttpStatusCode.Unauthorized, afterRevoke.StatusCode);
+
+        var listed = await admin.GetFromJsonAsync<List<TerminalSummaryDto>>("/api/admin/terminals", Json);
+        Assert.False(listed!.Single(t => t.Id == created.Id).IsActive);
     }
 
     // ---- Aides ----

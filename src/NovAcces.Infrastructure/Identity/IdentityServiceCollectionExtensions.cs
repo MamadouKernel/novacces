@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NovAcces.Application.Abstractions;
-using NovAcces.Infrastructure.Auth;
 
 namespace NovAcces.Infrastructure.Identity;
 
@@ -29,8 +28,10 @@ public static class IdentityServiceCollectionExtensions
                 ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
 
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
-        services.Configure<ApiKeyOptions>(configuration.GetSection("ApiKeys"));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<ITerminalDirectory, TerminalDirectory>();
+        services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+        services.AddScoped<IApplicationAuditLog, ApplicationAuditLog>();
 
         return services.AddIdentityCore<ApplicationUser>(options =>
             {

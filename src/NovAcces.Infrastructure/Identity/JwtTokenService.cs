@@ -76,6 +76,8 @@ public sealed class JwtTokenService : IJwtTokenService
         var claims = new List<Claim>
         {
             new(ClaimMatricule, matricule),
+            new(ClaimTypes.Name, matricule),
+            new(ClaimTypes.Role, NovAccesRoles.Agent),
             new(ClaimAgentName, displayName),
             new(NovAccesClaimTypes.SiteId, siteId),
             new(ClaimShiftMarker, "1"),
@@ -89,6 +91,29 @@ public sealed class JwtTokenService : IJwtTokenService
             issuer: _options.Issuer, audience: _options.Audience, claims: claims,
             notBefore: now.UtcDateTime, expires: expiresAt.UtcDateTime, signingCredentials: credentials);
 
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
+    }
+
+    public (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.AddHours(Math.Max(1, _options.AgentExpiryHours));
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, matricule),
+            new(ClaimTypes.Role, NovAccesRoles.Agent),
+            new(ClaimMatricule, matricule),
+            new(ClaimAgentName, displayName),
+            new(NovAccesClaimTypes.SiteId, siteId),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: _options.Issuer, audience: _options.Audience, claims: claims,
+            notBefore: now.UtcDateTime, expires: expiresAt.UtcDateTime,
+            signingCredentials: credentials);
         return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
     }
 

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using NovAcces.Infrastructure.Identity;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 
 namespace NovAcces.IntegrationTests.Api;
@@ -24,6 +26,8 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
 
     public const string TestApiKey = "integration-test-api-key-0123456789";
     public const string TestSite = "sicopa";
+    public const string TestSite2 = "sanpedro";
+    public const string TestApiKeyMultiSite = "integration-test-api-key-multisite-9876";
     public const string AdminEmail = "admin@novacces.local";
     public const string AdminPassword = "ChangeMoi!2026Dev";
 
@@ -40,9 +44,26 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
             using var probe = new NpgsqlConnection(ConnectionString);
             probe.Open();
 
-            // Site de test provisionné (idempotent) pour que la création de visite
-            // et le scan disposent de leur schéma.
-            new TenantProvisioningService(ConnectionString).ProvisionAsync(TestSite).GetAwaiter().GetResult();
+            // Sites de test provisionnés (idempotent) pour que la création de
+            // visite et le scan disposent de leur schéma. TestSite2 sert aux tests
+            // de terminal multi-sites (une tablette qui sert plusieurs sites).
+            var provisioning = new TenantProvisioningService(ConnectionString);
+            provisioning.ProvisionAsync(TestSite).GetAwaiter().GetResult();
+            provisioning.ProvisionAsync(TestSite2).GetAwaiter().GetResult();
+
+            // Terminaux de test, enrôlés directement en base (les clés API ne
+            // sont plus en configuration statique, voir TerminalDirectory) —
+            // un mono-site et un multi-sites, avec des clés connues à l'avance
+            // pour que les tests puissent les présenter dans X-Api-Key.
+            var identityOptions = new DbContextOptionsBuilder<NovAccesIdentityDbContext>()
+                .UseNpgsql(ConnectionString)
+                .Options;
+            using (var identityDb = new NovAccesIdentityDbContext(identityOptions))
+            {
+                identityDb.Database.Migrate();
+                SeedTerminal(identityDb, "Terminal Test Intégration", TestApiKey, new[] { TestSite });
+                SeedTerminal(identityDb, "Terminal Test Multi-sites", TestApiKeyMultiSite, new[] { TestSite, TestSite2 });
+            }
 
             DatabaseAvailable = true;
         }
@@ -51,6 +72,17 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
             DatabaseAvailable = false;
             SkipReason = $"PostgreSQL non joignable ({ex.GetType().Name}). Tests d'intégration API ignorés.";
         }
+    }
+
+    private static void SeedTerminal(
+        NovAccesIdentityDbContext db, string label, string apiKey, string[] siteIds)
+    {
+        var hash = TerminalDirectory.ComputeKeyHash(apiKey);
+        if (db.Terminals.Any(t => t.ApiKeyHash == hash))
+            return; // idempotent d'un run de tests à l'autre (base persistée)
+
+        db.Terminals.Add(Terminal.Create(label, hash, siteIds, DateTimeOffset.UtcNow));
+        db.SaveChanges();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -66,9 +98,9 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
                 ["Jwt:Issuer"] = "NovAcces",
                 ["Jwt:Audience"] = "NovAcces",
                 ["Jwt:ExpiryMinutes"] = "60",
-                ["ApiKeys:Terminals:0:Key"] = TestApiKey,
-                ["ApiKeys:Terminals:0:SiteId"] = TestSite,
-                ["ApiKeys:Terminals:0:Label"] = "Terminal Test Intégration",
+                // Les terminaux de test (TestApiKey / TestApiKeyMultiSite) sont
+                // désormais enrôlés directement en base — voir SeedTerminal
+                // ci-dessus — plus de configuration statique ApiKeys:Terminals.
                 ["SeedAdmin:Email"] = AdminEmail,
                 ["SeedAdmin:Password"] = AdminPassword,
                 // Le minuteur de supervision ne doit pas se déclencher pendant les

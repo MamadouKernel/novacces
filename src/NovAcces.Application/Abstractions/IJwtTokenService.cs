@@ -19,8 +19,8 @@ public interface IJwtTokenService
     (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId);
 
     /// <summary>Valide un jeton de poste ; retourne l'identité de l'agent, ou null si invalide/expiré.</summary>
-    /// <summary>JWT Agent du contrat mobile, utilisable sans clé de terminal.</summary>
-    (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId);
+    /// <summary>JWT Agent du contrat mobile, lié au terminal enrôlé ayant effectué le login.</summary>
+    (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId, Guid terminalId);
 
     ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId, Guid? expectedTerminalId = null);
 }

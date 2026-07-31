@@ -18,7 +18,7 @@ public static class AgentEndpoints
     public static RouteGroupBuilder MapAgentEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/agent").WithTags("Agent")
-            .RequireAuthorization(NovAccesRoles.Agent);
+            .RequireAuthorization("AgentTerminal");
 
         // Prise de poste : l'agent s'identifie (matricule + PIN) sur le terminal
         // déjà authentifié. Vérification serveur → jeton de poste signé, à joindre

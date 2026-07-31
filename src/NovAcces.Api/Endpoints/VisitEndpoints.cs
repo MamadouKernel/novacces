@@ -175,7 +175,7 @@ public static class VisitEndpoints
             if (visit is null)
                 return Results.NotFound(new { error = "Demande introuvable." });
 
-            var canViewAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin);
+            var canViewAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin) || user.IsInRole(NovAccesRoles.SuperAdmin);
             if (!canViewAny && visit.HostUserId != user.HostIdentifier())
                 return Results.Json(new { error = "Accès refusé." }, statusCode: StatusCodes.Status403Forbidden);
 
@@ -222,7 +222,7 @@ public static class VisitEndpoints
         {
             // Moindre privilège (section 8.5) : Sûreté/Admin révoquent tout QR du
             // site ; un Hôte uniquement ses propres demandes (vérifié dans le handler).
-            var canRevokeAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin);
+            var canRevokeAny = user.IsInRole(NovAccesRoles.Surete) || user.IsInRole(NovAccesRoles.Admin) || user.IsInRole(NovAccesRoles.SuperAdmin);
 
             var result = await handler.HandleAsync(
                 new RevokeVisitCommand(visitId, user.HostIdentifier(), user.HostIdentifier(), canRevokeAny), ct);

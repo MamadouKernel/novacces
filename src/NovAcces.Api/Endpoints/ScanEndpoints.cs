@@ -61,7 +61,7 @@ public static class ScanEndpoints
 
             return Results.Ok(response);
         })
-        .RequireAuthorization(NovAccesRoles.Agent)
+        .RequireAuthorization("AgentTerminal")
         .WithName("ScanQr")
         .WithSummary("Scanne un QR au poste de contrôle (entrée ou sortie).");
 

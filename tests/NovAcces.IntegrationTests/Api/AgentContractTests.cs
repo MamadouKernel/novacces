@@ -71,6 +71,7 @@ public sealed class AgentContractTests
 
         var agent = _factory.CreateClient();
         agent.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite);
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
         var request = new LoginRequestDto(null, null)
         {
             Matricule = matricule,
@@ -221,6 +222,7 @@ public sealed class AgentContractTests
 
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite);
+        client.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
         var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequestDto(null, null)
         {
             Matricule = matricule,

@@ -35,7 +35,7 @@ public static class AgentContractEndpoints
             .WithSummary("Retourne la clé publique ES256 courante.");
 
         var agent = app.MapGroup("/api")
-            .RequireAuthorization(NovAccesRoles.Agent)
+            .RequireAuthorization("AgentTerminal")
             .AddEndpointFilter<ContractSiteHeaderFilter>();
 
         agent.MapGet("/site/config", (ICurrentTenant tenant, IConfiguration configuration) =>

@@ -29,11 +29,16 @@ public static class AuthEndpoints
             IRefreshTokenService refresh,
             CurrentTenant tenant,
             HttpRequest http,
+            ClaimsPrincipal principal,
             IOptions<AuthenticationSecurityOptions> security,
             CancellationToken ct) =>
         {
             if (!string.IsNullOrWhiteSpace(request.Matricule))
             {
+                if (!Guid.TryParse(principal.FindFirstValue(NovAccesClaimTypes.TerminalId), out var terminalId))
+                    return Results.Json(new { error = "Un terminal enrôlé est requis pour la connexion agent." },
+                        statusCode: StatusCodes.Status401Unauthorized);
+
                 var siteId = http.Headers["X-Site-Id"].ToString();
                 if (!CurrentTenant.IsValidSiteId(siteId))
                     return Results.BadRequest(new { error = "X-Site-Id requis et invalide pour la connexion agent." });
@@ -43,8 +48,8 @@ public static class AuthEndpoints
                 if (agent is null)
                     return InvalidCredentials();
 
-                var (agentToken, agentExpiresAt) = jwt.CreateAgentToken(agent.Matricule, agent.DisplayName, tenant.SiteId);
-                var agentRefresh = await refresh.IssueAsync("agent", $"{tenant.SiteId}:{agent.Matricule}", agent.DisplayName, tenant.SiteId, ct);
+                var (agentToken, agentExpiresAt) = jwt.CreateAgentToken(agent.Matricule, agent.DisplayName, tenant.SiteId, terminalId);
+                var agentRefresh = await refresh.IssueAsync("agent", $"{tenant.SiteId}:{agent.Matricule}:{terminalId:D}", agent.DisplayName, tenant.SiteId, ct);
                 return Results.Ok(new AgentLoginResponseDto(agentToken, agentRefresh.Token, SecondsUntil(agentExpiresAt), new AgentLoginIdentityDto(agent.Matricule, agent.DisplayName)));
             }
 
@@ -227,6 +232,7 @@ public static class AuthEndpoints
             UserManager<ApplicationUser> users,
             IJwtTokenService jwt,
             IOptions<AuthenticationSecurityOptions> security,
+            ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
             var subject = await refresh.RotateAsync(request.RefreshToken, ct);
@@ -255,10 +261,16 @@ public static class AuthEndpoints
 
             if (subject.SubjectType == "agent" && !string.IsNullOrWhiteSpace(subject.SiteId))
             {
-                var separator = subject.SubjectId.IndexOf(':');
-                var matricule = separator >= 0 ? subject.SubjectId[(separator + 1)..] : subject.SubjectId;
+                var parts = subject.SubjectId.Split(':', 3, StringSplitOptions.None);
+                if (parts.Length != 3
+                    || !Guid.TryParse(parts[2], out var terminalId)
+                    || !Guid.TryParse(principal.FindFirstValue(NovAccesClaimTypes.TerminalId), out var presentedTerminalId)
+                    || terminalId != presentedTerminalId)
+                    return Results.Json(new { error = "Un terminal enrôlé correspondant est requis pour renouveler la session agent." },
+                        statusCode: StatusCodes.Status401Unauthorized);
+                var matricule = parts[1];
                 var name = subject.DisplayName ?? matricule;
-                var (token, expiresAt) = jwt.CreateAgentToken(matricule, name, subject.SiteId);
+                var (token, expiresAt) = jwt.CreateAgentToken(matricule, name, subject.SiteId, terminalId);
                 var next = await refresh.IssueAsync("agent", subject.SubjectId, name, subject.SiteId, ct);
                 return Results.Ok(new AgentLoginResponseDto(token, next.Token, SecondsUntil(expiresAt),
                     new AgentLoginIdentityDto(matricule, name)));

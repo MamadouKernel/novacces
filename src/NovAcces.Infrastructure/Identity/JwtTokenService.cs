@@ -96,7 +96,7 @@ public sealed class JwtTokenService : IJwtTokenService
         return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
     }
 
-    public (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId)
+    public (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId, Guid terminalId)
     {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.AddHours(Math.Max(1, _options.AgentExpiryHours));
@@ -107,6 +107,7 @@ public sealed class JwtTokenService : IJwtTokenService
             new(ClaimMatricule, matricule),
             new(ClaimAgentName, displayName),
             new(NovAccesClaimTypes.SiteId, siteId),
+            new(NovAccesClaimTypes.TerminalId, terminalId.ToString("D")),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

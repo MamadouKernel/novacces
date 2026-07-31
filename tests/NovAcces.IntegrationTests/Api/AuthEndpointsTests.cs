@@ -312,6 +312,27 @@ public sealed class AuthEndpointsTests
         var forbidden = await hoteClient.GetAsync("/api/audit/application.csv");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
+    [SkippableFact]
+    public async Task SuperAdmin_InheritsPortalCapabilities_ButAgentRequiresEnrolledTerminal()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var login = await LoginAsync(_factory.CreateClient(),
+            NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
+        var client = _factory.CreateClient();
+        SetBearer(client, login.AccessToken);
+        client.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite);
+
+        // La policy hiérarchique autorise les capacités Hôte et Dashboard.
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/visits/mine")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/dashboard/summary")).StatusCode);
+
+        // Un JWT portail ne devient pas un terminal par le seul rôle SuperAdmin.
+        var scan = await client.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto("payload-bidon", "Entry", "ignore"));
+        Assert.Equal(HttpStatusCode.Forbidden, scan.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(

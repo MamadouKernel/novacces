@@ -91,28 +91,35 @@ public static class AuthSetup
     public static IServiceCollection AddNovAccesAuthorization(this IServiceCollection services)
     {
         services.AddAuthorizationBuilder()
-            .AddPolicy(NovAccesRoles.Hote, p => p.RequireRole(NovAccesRoles.Hote))
-            .AddPolicy(NovAccesRoles.Agent, p => p.RequireRole(NovAccesRoles.Agent))
-            .AddPolicy(NovAccesRoles.Surete, p => p.RequireRole(NovAccesRoles.Surete))
-            .AddPolicy(NovAccesRoles.Admin, p => p.RequireRole(NovAccesRoles.Admin))
+            .AddPolicy(NovAccesRoles.Hote, p => p.RequireRole(NovAccesRoles.Hote, NovAccesRoles.SuperAdmin))
+            .AddPolicy(NovAccesRoles.Agent, p => p.RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin))
+            .AddPolicy(NovAccesRoles.Surete, p => p.RequireRole(NovAccesRoles.Surete, NovAccesRoles.SuperAdmin))
+            .AddPolicy(NovAccesRoles.Admin, p => p.RequireRole(NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // SuperAdmin reçoit AUSSI le rôle Admin à la création (voir AuthEndpoints
             // /register) : cette policy sert uniquement à des vérifications strictes
             // qui doivent exclure un Admin simple (ex. création d'un compte Admin).
             .AddPolicy(NovAccesRoles.SuperAdmin, p => p.RequireRole(NovAccesRoles.SuperAdmin))
             // Révocation (REQ-F-09) : Hôte (ses propres QR), Sûreté ou Admin.
             .AddPolicy("RevokeVisit", p => p.RequireRole(
-                NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin))
+                NovAccesRoles.Hote, NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // Dashboard temps réel (REQ-F-06) : Sûreté, Hôte ou Admin.
             .AddPolicy("Dashboard", p => p.RequireRole(
-                NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin))
+                NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // Hub du contrat mobile : l'agent reçoit les événements de sa liste locale.
             .AddPolicy("AgentEvents", p => p.RequireRole(
-                NovAccesRoles.Agent, NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin))
+                NovAccesRoles.Agent, NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
             // Liste d'exclusion (REQ-F-11) : gestion réservée à la Sûreté et l'Admin
             // (le motif ne doit pas être exposé aux hôtes — moindre privilège).
             .AddPolicy("ManageExclusions", p => p.RequireRole(
-                NovAccesRoles.Surete, NovAccesRoles.Admin));
+                NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
 
+            // Les opérations d'un poste de contrôle restent liées à un terminal
+            // enrôlé. Le SuperAdmin bénéficie de la capacité Agent, mais un JWT
+            // du portail ne peut pas usurper un terminal : il doit s'authentifier
+            // avec la clé API issue de l'enrôlement QR et son claim TerminalId.
+            .AddPolicy("AgentTerminal", p => p
+                .RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin)
+                .RequireClaim(NovAccesClaimTypes.TerminalId));
         return services;
     }
 }

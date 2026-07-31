@@ -119,7 +119,9 @@ public static class AuthSetup
             // avec la clé API issue de l'enrôlement QR et son claim TerminalId.
             .AddPolicy("AgentTerminal", p => p
                 .RequireRole(NovAccesRoles.Agent, NovAccesRoles.SuperAdmin)
-                .RequireClaim(NovAccesClaimTypes.TerminalId));
+                .RequireClaim(NovAccesClaimTypes.TerminalId)
+                .RequireAssertion(context => context.Resource is HttpContext http
+                    && http.Request.Headers.ContainsKey(ApiKeyOptions.HeaderName)));
         return services;
     }
 }

@@ -1,6 +1,6 @@
 namespace NovAcces.Shared.Dtos;
 
-public sealed record ScanRequestDto(string SignedQrPayload, string Direction, string AgentId);
+public sealed record ScanRequestDto(string SignedQrPayload, string Direction, string AgentId, string? CheckpointId = null);
 
 public sealed record ScanResponseDto(
     bool IsGranted,

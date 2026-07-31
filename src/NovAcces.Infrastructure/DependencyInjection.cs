@@ -16,11 +16,6 @@ public static class DependencyInjection
     public static IServiceCollection AddNovAccesInfrastructure(
         this IServiceCollection services, IConfiguration configuration)
     {
-        // --- Base de données : un DbContext, schéma résolu dynamiquement par requête ---
-        services.AddDbContext<NovAccesDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("Postgres")
-                ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
-
         // --- Tenant courant : une instance par requête HTTP (scoped) ---
         // Enregistré à la fois comme type concret (pour que le middleware
         // puisse appeler Resolve()) et comme interface en lecture seule
@@ -29,13 +24,58 @@ public static class DependencyInjection
         services.AddScoped<CurrentTenant>();
         services.AddScoped<ICurrentTenant>(sp => sp.GetRequiredService<CurrentTenant>());
 
-        // --- Dépôts ---
+        // Provisionnement d'un site (schéma + modèle + journal append-only).
+        // Opération d'administration hors requête ; construit ses propres
+        // connexions brutes, d'où l'injection directe de la chaîne de connexion.
+        services.AddScoped<ITenantProvisioningService>(sp =>
+            new TenantProvisioningService(
+                configuration.GetConnectionString("Postgres")
+                    ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
+
+        // Intercepteur qui positionne le search_path sur le schéma du tenant à
+        // chaque ouverture de connexion (cloisonnement multi-tenant robuste au
+        // pooling Npgsql — voir TenantSchemaConnectionInterceptor). Scoped car
+        // il dépend du tenant de la requête courante.
+        services.AddScoped<TenantSchemaConnectionInterceptor>();
+
+        // --- Base de données : un DbContext, schéma résolu dynamiquement par requête ---
+        // L'overload (sp, options) permet d'injecter l'intercepteur scoped ci-dessus.
+        services.AddDbContext<NovAccesDbContext>((sp, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("Postgres")
+                    ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante."))
+                .AddInterceptors(sp.GetRequiredService<TenantSchemaConnectionInterceptor>()));
+
+        // --- Dépôts & frontière transactionnelle ---
         services.AddScoped<IVisitRepository, VisitRepository>();
         services.AddScoped<IScanLogRepository, ScanLogRepository>();
         services.AddScoped<IExclusionListService, ExclusionListService>();
+        services.AddScoped<IAdminAuditLog, AdminAuditLog>();
+        services.Configure<AgentSecurityOptions>(configuration.GetSection("AgentSecurity"));
+        services.AddScoped<IAgentDirectory, AgentDirectory>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // --- Horloge & signature cryptographique ---
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+
+        // Jours ouvrés (REQ-F-05) : week-ends + jours fériés paramétrables.
+        services.Configure<BusinessDayOptions>(configuration.GetSection("BusinessDays"));
+        services.AddScoped<IBusinessDayService>(sp =>
+            new BusinessDayService(
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BusinessDayOptions>>(),
+                sp.GetRequiredService<ICurrentTenant>()));
+
+        // Supervision des dépassements (§7) : catalogue de sites + scanner.
+        services.AddSingleton<ISiteCatalog, SiteCatalog>();
+        services.Configure<Overstay.OverstayOptions>(configuration.GetSection("Overstay"));
+        services.AddSingleton<IOverstayScanner, Overstay.OverstayScanner>();
+
+        // Rétention/purge des données personnelles (§7.3) : balayage multi-sites,
+        // même orchestration transverse que la supervision.
+        services.Configure<Retention.RetentionOptions>(configuration.GetSection("Retention"));
+        services.AddSingleton<IDataRetentionService, Retention.DataRetentionService>();
+
+        // Vue consolidée multi-sites (§10).
+        services.AddScoped<ISiteOverviewService, SiteOverviewService>();
 
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
@@ -43,6 +83,7 @@ public static class DependencyInjection
         // --- Notifications (REQ-F-03) : WhatsApp Cloud API, repli email ---
         services.Configure<WhatsAppCloudApiOptions>(configuration.GetSection("WhatsApp"));
         services.Configure<SmtpNotificationOptions>(configuration.GetSection("Smtp"));
+        services.Configure<NotificationBrandingOptions>(configuration.GetSection("Notifications"));
 
         services.AddHttpClient<INotificationService, WhatsAppNotificationService>(client =>
         {

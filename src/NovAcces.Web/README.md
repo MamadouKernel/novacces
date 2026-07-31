@@ -1,28 +1,48 @@
-# NovAcces.Web (Blazor Server) — à construire au Jalon 2
+# NovAcces.Web (Blazor Server, .NET 8) — Jalon 2
 
-Ce projet portera les trois interfaces web démontrées le 22/07/2026 :
+Portail web de NovAcces. Application Blazor Web App (interactivité Server, sans
+prérendu), **cliente de `NovAcces.Api`** : elle ne réimplémente aucune règle
+métier ni de sécurité — l'API reste l'unique point d'application de
+l'authentification, du RBAC et du cloisonnement multi-tenant.
 
-- **Portail hôte** (`/hote`) — création de demande, autocomplétion visiteurs connus, révocation
-- **Dashboard sûreté** (`/surete`) — journal, présents, synthèse quotidienne, exports CSV
-- **Administration multi-sites** (`/admin`) — provisionnement de sites, gestion des comptes
+## Implémenté (incrément 1)
 
-## Pourquoi ce n'est pas scaffoldé maintenant
+- **Connexion** (`/login`) : formulaire e-mail/mot de passe → `POST /api/auth/login`.
+  Gère le **2FA** : si un second facteur est requis, saisie du code TOTP →
+  `POST /api/auth/login/2fa`. Le JWT obtenu est conservé dans l'état du circuit
+  (`AuthState`, scoped).
+- **Portail hôte** (`/hote`, rôle Hôte) : création d'une demande de visite
+  (`POST /api/visits`, le site venant du claim du jeton) et **affichage du QR
+  signé** généré (rendu via QRCoder). Déconnexion.
+- **Dashboard sûreté** (`/surete`, policy Dashboard) : **flux des scans en temps
+  réel** (client SignalR connecté au hub `/hubs/scan` du site, message
+  `ScanRecorded`), liste des **présents sur site**, amorçage avec le journal
+  récent. Endpoints de lecture : `GET /api/dashboard/journal`, `/on-site`.
 
-Le cœur sensible du système (signature ES256, anti-rejeu, multi-tenant) devait être posé
-et testé en priorité — c'est fait (voir `src/NovAcces.Domain`, `src/NovAcces.Infrastructure`,
-`tests/NovAcces.UnitTests`). Le Web consomme ces briques via `NovAcces.Api` : il n'y a pas
-de risque architectural à le construire ensuite, contrairement au multi-tenant ou à la
-cryptographie qui doivent être corrects dès le premier jour.
+Architecture : `Services/AuthState.cs` (état d'auth par circuit),
+`Services/NovAccesApiClient.cs` (client typé, joint le Bearer),
+`Services/QrImage.cs` (QR → data URI). `HttpClient` configuré vers `Api:BaseUrl`
+(appsettings), avec acceptation du certificat auto-signé **en développement
+uniquement**.
 
-## Commande de démarrage (à exécuter au moment venu)
+## Démarrage (dev)
 
+L'API doit tourner (voir README racine, `dotnet run` dans `src/NovAcces.Api`).
+Puis :
 ```bash
-cd src
-dotnet new blazorserver -n NovAcces.Web -o NovAcces.Web --force
-cd NovAcces.Web
-dotnet add reference ../NovAcces.Shared/NovAcces.Shared.csproj
-dotnet sln ../../NovAcces.sln add NovAcces.Web.csproj
+cd src/NovAcces.Web
+dotnet run --launch-profile http   # http://localhost:5282
 ```
+Compte Hôte de test : créé via `POST /api/auth/register` (Admin), ou l'Admin de
+dev amorcé peut en créer un.
 
-Puis RBAC par policy (`[Authorize(Policy = "Hote")]`, etc.) branché sur ASP.NET Core Identity
-une fois celui-ci ajouté à `NovAcces.Api` (voir TODO dans `Program.cs`).
+## Reste à construire (incréments suivants)
+
+- **Portail hôte** : autocomplétion des visiteurs connus, liste et **révocation**
+  de ses propres demandes (REQ-F-09).
+- **Dashboard sûreté** (`/surete`) : journal des scans en temps réel (SignalR,
+  hub `/hubs/scan` déjà exposé), présents sur site, synthèse quotidienne,
+  exports CSV.
+- **Administration** (`/admin`) : provisionnement de sites, gestion des comptes.
+- Persistance de session du JWT (aujourd'hui perdue au rechargement complet) et
+  redirection propre sur expiration/401.

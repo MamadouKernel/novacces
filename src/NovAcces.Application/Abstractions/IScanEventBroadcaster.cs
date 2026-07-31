@@ -9,7 +9,18 @@ namespace NovAcces.Application.Abstractions;
 public interface IScanEventBroadcaster
 {
     Task BroadcastAsync(ScanBroadcastEvent scanEvent, CancellationToken ct);
+
+    /// <summary>Diffuse une alerte de dépassement de durée (§7) au dashboard du site.</summary>
+    Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct);
 }
+
+public sealed record OverstayBroadcastEvent(
+    Guid VisitId,
+    string VisitorName,
+    int OverstayMinutes,
+    int Level,
+    bool IsSecurityEvent,
+    DateTimeOffset OccurredAt);
 
 public sealed record ScanBroadcastEvent(
     Guid VisitId,

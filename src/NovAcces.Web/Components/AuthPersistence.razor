@@ -1,0 +1,42 @@
+@implements IDisposable
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+@inject AuthState Auth
+
+@* Composant sans rendu : gère la (re)lecture et l'écriture de la session. *@
+
+@code {
+    private const string Key = "nv_auth";
+
+    protected override void OnInitialized() => Auth.Changed += Persist;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Auth.Initialized)
+            return;
+
+        try
+        {
+            var result = await Storage.GetAsync<PersistedSession>(Key);
+            if (result.Success && result.Value is not null)
+                Auth.RestoreSilently(result.Value);
+        }
+        catch { /* stockage indisponible : on démarre déconnecté */ }
+
+        Auth.MarkInitialized(); // notifie les pages (elles ré-évaluent l'accès)
+    }
+
+    private async void Persist()
+    {
+        try
+        {
+            var snapshot = Auth.Snapshot();
+            if (snapshot is null)
+                await Storage.DeleteAsync(Key);
+            else
+                await Storage.SetAsync(Key, snapshot);
+        }
+        catch { /* best-effort */ }
+    }
+
+    public void Dispose() => Auth.Changed -= Persist;
+}

@@ -1,0 +1,44 @@
+@* Pile de notifications (toasts) affichée en bas à droite. *@
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="toasts">
+    @foreach (var t in Toasts.Toasts)
+    {
+        <div class="toast @KindClass(t.Kind)" @onclick="() => Toasts.Dismiss(t.Id)" role="status">
+            <span class="toast-ico">@Icon(t.Kind)</span>
+            <div>
+                @if (!string.IsNullOrEmpty(t.Title)) { <b>@t.Title</b> }
+                <span>@t.Message</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+
+    private static string KindClass(ToastKind k) => k switch
+    {
+        ToastKind.Success => "ok",
+        ToastKind.Error => "err",
+        ToastKind.Security => "sec",
+        _ => "info",
+    };
+
+    private static MarkupString Icon(ToastKind k)
+    {
+        var svg = k switch
+        {
+            ToastKind.Success => "<path d='M20 6L9 17l-5-5'/>",
+            ToastKind.Error => "<path d='M18 6L6 18M6 6l12 12'/>",
+            ToastKind.Security => "<path d='M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/>",
+            _ => "<path d='M12 16v-4M12 8h.01'/><circle cx='12' cy='12' r='9'/>",
+        };
+        return (MarkupString)$"<svg viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'>{svg}</svg>";
+    }
+}

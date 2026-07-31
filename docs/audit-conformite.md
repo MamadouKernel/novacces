@@ -59,3 +59,52 @@ déjà appliquées et de ce qui reste à faire.
   sans accès à un SDK .NET. La toute première action en Jalon 2 doit être
   `dotnet build` + `dotnet test`, et la correction de toute erreur avant
   de continuer.
+
+## Mise à jour 25/07/2026 — conformité données & traçabilité (Jalon 2)
+
+Travail réalisé et **prouvé par tests** (88 tests verts : 43 unitaires +
+45 d'intégration contre un vrai PostgreSQL). Les gaps de la section
+précédente sont désormais **tous fermés** : 1 et 2 (notifications WhatsApp +
+SignalR temps réel), 3 (liste d'exclusion réelle par tenant), 4 (jours fériés
+paramétrables `BusinessDays`), 5 (anti-doublon `HasActiveVisitForVisitorAsync`),
+6 (journal d'audit d'administration — ci-dessous).
+
+### Rétention et purge des données personnelles (§7.3, ARTCI)
+- `IDataRetentionService` + service de fond `RetentionMonitor` (passe
+  quotidienne, balayage multi-sites) + déclenchement manuel
+  `POST /api/admin/retention/run`, état `GET /api/admin/retention`.
+- Les **demandes de visite** (PII : nom, téléphone, email) sont **supprimées**
+  au-delà de `Retention:VisitRetentionDays`, **jamais** un visiteur encore sur
+  site (la sécurité prime).
+- Paramétrable par déploiement (`appsettings`, section `Retention`).
+
+### Journal d'audit des actions d'administration (§8.5) — gap 6 fermé
+- Table `admin_audit` **par site**, **inaltérable** (trigger append-only) :
+  révocation de QR, ajout/retrait d'exclusion, purge, anonymisation.
+- **Minimisé** : aucun nom de visiteur (références opaques), donc conservable
+  long terme sans anonymisation. Consultation `GET /api/audit` (Sûreté/Admin).
+
+### Conciliation « journal inaltérable » (§7.5) vs « rétention limitée » (§7.3)
+Décision de sûreté prise (voir `DataRetentionService` et
+`TenantProvisioningService.AppendOnlyJournalDdl`) : **anonymisation, jamais
+suppression** des journaux. Au-delà de `Retention:JournalRetentionDays`, le
+nom du visiteur dans `scan_logs` est remplacé par `[anonymisé]`. Le trigger
+append-only n'autorise **que** cette transition (nom → sentinel, en avant,
+vérifiée par diff `jsonb` robuste aux évolutions de schéma) ; DELETE, TRUNCATE
+et toute autre modification restent rejetés au niveau base. Aucun fait de
+sécurité (verdict, horodatage, agent, événement) ne peut donc être altéré.
+
+### ✅ DÉCISION ACTÉE — durées de conservation validées par le client
+Proposées par le prestataire, **validées par le client (Sigasécurité,
+Direction des Opérations) le 25/07/2026**. Ce ne sont donc plus des défauts
+provisoires mais les durées retenues pour la phase pilote :
+
+| Paramètre | Durée retenue | Objet |
+|---|---|---|
+| `Retention:VisitRetentionDays` | 365 j | Conservation des demandes de visite (PII) |
+| `Retention:JournalRetentionDays` | 1095 j (3 ans) | Conservation du nom dans le journal des scans |
+
+Ces valeurs sont celles par défaut dans `appsettings.json` — aucune reprise de
+code n'est nécessaire. **Réserve** : elles restent modifiables par site (simple
+paramètre) si un client tiers de Sigasécurité relève d'obligations ARTCI
+différentes ; le cas échéant, refaire valider et re-consigner ici.

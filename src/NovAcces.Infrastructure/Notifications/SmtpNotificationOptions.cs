@@ -1,6 +1,6 @@
 namespace NovAcces.Infrastructure.Notifications;
 
-/// <summary>Repli automatique par email quand WhatsApp est indisponible ou sans numéro (accord-commercial.md).</summary>
+/// <summary>Paramètres du canal email utilisé en complément de WhatsApp.</summary>
 public sealed class SmtpNotificationOptions
 {
     public string Host { get; set; } = default!;

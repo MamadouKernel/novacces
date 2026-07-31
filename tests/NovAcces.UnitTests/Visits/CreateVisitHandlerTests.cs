@@ -26,9 +26,18 @@ file sealed class FakeVisitRepository : IVisitRepository
     public Visit? AddedVisit { get; private set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
+    public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) { AddedVisit = visit; return Task.CompletedTask; }
     public Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<Visit>> GetOnSiteAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<KnownVisitor>>(Array.Empty<KnownVisitor>());
+    public Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)
+        => Task.FromResult(false);
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -36,6 +45,10 @@ file sealed class FakeExclusionListService : IExclusionListService
 {
     public bool IsExcluded { get; set; }
     public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct) => Task.FromResult(IsExcluded);
+    public Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<ExclusionEntryView>>(Array.Empty<ExclusionEntryView>());
+    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
+    public Task<bool> RemoveAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
 }
 
 file sealed class FakeNotificationService : INotificationService

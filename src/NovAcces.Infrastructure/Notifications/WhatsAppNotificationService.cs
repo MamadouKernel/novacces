@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Mail;
+using System.Net.Mime;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
@@ -9,60 +10,106 @@ using QRCoder;
 namespace NovAcces.Infrastructure.Notifications;
 
 /// <summary>
-/// Envoi du QR d'invitation (REQ-F-03) : WhatsApp Business Platform en
-/// canal principal, email en repli automatique si WhatsApp échoue ou si le
-/// visiteur n'a pas de téléphone. PngByteQRCode (et non le rendu
-/// System.Drawing de QRCoder) est utilisé volontairement : l'hébergement
-/// cible est un VPS Linux (Contabo), où System.Drawing.Common nécessite
-/// libgdiplus et n'est pas garanti disponible.
+/// Envoi du QR d'invitation (REQ-F-03) sur WhatsApp Business Platform et par
+/// email. Les deux canaux sont tentés indépendamment : l'email n'est plus un
+/// simple repli, car le contrat prévoit une double délivrance. Les messages
+/// (email et légende WhatsApp) sont rédigés dans
+/// <see cref="InvitationMessage"/>.
+///
+/// PngByteQRCode (et non le rendu System.Drawing de QRCoder) est utilisé
+/// volontairement : l'hébergement cible est un VPS Linux (Contabo), où
+/// System.Drawing.Common nécessite libgdiplus et n'est pas garanti disponible.
 /// </summary>
 public sealed class WhatsAppNotificationService : INotificationService
 {
     private readonly HttpClient _http;
     private readonly WhatsAppCloudApiOptions _whatsApp;
     private readonly SmtpNotificationOptions _smtp;
+    private readonly NotificationBrandingOptions _branding;
     private readonly ILogger<WhatsAppNotificationService> _logger;
 
     public WhatsAppNotificationService(
         HttpClient http,
         IOptions<WhatsAppCloudApiOptions> whatsApp,
         IOptions<SmtpNotificationOptions> smtp,
+        IOptions<NotificationBrandingOptions> branding,
         ILogger<WhatsAppNotificationService> logger)
     {
         _http = http;
         _whatsApp = whatsApp.Value;
         _smtp = smtp.Value;
+        _branding = branding.Value;
         _logger = logger;
     }
 
     public async Task SendVisitInvitationAsync(VisitInvitationNotification notification, CancellationToken ct)
     {
         var qrPng = GenerateQrPng(notification.SignedQrPayload);
+        var attempted = 0;
+        var succeeded = 0;
+        var failures = new List<Exception>();
 
         if (!string.IsNullOrWhiteSpace(notification.VisitorPhone))
         {
+            attempted++;
             try
             {
                 await SendViaWhatsAppAsync(notification, qrPng, ct);
-                return;
+                succeeded++;
+                _logger.LogInformation(
+                    "QR envoyé par WhatsApp pour la visite {VisitId}.", notification.VisitId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "Échec de l'envoi WhatsApp du QR pour {VisitorName}, repli sur email.",
-                    notification.VisitorName);
+                    "Échec de l'envoi WhatsApp du QR pour la visite {VisitId}.",
+                    notification.VisitId);
+                failures.Add(ex);
             }
         }
 
         if (!string.IsNullOrWhiteSpace(notification.VisitorEmail))
         {
-            await SendViaEmailAsync(notification, qrPng, ct);
+            attempted++;
+            try
+            {
+                await SendViaEmailAsync(notification, qrPng, ct);
+                succeeded++;
+                _logger.LogInformation(
+                    "QR envoyé par email pour la visite {VisitId}.", notification.VisitId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Échec de l'envoi email du QR pour la visite {VisitId}.",
+                    notification.VisitId);
+                failures.Add(ex);
+            }
+        }
+
+        if (attempted == 0)
+        {
+            _logger.LogWarning(
+                "Aucun canal de notification configuré pour la visite {VisitId} (téléphone et email absents) — QR non transmis automatiquement.",
+                notification.VisitId);
             return;
         }
 
-        _logger.LogWarning(
-            "Aucun canal de notification n'a abouti pour {VisitorName} (téléphone et/ou email manquant ou en échec) — QR non transmis automatiquement.",
-            notification.VisitorName);
+        // Le handler de création journalise l'échec global sans annuler la
+        // visite. Si un seul canal a réussi, on conserve le succès partiel et
+        // l'hôte peut relancer uniquement le canal défaillant ultérieurement.
+        if (succeeded == 0 && failures.Count > 0)
+            throw new AggregateException(
+                $"Tous les canaux de notification ont échoué pour la visite {notification.VisitId}.",
+                failures);
     }
 
     private static byte[] GenerateQrPng(string signedPayload)
@@ -73,42 +120,67 @@ public sealed class WhatsAppNotificationService : INotificationService
         return png.GetGraphic(20);
     }
 
+    // ---------------------------------------------------------------- WhatsApp
+
     private async Task SendViaWhatsAppAsync(VisitInvitationNotification notification, byte[] qrPng, CancellationToken ct)
     {
         var mediaId = await UploadMediaAsync(qrPng, ct);
+        var to = NormalizePhone(notification.VisitorPhone!);
 
-        var payload = new
-        {
-            messaging_product = "whatsapp",
-            to = NormalizePhone(notification.VisitorPhone!),
-            type = "template",
-            template = new
-            {
-                name = _whatsApp.TemplateName,
-                language = new { code = _whatsApp.TemplateLanguageCode },
-                components = new object[]
-                {
-                    new
-                    {
-                        type = "header",
-                        parameters = new object[] { new { type = "image", image = new { id = mediaId } } }
-                    },
-                    new
-                    {
-                        type = "body",
-                        parameters = new object[]
-                        {
-                            new { type = "text", text = notification.VisitorName },
-                            new { type = "text", text = FormatSchedule(notification.ScheduledAt) }
-                        }
-                    }
-                }
-            }
-        };
+        var isTemplate = string.Equals(_whatsApp.SendMode, "Template", StringComparison.OrdinalIgnoreCase);
+        object payload = isTemplate
+            ? BuildTemplatePayload(notification, to, mediaId)
+            : BuildImagePayload(notification, to, mediaId);
 
         using var response = await _http.PostAsJsonAsync($"{_whatsApp.PhoneNumberId}/messages", payload, ct);
         response.EnsureSuccessStatusCode();
     }
+
+    // Envoi du QR en image avec une légende rédigée (conforme à l'accord :
+    // « QR envoyé en image dans la conversation »).
+    private object BuildImagePayload(VisitInvitationNotification notification, string to, string mediaId) => new
+    {
+        messaging_product = "whatsapp",
+        to,
+        type = "image",
+        image = new
+        {
+            id = mediaId,
+            caption = InvitationMessage.WhatsAppCaption(notification, _branding)
+        }
+    };
+
+    // Message basé sur un template Meta pré-approuvé (premier contact hors
+    // fenêtre de 24 h). Header image (QR) + corps à deux paramètres :
+    // {{1}} = nom du visiteur, {{2}} = créneau/validité.
+    private object BuildTemplatePayload(VisitInvitationNotification notification, string to, string mediaId) => new
+    {
+        messaging_product = "whatsapp",
+        to,
+        type = "template",
+        template = new
+        {
+            name = _whatsApp.TemplateName,
+            language = new { code = _whatsApp.TemplateLanguageCode },
+            components = new object[]
+            {
+                new
+                {
+                    type = "header",
+                    parameters = new object[] { new { type = "image", image = new { id = mediaId } } }
+                },
+                new
+                {
+                    type = "body",
+                    parameters = new object[]
+                    {
+                        new { type = "text", text = notification.VisitorName },
+                        new { type = "text", text = FormatSchedule(notification.ScheduledAt) }
+                    }
+                }
+            }
+        }
+    };
 
     private async Task<string> UploadMediaAsync(byte[] qrPng, CancellationToken ct)
     {
@@ -125,18 +197,34 @@ public sealed class WhatsAppNotificationService : INotificationService
         return body?.Id ?? throw new InvalidOperationException("Réponse d'upload média WhatsApp sans identifiant.");
     }
 
+    // ------------------------------------------------------------------- Email
+
     private async Task SendViaEmailAsync(VisitInvitationNotification notification, byte[] qrPng, CancellationToken ct)
     {
         using var message = new MailMessage
         {
             From = new MailAddress(_smtp.FromAddress, _smtp.FromDisplayName),
-            Subject = "Votre QR Code d'accès NovAcces",
-            Body = BuildEmailBody(notification),
+            Subject = InvitationMessage.Subject(notification),
+            Body = InvitationMessage.PlainText(notification, _branding),
+            IsBodyHtml = false,
         };
         message.To.Add(notification.VisitorEmail!);
 
-        using var qrStream = new MemoryStream(qrPng);
-        message.Attachments.Add(new Attachment(qrStream, "qr-invitation.png", "image/png"));
+        // Vue HTML avec le QR intégré (cid:qr) — s'affiche directement dans le
+        // corps du message ; la vue texte reste le repli des clients sans HTML.
+        var html = InvitationMessage.Html(notification, _branding);
+        var htmlView = AlternateView.CreateAlternateViewFromString(html, null, MediaTypeNames.Text.Html);
+        var qrResource = new LinkedResource(new MemoryStream(qrPng), "image/png")
+        {
+            ContentId = "qr",
+            TransferEncoding = TransferEncoding.Base64,
+            ContentType = { Name = "qr-invitation.png" }
+        };
+        htmlView.LinkedResources.Add(qrResource);
+        message.AlternateViews.Add(htmlView);
+
+        // Le QR également en pièce jointe téléchargeable.
+        message.Attachments.Add(new Attachment(new MemoryStream(qrPng), "qr-invitation.png", "image/png"));
 
         using var client = new SmtpClient(_smtp.Host, _smtp.Port)
         {
@@ -148,13 +236,8 @@ public sealed class WhatsAppNotificationService : INotificationService
         await client.SendMailAsync(message);
     }
 
-    private static string BuildEmailBody(VisitInvitationNotification notification) =>
-        notification.ScheduledAt is { } scheduledAt
-            ? $"Bonjour {notification.VisitorName},\n\nVoici votre QR Code d'accès pour le rendez-vous du {scheduledAt:dd/MM/yyyy HH:mm}. Présentez-le au poste de contrôle.\n\nCe QR est valable jusqu'au {notification.ExpiresAt:dd/MM/yyyy HH:mm}."
-            : $"Bonjour {notification.VisitorName},\n\nVoici votre QR Code d'accès, valable jusqu'au {notification.ExpiresAt:dd/MM/yyyy HH:mm}. Présentez-le au poste de contrôle à chaque passage.";
-
     private static string FormatSchedule(DateTimeOffset? scheduledAt) =>
-        scheduledAt is { } s ? s.ToString("dd/MM/yyyy HH:mm") : "accès valable 30 jours";
+        scheduledAt is { } s ? s.ToString("dd/MM/yyyy HH:mm") : "accès valable 30 jours ouvrés";
 
     private static string NormalizePhone(string phone) => phone.Replace(" ", "").Replace("+", "");
 

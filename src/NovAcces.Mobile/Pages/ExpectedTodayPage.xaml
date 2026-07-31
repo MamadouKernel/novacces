@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NovAcces.Mobile.Pages.ExpectedTodayPage"
+             Title="Attendus aujourd'hui"
+             BackgroundColor="#0E2A3A">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="12" RowSpacing="10">
+
+        <Label x:Name="Header" Grid.Row="0" TextColor="White" FontSize="13" />
+
+        <CollectionView x:Name="List" Grid.Row="1">
+            <CollectionView.EmptyView>
+                <Label Text="Aucun visiteur attendu (ou hors ligne)."
+                       TextColor="#9AA7B2" HorizontalOptions="Center" VerticalOptions="Center" />
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="12,10" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding VisitorName}" TextColor="White" FontAttributes="Bold" FontSize="15" />
+                            <Label Text="{Binding Window}" TextColor="#9AA7B2" FontSize="12" />
+                        </VerticalStackLayout>
+                        <Label Grid.Column="1" Text="{Binding Status}" TextColor="{Binding StatusColor}"
+                               FontAttributes="Bold" VerticalOptions="Center" />
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <Button x:Name="ResyncButton" Grid.Row="2"
+                Text="Resynchroniser les scans hors-ligne"
+                BackgroundColor="#F5A300" TextColor="#0E2A3A" Clicked="OnResync" />
+    </Grid>
+</ContentPage>

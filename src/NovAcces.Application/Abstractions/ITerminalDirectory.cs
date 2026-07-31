@@ -1,0 +1,54 @@
+namespace NovAcces.Application.Abstractions;
+
+/// <summary>Terminal identifié par sa clé API, avec les sites qu'il est autorisé à servir.</summary>
+public sealed record TerminalIdentity(Guid Id, string Label, IReadOnlyList<string> SiteIds);
+
+/// <summary>Projection d'un terminal pour la console Admin — jamais la clé ni son empreinte.</summary>
+public sealed record TerminalSummary(
+    Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt, bool IsEnrolled = false);
+
+/// <summary>Ticket brut remis une seule fois à la console d'administration.</summary>
+public sealed record TerminalEnrollmentTicket(
+    Guid TerminalId,
+    string Label,
+    IReadOnlyList<string> SiteIds,
+    string Ticket,
+    DateTimeOffset ExpiresAt);
+
+/// <summary>Résultat de l'activation, avec une nouvelle clé API remise au device.</summary>
+public sealed record TerminalActivation(
+    Guid TerminalId,
+    string Label,
+    IReadOnlyList<string> SiteIds,
+    string ApiKey,
+    DateTimeOffset EnrolledAt);
+
+/// <summary>
+/// Annuaire des terminaux enrôlés. Les terminaux vivent dans le schéma partagé
+/// identity car ils peuvent servir plusieurs sites.
+/// </summary>
+public interface ITerminalDirectory
+{
+    Task<TerminalIdentity?> VerifyAsync(string presentedApiKey, CancellationToken ct);
+
+    /// <summary>
+    /// Création d'un terminal non enrôlé. Aucun secret n'est retourné.
+    /// Le secret opérationnel est généré uniquement lors de l'activation QR.
+    /// </summary>
+    Task<Guid> CreateAsync(string label, IReadOnlyList<string> siteIds, CancellationToken ct);
+
+    Task<IReadOnlyList<TerminalSummary>> ListAsync(CancellationToken ct);
+
+    Task<bool> RevokeAsync(Guid id, CancellationToken ct);
+
+    /// <summary>Crée un ticket d'enrôlement temporaire, à usage unique.</summary>
+    Task<TerminalEnrollmentTicket?> CreateEnrollmentTicketAsync(
+        Guid terminalId, string createdBy, TimeSpan lifetime, CancellationToken ct);
+
+    /// <summary>
+    /// Consomme le ticket et lie le device. Une nouvelle clé API est générée et
+    /// remise une seule fois au mobile.
+    /// </summary>
+    Task<TerminalActivation?> ActivateAsync(
+        string ticket, string deviceInstanceId, string devicePublicKeyPem, CancellationToken ct);
+}

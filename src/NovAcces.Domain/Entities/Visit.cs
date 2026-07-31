@@ -45,6 +45,10 @@ public class Visit
 
     public DateTimeOffset CreatedAt { get; private set; }
 
+    // Audit de la révocation (REQ-F-09, traçabilité §8.5) : qui et quand.
+    public string? RevokedBy { get; private set; }
+    public DateTimeOffset? RevokedAt { get; private set; }
+
     // Alertes de dépassement (supervision, jamais bloquant)
     public int OverstayLevel { get; private set; }
     public DateTimeOffset? LastOverstayAlertAt { get; private set; }
@@ -185,9 +189,11 @@ public class Visit
     }
 
     /// <summary>Révocation manuelle par l'hôte ou la sûreté (REQ-F-09), possible à tout moment.</summary>
-    public void Revoke()
+    public void Revoke(string revokedBy, DateTimeOffset now)
     {
         Status = VisitStatus.Revoked;
+        RevokedBy = revokedBy;
+        RevokedAt = now;
     }
 
     /// <summary>Dépassement de la durée de visite prévue — supervision, jamais bloquant.</summary>

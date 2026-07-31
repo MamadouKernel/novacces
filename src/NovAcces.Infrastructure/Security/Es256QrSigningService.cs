@@ -16,8 +16,11 @@ public sealed class QrSigningOptions
     /// </summary>
     public string PrivateKeyPem { get; set; } = default!;
 
-    /// <summary>Clé publique correspondante — c'est elle qui est embarquée dans l'app agent MAUI.</summary>
+    /// <summary>Clé publique correspondante — c'est elle qui est embarquée dans le client mobile agent.</summary>
     public string PublicKeyPem { get; set; } = default!;
+
+    /// <summary>Identifiant de la clé publique courante, rotatable sans republier l'application.</summary>
+    public string KeyId { get; set; } = "current";
 }
 
 /// <summary>
@@ -33,7 +36,7 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
 {
     private readonly ECDsa _signingKey;   // clé privée — signe uniquement côté serveur
     private readonly ECDsa _verifyingKey; // clé publique — utilisée aussi côté serveur ici,
-                                           // et embarquée séparément dans l'app agent pour le mode dégradé
+                                           // et embarquée séparément dans le client mobile pour le mode dégradé
 
     public Es256QrSigningService(IOptions<QrSigningOptions> options)
     {
@@ -66,7 +69,9 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
         IReadOnlyCollection<OfflineListEntry> entries, DateTimeOffset issuedAt, DateTimeOffset expiresAt)
     {
         var payload = new OfflineListPayload(
-            entries.Select(e => new OfflineEntryDto(e.VisitId, e.VisitToken, e.ScheduledAt?.ToUnixTimeSeconds(), e.IsExcluded)).ToArray(),
+            entries.Select(e => new OfflineEntryDto(
+                e.VisitId, e.VisitToken, e.ScheduledAt?.ToUnixTimeSeconds(), e.IsExcluded, e.IsOnSite,
+                e.VisitorName, e.Mode, e.WindowStart?.ToUnixTimeSeconds(), e.WindowEnd?.ToUnixTimeSeconds(), e.Status)).ToArray(),
             issuedAt.ToUnixTimeSeconds(),
             expiresAt.ToUnixTimeSeconds());
 
@@ -86,7 +91,10 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
             .Select(e => new OfflineListEntry(
                 e.VisitId, e.VisitToken,
                 e.ScheduledAtUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.ScheduledAtUnix.Value) : null,
-                e.IsExcluded))
+                e.IsExcluded, e.IsOnSite, e.VisitorName, e.Mode,
+                e.WindowStartUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.WindowStartUnix.Value) : null,
+                e.WindowEndUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.WindowEndUnix.Value) : null,
+                e.Status))
             .ToArray();
 
         return new OfflineListVerificationResult(true, isExpired, entries);
@@ -153,6 +161,9 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
 
     private sealed record SignedEnvelope(string PayloadB64Url, string SignatureB64Url);
     private sealed record VisitTokenPayload(Guid VisitId, Guid VisitToken, long Exp);
-    private sealed record OfflineEntryDto(Guid VisitId, Guid VisitToken, long? ScheduledAtUnix, bool IsExcluded);
+    private sealed record OfflineEntryDto(
+        Guid VisitId, Guid VisitToken, long? ScheduledAtUnix, bool IsExcluded, bool IsOnSite = false,
+        string? VisitorName = null, string? Mode = null, long? WindowStartUnix = null,
+        long? WindowEndUnix = null, string? Status = null);
     private sealed record OfflineListPayload(OfflineEntryDto[] Entries, long IssuedAt, long Exp);
 }

@@ -1,14 +1,64 @@
+using Microsoft.EntityFrameworkCore;
 using NovAcces.Application.Visits;
+using NovAcces.Domain.Entities;
+using NovAcces.Infrastructure.Persistence;
 
 namespace NovAcces.Infrastructure;
 
 /// <summary>
-/// Implémentation minimale (jalon 1). En jalon 2 : table dédiée par tenant
-/// (exclusion_entries) gérée depuis le dashboard sûreté, avec comparaison
-/// normalisée (casse, accents) plutôt qu'une égalité stricte.
+/// Liste d'exclusion par site (REQ-F-11), stockée dans le schéma du tenant.
+/// La comparaison se fait sur le nom NORMALISÉ (casse et accents neutralisés,
+/// voir ExclusionEntry.Normalize) pour éviter les contournements triviaux.
 /// </summary>
 public sealed class ExclusionListService : IExclusionListService
 {
-    public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct)
-        => Task.FromResult(false);
+    private readonly NovAccesDbContext _db;
+
+    public ExclusionListService(NovAccesDbContext db) => _db = db;
+
+    public async Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var normalized = ExclusionEntry.Normalize(visitorName);
+        return await _db.ExclusionEntries.AnyAsync(e => e.NormalizedName == normalized, ct);
+    }
+
+    public async Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.ExclusionEntries
+            .OrderBy(e => e.DisplayName)
+            .Select(e => new ExclusionEntryView(e.Id, e.DisplayName, e.Reason, e.AddedBy, e.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    public async Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+
+        var normalized = ExclusionEntry.Normalize(displayName);
+        var existing = await _db.ExclusionEntries
+            .Where(e => e.NormalizedName == normalized)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+        if (existing is { } id)
+            return id; // idempotent : déjà exclu
+
+        var entry = ExclusionEntry.Create(displayName, reason, addedBy, DateTimeOffset.UtcNow);
+        _db.ExclusionEntries.Add(entry);
+        await _db.SaveChangesAsync(ct);
+        return entry.Id;
+    }
+
+    public async Task<bool> RemoveAsync(Guid id, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var entry = await _db.ExclusionEntries.FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (entry is null)
+            return false;
+
+        _db.ExclusionEntries.Remove(entry);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
 }

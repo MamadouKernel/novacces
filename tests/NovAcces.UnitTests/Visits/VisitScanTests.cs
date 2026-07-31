@@ -124,12 +124,26 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Revoke();
+        visit.Revoke("surete-01", now);
 
         var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
 
         Assert.False(outcome.IsGranted);
         Assert.Equal(ScanDenialReason.Revoked, outcome.DenialReason);
+    }
+
+    [Fact]
+    public void Revoke_RecordsWhoAndWhen()
+    {
+        // Audit de l'action de révocation (REQ-F-09, traçabilité §8.5).
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now);
+
+        visit.Revoke("surete-07", now);
+
+        Assert.Equal(VisitStatus.Revoked, visit.Status);
+        Assert.Equal("surete-07", visit.RevokedBy);
+        Assert.Equal(now, visit.RevokedAt);
     }
 
     [Fact]
@@ -139,7 +153,7 @@ public class VisitScanTests
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
         visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
-        visit.Revoke();
+        visit.Revoke("surete-01", now);
 
         var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(10));
 

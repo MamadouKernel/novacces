@@ -1,17 +1,28 @@
+using System.Security.Claims;
 using NovAcces.Infrastructure.Persistence.Tenancy;
+using NovAcces.Shared.Auth;
 
 namespace NovAcces.Api.Middleware;
 
 /// <summary>
-/// Résout le tenant AVANT tout accès aux données, pour CHAQUE requête :
-///  - Portail web (Blazor) : sous-domaine (sicopa.novacces.ci → "sicopa")
-///  - Application agent (MAUI) : en-tête X-Site-Id, combiné à la clé API du
-///    terminal enrôlé (vérifiée par ApiKeyAuthenticationMiddleware, à ajouter
-///    en jalon 2) — jamais fait confiance à l'en-tête seul en production.
+/// Résout le tenant AVANT tout accès aux données métier (REQ-F-10). Placé APRÈS
+/// l'authentification : le site provient en priorité du claim SiteId du principal
+/// authentifié (JWT d'un utilisateur web, ou clé API d'un terminal agent), et NON
+/// d'un en-tête X-Site-Id falsifiable.
 ///
-/// Toute requête dont le tenant ne peut pas être résolu est rejetée en 400
-/// AVANT d'atteindre un contrôleur : c'est la garantie qu'aucune requête ne
-/// peut accidentellement s'exécuter sans cloisonnement (REQ-F-10).
+///  - Utilisateur rattaché à un site (Hôte / Sûreté / Agent, terminal à un seul
+///    site) : tenant = son claim SiteId. Un en-tête X-Site-Id divergent est
+///    rejeté (tentative d'accès à un autre site que le sien = 403).
+///  - Terminal partagé entre plusieurs sites (claims AllowedSite, pas de claim
+///    SiteId unique) : l'en-tête X-Site-Id est OBLIGATOIRE et DOIT figurer
+///    dans la liste AllowedSite du terminal — un site hors liste est un 403,
+///    tout comme une requête sans en-tête. C'est le choix fait par l'agent à
+///    la prise de poste, mais jamais un site arbitraire (cloisonnement §7.3).
+///  - Admin global (aucun claim SiteId ni AllowedSite) : peut cibler un site
+///    via X-Site-Id, sans restriction (confiance déjà accordée par le rôle).
+///  - Requête non authentifiée : aucun tenant résolu ; l'autorisation rejettera
+///    l'accès aux endpoints protégés (401/403). Les endpoints publics (login,
+///    health, hub) sont exemptés ci-dessous.
 /// </summary>
 public sealed class TenantResolutionMiddleware
 {
@@ -21,54 +32,84 @@ public sealed class TenantResolutionMiddleware
 
     public async Task InvokeAsync(HttpContext context, CurrentTenant currentTenant)
     {
-        // Endpoints exemptés : health check, et le Hub SignalR (/hubs/*) qui
-        // valide lui-même son site via la query string à la connexion — une
-        // connexion WebSocket persistante ne repasse pas par ce middleware à
-        // chaque message, contrairement à une requête HTTP classique.
-        if (context.Request.Path.StartsWithSegments("/health")
-            || context.Request.Path.StartsWithSegments("/hubs"))
+        if (IsExempt(context.Request.Path))
         {
             await _next(context);
             return;
         }
 
-        var siteId = ExtractSiteId(context);
+        var claimSite = context.User?.FindFirstValue(NovAccesClaimTypes.SiteId);
+        var headerSite = context.Request.Headers.TryGetValue("X-Site-Id", out var h) ? h.ToString() : null;
 
-        if (string.IsNullOrWhiteSpace(siteId))
+        string? siteId;
+        if (!string.IsNullOrWhiteSpace(claimSite))
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = "Site non identifié (sous-domaine ou en-tête X-Site-Id requis)." });
-            return;
+            // Le site de l'utilisateur fait foi. Un en-tête qui tenterait de viser
+            // un AUTRE site est une tentative d'évasion de tenant : on refuse.
+            if (!string.IsNullOrWhiteSpace(headerSite)
+                && !string.Equals(headerSite, claimSite, StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new { error = "Site demandé incohérent avec le compte." });
+                return;
+            }
+            siteId = claimSite;
+        }
+        else
+        {
+            var allowedSites = context.User?.FindAll(NovAccesClaimTypes.AllowedSite)
+                .Select(c => c.Value).ToList() ?? new List<string>();
+
+            if (allowedSites.Count > 0)
+            {
+                // Terminal partagé entre plusieurs sites : l'agent DOIT avoir choisi
+                // un site (X-Site-Id), et UNIQUEMENT parmi ceux autorisés pour ce
+                // terminal — jamais un site quelconque du parc.
+                if (string.IsNullOrWhiteSpace(headerSite)
+                    || !allowedSites.Contains(headerSite, StringComparer.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Site non autorisé pour ce terminal." });
+                    return;
+                }
+                siteId = headerSite;
+            }
+            else
+            {
+                // Pas de site dans l'identité (Admin global, ou requête non encore
+                // authentifiée arrivant sur un endpoint qui sera protégé plus loin).
+                siteId = headerSite;
+            }
         }
 
-        try
+        if (!string.IsNullOrWhiteSpace(siteId))
         {
-            currentTenant.Resolve(siteId);
-        }
-        catch (ArgumentException)
-        {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = "Identifiant de site invalide." });
-            return;
+            try
+            {
+                currentTenant.Resolve(siteId);
+            }
+            catch (ArgumentException)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(new { error = "Identifiant de site invalide." });
+                return;
+            }
         }
 
         await _next(context);
     }
 
-    private static string? ExtractSiteId(HttpContext context)
-    {
-        // 1. En-tête explicite (app agent, intégrations)
-        if (context.Request.Headers.TryGetValue("X-Site-Id", out var headerValue))
-            return headerValue.ToString();
-
-        // 2. Sous-domaine (portail web) : sicopa.novacces.ci -> "sicopa"
-        var host = context.Request.Host.Host;
-        var parts = host.Split('.');
-        if (parts.Length >= 3) // sous-domaine.domaine.tld
-            return parts[0];
-
-        return null;
-    }
+    private static bool IsExempt(PathString path) =>
+        path.StartsWithSegments("/health")
+        || path.StartsWithSegments("/api/health")
+        || path.StartsWithSegments("/hubs")
+        || path.StartsWithSegments("/swagger")
+        || path.StartsWithSegments("/api/auth")
+        // Lit uniquement les claims du terminal (sites qu'il est autorisé à
+        // servir) pour peupler le sélecteur de site à la prise de poste — ne
+        // touche aucune donnée de tenant, donc pas besoin de site résolu.
+        || path.StartsWithSegments("/api/agent/sites")
+        || path.StartsWithSegments("/api/keys/public");
 }
 
 public static class TenantResolutionMiddlewareExtensions

@@ -34,9 +34,18 @@ file sealed class FakeVisitRepository : IVisitRepository
     public Visit? VisitToReturn { get; set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
+    public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) => Task.CompletedTask;
     public Task<IReadOnlyCollection<Visit>> GetTodayActiveVisitsAsync(DateTimeOffset today, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<Visit>> GetOnSiteAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<KnownVisitor>>(Array.Empty<KnownVisitor>());
+    public Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)
+        => Task.FromResult(false);
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -44,6 +53,10 @@ file sealed class FakeScanLogRepository : IScanLogRepository
 {
     public List<ScanLogEntry> Entries { get; } = new();
     public Task AddAsync(ScanLogEntry entry, CancellationToken ct) { Entries.Add(entry); return Task.CompletedTask; }
+    public Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
+    public Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -55,6 +68,18 @@ file sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
         LastBroadcast = scanEvent;
         return Task.CompletedTask;
     }
+    public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Doublure de transaction : exécute l'opération directement (pas de base en
+/// test unitaire). La vraie sémantique transactionnelle/verrou est couverte par
+/// NovAcces.IntegrationTests (test de concurrence anti-rejeu).
+/// </summary>
+file sealed class FakeUnitOfWork : IUnitOfWork
+{
+    public Task<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> operation, CancellationToken ct = default) => operation(ct);
 }
 
 public class ScanQrHandlerTests
@@ -78,7 +103,7 @@ public class ScanQrHandlerTests
         var logs = new FakeScanLogRepository();
         var handler = new ScanQrHandler(
             signing, visits, logs, clock,
-            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
+            new FakeScanEventBroadcaster(), new FakeUnitOfWork(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),
@@ -105,7 +130,7 @@ public class ScanQrHandlerTests
         var logs = new FakeScanLogRepository();
         var handler = new ScanQrHandler(
             signing, visits, logs, clock,
-            new FakeScanEventBroadcaster(), NullLogger<ScanQrHandler>.Instance);
+            new FakeScanEventBroadcaster(), new FakeUnitOfWork(), NullLogger<ScanQrHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new ScanQrCommand("payload", CheckpointDirection.Entry, "SG-0417", false, true),

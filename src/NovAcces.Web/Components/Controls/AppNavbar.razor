@@ -1,0 +1,91 @@
+@* Barre de navigation (console) — marque + utilisateur + menu (profil / déconnexion).
+   Affichée sur toutes les pages authentifiées ; absente de la connexion. *@
+@implements IDisposable
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (Auth.Initialized && Auth.IsAuthenticated)
+{
+    <header class="navbar">
+        <div class="navbar-in">
+            <a class="navbar-brand" href="@Landing()">NOV<span>ACCÈS</span></a>
+
+            <div class="navbar-user">
+                <button class="navbar-userbtn" @onclick="Toggle" @onclick:stopPropagation="true">
+                    <span class="avatar">@Initials()</span>
+                    <span class="navbar-uinfo">
+                        <span class="navbar-uname">@Auth.DisplayName</span>
+                        <span class="navbar-urole">@RoleLabel()@(string.IsNullOrEmpty(Auth.SiteId) ? "" : $" · {Auth.SiteId}")</span>
+                    </span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="navbar-chevron"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+
+                @if (_open)
+                {
+                    <div class="navbar-menu" @onclick:stopPropagation="true">
+                        <button class="navbar-item" @onclick="OpenProfile">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+                            Modifier mes données
+                        </button>
+                        <button class="navbar-item danger" @onclick="SignOut">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+                            Se déconnecter
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </header>
+
+    @if (_open)
+    {
+        <div class="navbar-backdrop" @onclick="() => _open = false"></div>
+    }
+
+    @if (_showProfile)
+    {
+        <ProfileEditor OnClose="() => _showProfile = false" />
+    }
+}
+
+@code {
+    private bool _open;
+    private bool _showProfile;
+
+    protected override void OnInitialized() => Auth.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnChanged;
+
+    private void Toggle() => _open = !_open;
+
+    private void OpenProfile() { _open = false; _showProfile = true; }
+
+    private void SignOut()
+    {
+        _open = false;
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+
+    private string Landing() =>
+        Auth.IsInRole(NovAccesRoles.Admin) && !Auth.IsInRole(NovAccesRoles.Hote) ? "/admin"
+        : Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote) ? "/surete"
+        : "/hote";
+
+    private string RoleLabel() =>
+        Auth.IsInRole(NovAccesRoles.Admin) ? "Admin"
+        : Auth.IsInRole(NovAccesRoles.Surete) ? "Sûreté"
+        : Auth.IsInRole(NovAccesRoles.Hote) ? "Hôte" : "";
+
+    private string Initials()
+    {
+        var name = (Auth.DisplayName ?? "").Trim();
+        if (name.Length == 0) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
+            : name[..1].ToUpperInvariant();
+    }
+}

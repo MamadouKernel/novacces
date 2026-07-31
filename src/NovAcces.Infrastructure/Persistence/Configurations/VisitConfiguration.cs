@@ -27,5 +27,13 @@ public sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
         // Champs utilisés pour la recherche/filtre côté sûreté et hôte.
         builder.HasIndex(v => v.HostUserId);
         builder.HasIndex(v => v.IsOnSite);
+
+        // L'index unique partiel "une seule demande active par visiteur"
+        // (nom + société, sur les valeurs normalisées) n'est PAS déclaré ici :
+        // Fluent API ne sait pas exprimer lower(btrim(...)) sur une colonne.
+        // Il est posé en SQL brut par la migration AddActiveVisitorUniqueIndex
+        // — voir VisitRepository.HasActiveVisitForVisitorAsync (vérification
+        // applicative, même normalisation) et VisitRepository.SaveChangesAsync
+        // (traduction de la violation en DuplicateActiveVisitException).
     }
 }

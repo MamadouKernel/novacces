@@ -1,0 +1,464 @@
+@page "/admin"
+@implements IDisposable
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration</PageTitle>
+
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (Auth.IsInRole(NovAccesRoles.Admin))
+{
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Administration</h1>
+            <p class="muted">Connecté : @Auth.DisplayName (Admin Sigasécurité)</p>
+        </div>
+    </header>
+
+    @if (_overview.Count > 0)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_overview.Count</span><span class="tile-l">Sites actifs</span></div>
+            <div class="tile tile-in"><span class="tile-n">@_overview.Sum(s => s.OnSite)</span><span class="tile-l">Présents (tous sites)</span></div>
+            <div class="tile"><span class="tile-n">@_overview.Sum(s => s.ScansToday)</span><span class="tile-l">Scans aujourd'hui</span></div>
+            <div class="tile"><span class="tile-n">@_users.Count</span><span class="tile-l">Comptes</span></div>
+        </div>
+    }
+
+    @if (_loaded && _overview.Count == 0 && _users.Count <= 1)
+    {
+        <section class="card" style="margin-bottom:1.2rem;border-left:4px solid #f5a300;">
+            <h2>Bienvenue — démarrage en 2 étapes</h2>
+            <ol style="margin:0;padding-left:1.2rem;line-height:1.9;color:#3c4854;">
+                <li><strong>Provisionnez un site</strong> (ci-dessous) : tapez le nom du client, l'identifiant technique est généré tout seul.</li>
+                <li><strong>Créez un compte Hôte et un compte Sûreté</strong> pour ce site : ils pourront alors inviter des visiteurs et superviser les accès.</li>
+            </ol>
+        </section>
+    }
+
+    <section class="card" style="margin-bottom:1.2rem;">
+        <h2>Vue consolidée multi-sites (@_overview.Count)</h2>
+        @if (_overview.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun site provisionné pour l'instant.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
+                <tbody>
+                    @foreach (var s in _overview)
+                    {
+                        <tr><td><strong>@s.SiteId</strong></td><td>@s.OnSite</td><td>@s.ScansToday</td></tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    </section>
+
+    @if (_overview.Count > 0 && _overview.Any(s => s.ScansToday > 0))
+    {
+        var maxScans = _overview.Max(s => s.ScansToday);
+        <section class="card" style="margin-bottom:1.2rem;">
+            <h2>Affluence par site (scans aujourd'hui)</h2>
+            <div class="chart">
+                @foreach (var s in _overview.OrderByDescending(s => s.ScansToday))
+                {
+                    <div class="chart-row">
+                        <span class="chart-label">@s.SiteId</span>
+                        <div class="chart-track">
+                            <div class="chart-fill @(s.ScansToday == maxScans ? "peak" : "")"
+                                 style="width:@(maxScans > 0 ? (int)Math.Round(s.ScansToday * 100.0 / maxScans) : 0)%"></div>
+                        </div>
+                        <span class="chart-val">@s.ScansToday scans · @s.OnSite présents</span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    <div class="cards">
+        <section class="card">
+            <h2>Créer un compte</h2>
+            <div class="field"><label>Email</label>
+                <input type="email" @bind="_newUser.Email" placeholder="prenom@site.local" /></div>
+            <div class="field"><label>Nom affiché</label>
+                <input @bind="_newUser.DisplayName" placeholder="ex. K. N'Guessan" /></div>
+            <PasswordBox @bind-Value="_newUser.Password" Label="Mot de passe" Autocomplete="new-password" />
+            <p class="hint" style="margin-top:-.6rem">12 caractères minimum.</p>
+            <div class="row">
+                <div class="field"><label>Rôle</label>
+                    <select @bind="_newUser.Role">
+                        <option value="Hote">Hôte — crée les demandes de visite</option>
+                        <option value="Surete">Sûreté — supervise les accès</option>
+                        <option value="Admin">Admin — global (tous les sites)</option>
+                    </select>
+                </div>
+                <div class="field"><label>Site @(_newUser.Role == "Admin" ? "(non requis)" : "(requis)")</label>
+                    <select @bind="_newUser.SiteId" disabled="@(_newUser.Role == "Admin")">
+                        <option value="">— choisir un site —</option>
+                        @foreach (var s in _overview)
+                        {
+                            <option value="@s.SiteId">@s.SiteId</option>
+                        }
+                    </select>
+                    @if (_newUser.Role != "Admin" && _overview.Count == 0)
+                    {
+                        <p class="hint">Aucun site provisionné — créez-en un à droite d'abord.</p>
+                    }
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="CreateUserAsync" disabled="@_busy">Créer le compte</button>
+            @if (_userMsg is not null) { <p class="@(_userOk ? "info" : "error")">@_userMsg</p> }
+        </section>
+
+        <section class="card">
+            <h2>Provisionner un site</h2>
+            <p class="muted">Crée le schéma, le modèle de données et le journal append-only.</p>
+            <div class="field"><label>Nom du site</label>
+                <input @bind="_siteInput" @bind:event="oninput"
+                       placeholder="ex. Côte d'Ivoire Terminal" /></div>
+            @if (!string.IsNullOrWhiteSpace(_siteInput))
+            {
+                <p class="hint" style="margin-top:-.6rem">
+                    Identifiant technique : <code>@SiteSlugValue</code>
+                    <span class="muted"> — minuscules, sans espaces ni accents (a-z, 0-9, _).</span>
+                </p>
+            }
+            else
+            {
+                <p class="hint" style="margin-top:-.6rem">
+                    Tapez le nom du client — l'identifiant technique est généré automatiquement.
+                </p>
+            }
+            <button class="btn-primary" @onclick="ProvisionAsync"
+                    disabled="@(_busy || string.IsNullOrEmpty(SiteSlugValue))">
+                @(string.IsNullOrEmpty(SiteSlugValue) ? "Provisionner" : $"Provisionner « {SiteSlugValue} »")
+            </button>
+            @if (_siteMsg is not null) { <p class="@(_siteOk ? "info" : "error")">@_siteMsg</p> }
+        </section>
+    </div>
+
+    <section class="card" style="margin-top:1.2rem;">
+        <h2>Agents (prise de poste)</h2>
+        <p class="muted">Matricule + PIN pour l'identification de l'agent sur le terminal. Le PIN sert au « prendre le poste » et n'est jamais affiché après création.</p>
+
+        <div class="field" style="max-width:22rem"><label>Site</label>
+            <select @bind="_agentSite" @bind:after="RefreshAgentsAsync">
+                <option value="">— choisir un site —</option>
+                @foreach (var s in _overview)
+                {
+                    <option value="@s.SiteId">@s.SiteId</option>
+                }
+            </select>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_agentSite))
+        {
+            <div class="row">
+                <div class="field"><label>Matricule</label>
+                    <input @bind="_newAgent.Matricule" placeholder="ex. SG-0417" /></div>
+                <div class="field"><label>Nom</label>
+                    <input @bind="_newAgent.DisplayName" placeholder="ex. A. Traoré" /></div>
+                <div class="field"><label>Code PIN</label>
+                    <input type="password" inputmode="numeric" @bind="_newAgent.Pin" placeholder="4 à 8 chiffres" /></div>
+            </div>
+            <button class="btn-primary" @onclick="CreateAgentAsync" disabled="@_busy">Créer l'agent</button>
+            @if (_agentMsg is not null) { <p class="@(_agentOk ? "info" : "error")">@_agentMsg</p> }
+
+            <div class="table-wrap" style="margin-top:1rem">
+            <table class="visits">
+                <thead><tr><th>Matricule</th><th>Nom</th></tr></thead>
+                <tbody>
+                    @foreach (var a in _agents)
+                    {
+                        <tr><td><strong>@a.Matricule</strong></td><td class="muted">@a.DisplayName</td></tr>
+                    }
+                    @if (_agents.Count == 0)
+                    {
+                        <tr><td colspan="2" class="muted">Aucun agent pour ce site.</td></tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    </section>
+
+    <section class="card" style="margin-top:1.2rem;">
+        <h2>Comptes</h2>
+        @if (_users.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun compte pour le moment.</p></div>
+        }
+        else
+        {
+            <div class="toolbar">
+                <input class="search" placeholder="Rechercher un email, un nom, un site…"
+                       @bind="_userSearch" @bind:event="oninput" />
+                <div class="filters">
+                    @foreach (var f in RoleFilters)
+                    {
+                        <button class="filter @(_roleFilter == f.Key ? "on" : "")"
+                                @onclick="() => _roleFilter = f.Key">
+                            @f.Label <span class="count">@RoleCount(f.Key)</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            var urows = FilteredUsers;
+            if (urows.Count == 0)
+            {
+                <div class="empty">
+                    @EmptyIcon()<p>Aucun compte ne correspond à la recherche.</p>
+                    <button class="btn-ghost" @onclick="ResetUserFilters">Réinitialiser</button>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                <table class="visits">
+                    <thead><tr><th>Email</th><th>Nom</th><th>Rôles</th><th>Site</th><th>2FA</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in urows)
+                        {
+                            <tr>
+                                <td>@Highlight(u.Email)</td>
+                                <td class="muted">@Highlight(u.DisplayName)</td>
+                                <td>
+                                    @foreach (var r in u.Roles)
+                                    {
+                                        <span class="badge badge-onsite" style="margin-right:.25rem">@r</span>
+                                    }
+                                </td>
+                                <td>@Highlight(u.SiteId ?? "—")</td>
+                                <td>@(u.TwoFactorEnabled ? "✅" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+                <p class="hint">@urows.Count compte(s) affiché(s) sur @_users.Count.</p>
+            }
+        }
+    </section>
+</div>
+}
+
+@code {
+    private bool _loaded;
+
+    private sealed class NewUser
+    {
+        public string Email = "";
+        public string DisplayName = "";
+        public string Password = "";
+        public string Role = "Hote";
+        public string SiteId = "";
+    }
+
+    private readonly NewUser _newUser = new();
+
+    // Agents (prise de poste) : sélection de site + ajout matricule/PIN.
+    private sealed class NewAgent { public string Matricule = ""; public string DisplayName = ""; public string Pin = ""; }
+    private readonly NewAgent _newAgent = new();
+    private string _agentSite = "";
+    private IReadOnlyList<AgentSummaryDto> _agents = Array.Empty<AgentSummaryDto>();
+    private string? _agentMsg; private bool _agentOk;
+
+    private string _siteInput = "";
+    private string SiteSlugValue => SiteSlug.From(_siteInput);
+    private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+    private bool _busy;
+    private string? _userMsg; private bool _userOk;
+    private string? _siteMsg; private bool _siteOk;
+
+    // ── Liste intelligente des comptes : recherche + filtre par rôle ──
+    private string _userSearch = "";
+    private string _roleFilter = "all";
+
+    private static readonly (string Key, string Label)[] RoleFilters =
+    {
+        ("all", "Tous"), ("Admin", "Admin"), ("Surete", "Sûreté"), ("Hote", "Hôte"),
+    };
+
+    private int RoleCount(string key) =>
+        key == "all" ? _users.Count : _users.Count(u => u.Roles.Contains(key));
+
+    private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; }
+
+    private IReadOnlyList<AdminUserDto> FilteredUsers
+    {
+        get
+        {
+            IEnumerable<AdminUserDto> q = _users;
+
+            if (_roleFilter != "all")
+                q = q.Where(u => u.Roles.Contains(_roleFilter));
+
+            var s = _userSearch?.Trim();
+            if (!string.IsNullOrEmpty(s))
+                q = q.Where(u =>
+                    (u.Email?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (u.DisplayName?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (u.SiteId?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            return q.OrderBy(u => u.Email).ToList();
+        }
+    }
+
+    private MarkupString Highlight(string? text)
+    {
+        var t = text ?? "";
+        var s = _userSearch?.Trim();
+        if (string.IsNullOrEmpty(s))
+            return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var idx = t.IndexOf(s, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var before = System.Net.WebUtility.HtmlEncode(t[..idx]);
+        var match  = System.Net.WebUtility.HtmlEncode(t.Substring(idx, s.Length));
+        var after  = Highlight(t[(idx + s.Length)..]).Value;
+        return (MarkupString)$"{before}<mark>{match}</mark>{after}";
+    }
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Auth.Initialized) return;
+
+        if (!Auth.IsInRole(NovAccesRoles.Admin))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        if (!_loaded)
+        {
+            _loaded = true;
+            await RefreshUsersAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+
+    private async Task RefreshUsersAsync()
+    {
+        try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        _busy = true; _userMsg = null;
+        try
+        {
+            var siteId = _newUser.Role == NovAccesRoles.Admin ? null
+                : string.IsNullOrWhiteSpace(_newUser.SiteId) ? null : SiteSlug.From(_newUser.SiteId);
+
+            if (_newUser.Role != NovAccesRoles.Admin && string.IsNullOrEmpty(siteId))
+            {
+                _userOk = false; _userMsg = "Renseignez le site (obligatoire sauf pour un Admin).";
+                return;
+            }
+
+            var (ok, error) = await Api.RegisterUserAsync(new RegisterUserRequestDto(
+                _newUser.Email.Trim(), _newUser.Password, _newUser.DisplayName.Trim(), _newUser.Role, siteId));
+
+            _userOk = ok;
+            _userMsg = ok ? "Compte créé." : error;
+            if (ok)
+            {
+                Toasts.Success($"Compte « {_newUser.Email.Trim()} » créé.");
+                _newUser.Email = _newUser.DisplayName = _newUser.Password = _newUser.SiteId = "";
+                await RefreshUsersAsync();
+            }
+            else { Toasts.Error(error ?? "Création refusée."); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ProvisionAsync()
+    {
+        var slug = SiteSlugValue;
+        if (string.IsNullOrEmpty(slug))
+        {
+            _siteOk = false; _siteMsg = "Saisissez un nom de site.";
+            return;
+        }
+
+        _busy = true; _siteMsg = null;
+        try
+        {
+            var (ok, error) = await Api.ProvisionSiteAsync(slug);
+            _siteOk = ok;
+            _siteMsg = ok ? $"Site « {slug} » provisionné." : error;
+            if (ok)
+            {
+                Toasts.Success($"Site « {slug} » provisionné.");
+                _siteInput = "";
+                await RefreshUsersAsync(); // recharge la liste des sites (menu déroulant)
+            }
+            else { Toasts.Error(error ?? "Provisionnement refusé."); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RefreshAgentsAsync()
+    {
+        _agents = Array.Empty<AgentSummaryDto>();
+        if (string.IsNullOrEmpty(_agentSite)) return;
+        try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        if (string.IsNullOrEmpty(_agentSite))
+        {
+            _agentOk = false; _agentMsg = "Choisissez un site.";
+            return;
+        }
+
+        _busy = true; _agentMsg = null;
+        try
+        {
+            var (ok, error) = await Api.CreateAgentAsync(
+                _agentSite, _newAgent.Matricule.Trim(), _newAgent.DisplayName.Trim(), _newAgent.Pin.Trim());
+
+            _agentOk = ok;
+            _agentMsg = ok ? "Agent créé." : error;
+            if (ok)
+            {
+                Toasts.Success($"Agent « {_newAgent.Matricule.Trim()} » créé.");
+                _newAgent.Matricule = _newAgent.DisplayName = _newAgent.Pin = "";
+                await RefreshAgentsAsync();
+            }
+            else { Toasts.Error(error ?? "Création refusée."); }
+        }
+        finally { _busy = false; }
+    }
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+}

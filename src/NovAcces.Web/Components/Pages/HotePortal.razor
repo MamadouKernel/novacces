@@ -1,0 +1,507 @@
+@page "/hote"
+@implements IDisposable
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>NovAcces — Portail hôte</PageTitle>
+
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (Auth.IsInRole(NovAccesRoles.Hote))
+{
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Nouvelle demande de visite</h1>
+            <p class="muted">Site : <strong>@(Auth.SiteId ?? "—")</strong> · Connecté : @Auth.DisplayName</p>
+            <p class="hint">Renseignez le visiteur puis générez son QR : il le reçoit automatiquement par WhatsApp (repli email). Pour plusieurs personnes, utilisez <strong>Inviter un groupe</strong>.</p>
+            @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+            {
+                <div class="nav-links"><a href="/surete">→ Dashboard sûreté</a></div>
+            }
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <button class="btn-accent" @onclick="() => _showGroup = true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                Inviter un groupe
+            </button>
+        </div>
+    </header>
+
+    @if (_myVisits.Count > 0)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_myVisits.Count</span><span class="tile-l">Demandes</span></div>
+            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status == "Valid")</span><span class="tile-l">Valides</span></div>
+            <div class="tile tile-in"><span class="tile-n">@_myVisits.Count(v => v.IsOnSite)</span><span class="tile-l">Sur site</span></div>
+            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status is "Revoked" or "Expired")</span><span class="tile-l">Closes</span></div>
+        </div>
+    }
+
+    <div class="cards">
+        <section class="card">
+            <h2>Visiteur</h2>
+            <div class="field"><label>Nom du visiteur</label>
+                <input @bind="_form.VisitorName" @bind:after="PrefillFromKnown" list="knownVisitors" />
+                <datalist id="knownVisitors">
+                    @foreach (var kv in _knownVisitors) { <option value="@kv.Name" /> }
+                </datalist>
+            </div>
+            <div class="field"><label>Société</label>
+                <input @bind="_form.VisitorCompany" /></div>
+            <div class="field"><label>Motif</label>
+                <input @bind="_form.Motif" /></div>
+
+            <div class="row">
+                <div class="field"><label>Mode</label>
+                    <select @bind="_form.Mode">
+                        <option value="Unique">Passage unique (rendez-vous)</option>
+                        <option value="ThirtyDays">Accès 30 jours ouvrés</option>
+                    </select>
+                </div>
+                <div class="field"><label>Durée prévue (min)</label>
+                    <input type="number" min="15" step="15" @bind="_form.PlannedDurationMinutes" /></div>
+            </div>
+
+            @if (_form.Mode == "Unique")
+            {
+                <div class="field"><label>Rendez-vous</label>
+                    <input type="datetime-local" @bind="_scheduledAt"
+                           min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm")" />
+                    <p class="hint">Le rendez-vous ne peut pas être dans le passé.</p>
+                </div>
+            }
+
+            <div class="row">
+                <div class="field"><label>Téléphone (WhatsApp)</label>
+                    <input @bind="_form.VisitorPhone" placeholder="+225…" /></div>
+                <div class="field"><label>Email (repli)</label>
+                    <input type="email" @bind="_form.VisitorEmail" /></div>
+            </div>
+
+            <button class="btn-primary" @onclick="CreateAsync" disabled="@_busy">
+                @(_busy ? "Génération…" : "Générer le QR")
+            </button>
+            @if (_error is not null) { <p class="error">@_error</p> }
+        </section>
+
+        <section class="card qr-panel">
+            <h2>QR généré</h2>
+            @if (_result is null)
+            {
+                <p class="muted">Le QR signé du visiteur s'affichera ici après génération.</p>
+            }
+            else
+            {
+                <div class="badge-doc" id="visitor-badge">
+                    <div class="badge-head">NOV<span>ACCÈS</span></div>
+                    <div class="badge-site">@((Auth.SiteId ?? "").ToUpperInvariant())</div>
+                    <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
+                    <div class="badge-name">@_lastVisitorName</div>
+                    <div class="badge-company">@_lastVisitorCompany</div>
+                    <div class="badge-valid">Valide jusqu'au @_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
+                    <div class="badge-foot">Présentez ce badge au poste de contrôle · Sigasécurité</div>
+                </div>
+
+                <p class="muted" style="margin-top:.6rem">Visite <code>@_result.VisitId</code></p>
+                <button class="btn-primary" style="max-width:220px" @onclick="PrintBadgeAsync">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+                    Imprimer le badge
+                </button>
+                <p class="hint">Le QR est aussi envoyé automatiquement au visiteur (WhatsApp, repli email).</p>
+            }
+        </section>
+    </div>
+
+    <section class="card" style="margin-top:1.2rem;">
+        <h2>Mes demandes</h2>
+        @if (_myVisits.Count == 0)
+        {
+            <div class="empty">
+                @EmptyIcon()
+                <p>Aucune demande pour le moment.</p>
+                <p class="hint">Générez un QR ci-dessus : la demande apparaîtra ici.</p>
+            </div>
+        }
+        else
+        {
+            <div class="toolbar">
+                <input class="search" placeholder="Rechercher un visiteur, une société, un motif…"
+                       @bind="_search" @bind:event="oninput" />
+                <div class="filters">
+                    @foreach (var f in StatusFilters)
+                    {
+                        <button class="filter @(_statusFilter == f.Key ? "on" : "")"
+                                @onclick="() => _statusFilter = f.Key">
+                            @f.Label <span class="count">@CountFor(f.Key)</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            var rows = FilteredVisits;
+            if (rows.Count == 0)
+            {
+                <div class="empty">
+                    @EmptyIcon()
+                    <p>Aucune demande ne correspond à la recherche.</p>
+                    <button class="btn-ghost" @onclick="ResetFilters">Réinitialiser les filtres</button>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                <table class="visits">
+                    <thead>
+                        <tr>
+                            <th class="sortable" @onclick='() => SortBy("name")'>Visiteur@(Arrow("name"))</th>
+                            <th>Société</th>
+                            <th>Mode</th>
+                            <th>Rendez-vous</th>
+                            <th class="sortable" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</th>
+                            <th class="sortable" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in rows)
+                        {
+                            <tr>
+                                <td>@Highlight(v.VisitorName)</td>
+                                <td class="muted">@Highlight(v.VisitorCompany)</td>
+                                <td>@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
+                                <td class="muted">@(v.Mode == "Unique" && v.ScheduledAt is { } rdv ? rdv.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
+                                <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
+                                <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
+                                <td>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <button class="btn-ghost" @onclick="() => _historyVisitId = v.VisitId">Historique</button>
+                                        @if (v.Status == "Valid")
+                                        {
+                                            <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-ghost" @onclick="() => ReInvite(v)">Ré-inviter</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+                <p class="hint">@rows.Count demande(s) affichée(s) sur @_myVisits.Count.</p>
+            }
+        }
+    </section>
+
+    @if (_showGroup)
+    {
+        <GroupInvite OnClose="() => _showGroup = false" OnCompleted="OnGroupCompleted" />
+    }
+
+    @if (_pendingRevoke is not null)
+    {
+        <div class="overlay" @onclick="() => _pendingRevoke = null">
+            <div class="modal" style="max-width:26rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div><h2>Révoquer le QR ?</h2></div>
+                </div>
+                <div class="modal-b">
+                    <p>Le QR de <strong>@_pendingRevoke.VisitorName</strong> sera invalidé immédiatement à l'entrée.</p>
+                    <p class="hint">Une sortie éventuelle reste toujours possible — on ne bloque jamais physiquement une personne déjà sur site.</p>
+                </div>
+                <div class="modal-f">
+                    <button class="btn-ghost" @onclick="() => _pendingRevoke = null">Annuler</button>
+                    <button class="btn-danger" style="max-width:180px" @onclick="ConfirmRevokeAsync" disabled="@_revoking">
+                        @(_revoking ? "Révocation…" : "Oui, révoquer")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_historyVisitId is { } hid)
+    {
+        <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
+    }
+</div>
+}
+
+@code {
+    private bool _showGroup;
+    private HostVisitDto? _pendingRevoke;
+    private Guid? _historyVisitId;
+
+    private async Task OnGroupCompleted()
+    {
+        await RefreshMyVisitsAsync();
+        StateHasChanged();
+    }
+
+    // Impression du badge : la feuille de style @media print n'imprime que
+    // l'élément #visitor-badge (le reste de la page est masqué).
+    private async Task PrintBadgeAsync()
+    {
+        try { await JS.InvokeVoidAsync("print"); } catch { /* best-effort */ }
+    }
+
+    private async Task ConfirmRevokeAsync()
+    {
+        if (_pendingRevoke is null) return;
+        var target = _pendingRevoke;
+        await RevokeAsync(target.VisitId);
+        _pendingRevoke = null;
+        Toasts.Success($"QR de « {target.VisitorName} » révoqué.");
+    }
+
+    private bool _loaded;
+
+    private sealed class VisitForm
+    {
+        public string VisitorName = "";
+        public string VisitorCompany = "";
+        public string Motif = "";
+        public string Mode = "Unique";
+        public int PlannedDurationMinutes = 60;
+        public string VisitorPhone = "";
+        public string VisitorEmail = "";
+    }
+
+    private readonly VisitForm _form = new();
+    private DateTime _scheduledAt = DateTime.Now;
+    private CreateVisitResponseDto? _result;
+    private string _lastVisitorName = "";
+    private string _lastVisitorCompany = "";
+    private IReadOnlyList<HostVisitDto> _myVisits = Array.Empty<HostVisitDto>();
+    private IReadOnlyList<KnownVisitorDto> _knownVisitors = Array.Empty<KnownVisitorDto>();
+    private bool _busy;
+    private bool _revoking;
+    private string? _error;
+
+    // ── Liste intelligente « Mes demandes » : recherche + filtre + tri ──
+    private string _search = "";
+    private string _statusFilter = "all";
+    private string _sortKey = "created";
+    private bool _sortAsc;
+
+    private static readonly (string Key, string Label)[] StatusFilters =
+    {
+        ("all", "Toutes"), ("Valid", "Valides"),
+        ("Revoked", "Révoquées"), ("Expired", "Expirées"),
+    };
+
+    private int CountFor(string key) =>
+        key == "all" ? _myVisits.Count : _myVisits.Count(v => v.Status == key);
+
+    private void ResetFilters() { _search = ""; _statusFilter = "all"; }
+
+    private void SortBy(string key)
+    {
+        if (_sortKey == key) { _sortAsc = !_sortAsc; }
+        else { _sortKey = key; _sortAsc = key == "name"; } // noms A→Z ; dates récentes d'abord
+    }
+
+    private MarkupString Arrow(string key) => _sortKey == key
+        ? (MarkupString)$"<span class=\"arrow\">{(_sortAsc ? "▲" : "▼")}</span>"
+        : default;
+
+    private IReadOnlyList<HostVisitDto> FilteredVisits
+    {
+        get
+        {
+            IEnumerable<HostVisitDto> q = _myVisits;
+
+            if (_statusFilter != "all")
+                q = q.Where(v => v.Status == _statusFilter);
+
+            var s = _search?.Trim();
+            if (!string.IsNullOrEmpty(s))
+                q = q.Where(v =>
+                    (v.VisitorName?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (v.VisitorCompany?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (v.Motif?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            q = _sortKey switch
+            {
+                "name"   => _sortAsc ? q.OrderBy(v => v.VisitorName) : q.OrderByDescending(v => v.VisitorName),
+                "status" => _sortAsc ? q.OrderBy(v => v.Status)      : q.OrderByDescending(v => v.Status),
+                _        => _sortAsc ? q.OrderBy(v => v.CreatedAt)   : q.OrderByDescending(v => v.CreatedAt),
+            };
+
+            return q.ToList();
+        }
+    }
+
+    // Surligne la portion recherchée (données visiteur encodées → pas d'injection).
+    private MarkupString Highlight(string? text)
+    {
+        var t = text ?? "";
+        var s = _search?.Trim();
+        if (string.IsNullOrEmpty(s))
+            return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var idx = t.IndexOf(s, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return (MarkupString)System.Net.WebUtility.HtmlEncode(t);
+
+        var before = System.Net.WebUtility.HtmlEncode(t[..idx]);
+        var match  = System.Net.WebUtility.HtmlEncode(t.Substring(idx, s.Length));
+        var after  = Highlight(t[(idx + s.Length)..]).Value; // gère les occurrences suivantes
+        return (MarkupString)$"{before}<mark>{match}</mark>{after}";
+    }
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    // On décide APRÈS que la session ait été restaurée (Auth.Initialized) :
+    // redirection si non autorisé, chargement des données sinon.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Auth.Initialized) return;
+
+        if (!Auth.IsInRole(NovAccesRoles.Hote))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        if (!_loaded)
+        {
+            _loaded = true;
+            await RefreshMyVisitsAsync();
+            try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
+            StateHasChanged();
+        }
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+
+    private async Task RefreshMyVisitsAsync()
+    {
+        try { _myVisits = await Api.GetMyVisitsAsync(); } catch { /* best-effort */ }
+    }
+
+    // Pré-remplit entreprise/motif/durée quand le nom saisi correspond à un
+    // visiteur déjà connu (§8 maquette).
+    private void PrefillFromKnown()
+    {
+        var match = _knownVisitors.FirstOrDefault(
+            k => string.Equals(k.Name, _form.VisitorName?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (match is null) return;
+
+        _form.VisitorCompany = match.Company;
+        _form.Motif = match.Motif;
+        if (match.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = match.PlannedDurationMinutes;
+    }
+
+    // Ré-invitation : pré-remplit le formulaire à partir d'une demande close.
+    private void ReInvite(HostVisitDto v)
+    {
+        _form.VisitorName = v.VisitorName;
+        _form.VisitorCompany = v.VisitorCompany;
+        _form.Motif = v.Motif;
+        if (v.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = v.PlannedDurationMinutes;
+        _result = null;
+        _error = null;
+    }
+
+    private async Task RevokeAsync(Guid visitId)
+    {
+        if (_revoking) return;
+        _revoking = true;
+        try
+        {
+            await Api.RevokeVisitAsync(visitId);
+            await RefreshMyVisitsAsync();
+        }
+        finally { _revoking = false; }
+    }
+
+    private static string StatusLabel(HostVisitDto v) => v.Status switch
+    {
+        "Valid" => "Valide",
+        "Revoked" => "Révoquée",
+        "Expired" => "Expirée",
+        _ => v.Status
+    };
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_form.VisitorName) || string.IsNullOrWhiteSpace(_form.VisitorCompany))
+        {
+            _error = "Nom du visiteur et société sont requis.";
+            Toasts.Error("Nom du visiteur et société sont requis.");
+            return;
+        }
+
+        if (_form.Mode == "Unique")
+        {
+            if (_scheduledAt == default)
+            {
+                _error = "Indiquez la date et l'heure du rendez-vous.";
+                Toasts.Error(_error);
+                return;
+            }
+            if (_scheduledAt < DateTime.Now.AddMinutes(-1))
+            {
+                _error = "Le rendez-vous ne peut pas être dans le passé.";
+                Toasts.Error(_error);
+                return;
+            }
+        }
+
+        _busy = true;
+        try
+        {
+            DateTimeOffset? scheduled = _form.Mode == "Unique"
+                ? new DateTimeOffset(_scheduledAt.ToUniversalTime(), TimeSpan.Zero)
+                : null;
+
+            var request = new CreateVisitRequestDto(
+                _form.VisitorName.Trim(), _form.VisitorCompany.Trim(), _form.Motif.Trim(),
+                _form.Mode, scheduled, _form.PlannedDurationMinutes,
+                string.IsNullOrWhiteSpace(_form.VisitorPhone) ? null : _form.VisitorPhone.Trim(),
+                string.IsNullOrWhiteSpace(_form.VisitorEmail) ? null : _form.VisitorEmail.Trim());
+
+            _result = await Api.CreateVisitAsync(request);
+
+            // Mémorise le visiteur pour le badge, PUIS vide le formulaire.
+            _lastVisitorName = _form.VisitorName.Trim();
+            _lastVisitorCompany = _form.VisitorCompany.Trim();
+
+            await RefreshMyVisitsAsync();
+            Toasts.Success($"QR généré pour « {_lastVisitorName} » — envoyé au visiteur.");
+
+            _form.VisitorName = _form.VisitorCompany = _form.Motif = _form.VisitorPhone = _form.VisitorEmail = "";
+            _form.Mode = "Unique";
+            _form.PlannedDurationMinutes = 60;
+            _scheduledAt = DateTime.Now;
+        }
+        catch
+        {
+            _error = "La génération a échoué (session expirée ou service indisponible).";
+            Toasts.Error("La génération a échoué (session ou service indisponible).");
+        }
+        finally { _busy = false; }
+    }
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+}

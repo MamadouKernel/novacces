@@ -75,23 +75,41 @@ public sealed class CreateVisitHandler
         {
             await _notifications.SendVisitInvitationAsync(
                 new VisitInvitationNotification(
-                    visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
+                    visit.Id, visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
                     signedPayload, visit.ScheduledAt, expiresAt),
                 ct);
         }
         catch (Exception ex)
         {
+            // Minimisation des données : on journalise l'identifiant opaque de
+            // la visite (corrélable au journal, sous contrôle d'accès), pas le
+            // nom du visiteur (PII).
             _logger.LogWarning(ex,
-                "Échec de l'envoi de l'invitation à {VisitorName} pour la visite {VisitId} — le QR reste valide.",
-                visit.VisitorName, visit.Id);
+                "Échec de l'envoi de l'invitation pour la visite {VisitId} — le QR reste valide.",
+                visit.Id);
         }
 
         return new CreateVisitResult(visit.Id, signedPayload, expiresAt);
     }
 }
 
-/// <summary>Vérification de la liste d'exclusion du site (REQ-F-11) — implémentation Infrastructure.</summary>
+/// <summary>
+/// Liste d'exclusion du site (REQ-F-11) — implémentation Infrastructure.
+/// La vérification (IsExcludedAsync) est utilisée à la création d'une visite ;
+/// la gestion (liste/ajout/retrait) est réservée à la sûreté (moindre privilège).
+/// </summary>
 public interface IExclusionListService
 {
     Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct);
+
+    Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct);
+
+    /// <summary>Ajoute (ou retrouve, si déjà présent) une entrée et retourne son identifiant.</summary>
+    Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
+
+    Task<bool> RemoveAsync(Guid id, CancellationToken ct);
 }
+
+/// <summary>Projection d'une entrée d'exclusion pour la sûreté (motif inclus).</summary>
+public sealed record ExclusionEntryView(
+    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt);

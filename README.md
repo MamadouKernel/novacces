@@ -77,24 +77,55 @@ docker run --name novacces-pg -e POSTGRES_PASSWORD=devpassword \
 Mets à jour `ConnectionStrings:Postgres` dans `appsettings.Development.json`
 avec ce mot de passe.
 
-### 6. Créer le schéma d'un premier site (le pilote)
-Le multi-tenant repose sur un schéma PostgreSQL par site. Pour le pilote :
-```sql
-CREATE SCHEMA site_sicopa;
+### 6. Provisionner un site (le pilote)
+Le multi-tenant repose sur un schéma PostgreSQL par site. Le provisionnement
+est automatisé par une commande d'administration qui, en une étape idempotente,
+crée le schéma, applique le modèle de données EF Core **dans ce schéma**, et
+rend le journal des scans append-only (INSERT-only, cf. CLAUDE.md §7.4) :
+```bash
+cd src/NovAcces.Api
+dotnet run -- provision-site sicopa
 ```
-Puis générer et appliquer la première migration EF Core **contre ce schéma**
-(la génération de migrations schema-aware est un point à valider ensemble
-au démarrage du jalon 2 — EF Core ne gère pas nativement le multi-schéma
-dynamique, une stratégie de migration manuelle ou un outil dédié sera
-nécessaire).
+C'est une commande CLI (et non un endpoint HTTP) : le provisionnement exécute
+du DDL sensible et ne doit pas être exposé sur le réseau. La logique est dans
+`Infrastructure/Persistence/Tenancy/TenantProvisioningService.cs` et couverte
+par des tests d'intégration (`tests/NovAcces.IntegrationTests` : cloisonnement
+inter-tenant + inaltérabilité du journal).
 
 ### 7. Lancer l'API
 ```bash
 cd src/NovAcces.Api
 dotnet run
 ```
-Puis teste avec un en-tête `X-Site-Id: sicopa` (Swagger disponible en
-développement sur `/swagger`).
+En développement, le démarrage amorce automatiquement le schéma Identity, les
+rôles, et un compte Admin de dev (`admin@novacces.local`, mot de passe par
+défaut à changer — voir le log au démarrage). Swagger disponible sur `/swagger`.
+
+### 8. Authentification (Jalon 2, incrément 1)
+Les endpoints métier sont désormais protégés (RBAC) :
+- **Web (Hôte / Sûreté / Admin)** : `POST /api/auth/login` renvoie un JWT à
+  présenter en `Authorization: Bearer <token>`. Le site (tenant) est porté par
+  le claim du jeton — plus besoin d'en-tête `X-Site-Id`, et un jeton d'un site
+  ne peut pas en viser un autre.
+- **Agents (app MAUI)** : en-tête `X-Api-Key: <clé>` d'un terminal enrôlé
+  (section `ApiKeys` de la configuration, hors dépôt). Le terminal porte son
+  propre site.
+- Secrets à définir via user-secrets/variable d'environnement : `Jwt:SigningKey`
+  (≥ 32 caractères) et les clés `ApiKeys:Terminals`.
+
+**2FA TOTP** (application d'authentification, ex. Google/Microsoft Authenticator) :
+- `POST /api/auth/2fa/setup` (authentifié) → clé partagée + URI `otpauth://` à
+  scanner ; `POST /api/auth/2fa/enable` (code) → active + renvoie 10 codes de
+  récupération ; `POST /api/auth/2fa/disable` (mot de passe).
+- Login en deux temps : `POST /api/auth/login` renvoie `requiresTwoFactor` si le
+  2FA est actif, puis `POST /api/auth/login/2fa` (email + mot de passe + code
+  TOTP **ou** code de récupération) délivre le JWT.
+- Choix TOTP (et non SMS) : natif ASP.NET Core Identity, zéro dépendance externe,
+  hors-ligne, conforme au contrat (« PAS de SMS »).
+
+Reste comme follow-up : enrôlement 2FA **obligatoire** pour Sûreté/Admin,
+rafraîchissement de session, restriction « un Hôte ne révoque que ses propres QR »,
+et tests d'intégration HTTP de l'auth (WebApplicationFactory).
 
 ## Pour continuer avec Claude Code
 
@@ -174,14 +205,14 @@ déploiement, pas du code, et ne sont pas listées ici).
 
 | Exigence | Description | État |
 |---|---|---|
-| REQ-F-02 | Génération automatique du QR chiffré et signé | ✅ Implémenté (`CreateVisitHandler`) |
-| REQ-F-03 | Transmission par email/WhatsApp | ❌ Aucune interface — Jalon 2 |
-| REQ-F-05 | Fenêtre unique -20/+15 min ; 30 jours ouvrés avec expiration | ✅ Implémenté et corrigé (`Visit.Scan`) |
-| REQ-F-06 | Notification temps réel de l'hôte | ❌ Aucun hook — Jalon 2 (SignalR) |
-| REQ-F-07 | Journalisation de chaque tentative | ✅ Implémenté (`ScanLogEntry`) |
-| REQ-F-09 | Révocation manuelle à tout moment | ✅ Implémenté et corrigé (endpoint ajouté) |
-| REQ-F-10 | Architecture multi-tenant | ✅ Implémenté (schéma PostgreSQL par site) |
-| REQ-F-11 (proposition) | Liste d'exclusion | 🟡 Modélisé dans le Domain ; service réel = Jalon 2 |
+| REQ-F-02 | Génération automatique du QR chiffré et signé | ✅ Implémenté (`CreateVisitHandler`) ; anti-doublon (409) à la création |
+| REQ-F-03 | Transmission par email/WhatsApp | ✅ `INotificationService` + WhatsApp Cloud API (repli SMTP) ; QR affiché au portail hôte |
+| REQ-F-05 | Fenêtre unique -20/+15 min ; 30 jours ouvrés avec expiration | ✅ Implémenté (`Visit.Scan`) ; jours ouvrés = week-ends + fériés (`IBusinessDayService`) |
+| REQ-F-06 | Notification temps réel de l'hôte | ✅ SignalR (`/hubs/scan`) + dashboard sûreté temps réel |
+| REQ-F-07 | Journalisation de chaque tentative | ✅ Implémenté (`ScanLogEntry`) ; journal + export CSV côté sûreté |
+| REQ-F-09 | Révocation manuelle à tout moment | ✅ Endpoint + UI hôte ; moindre privilège + audit (qui/quand) |
+| REQ-F-10 | Architecture multi-tenant | ✅ Schéma PostgreSQL par site ; tenant dérivé du jeton (anti-évasion) |
+| REQ-F-11 (proposition) | Liste d'exclusion | ✅ Liste par site (comparaison normalisée), gestion réservée Sûreté/Admin |
 | REQ-SEC-01 | QR sans donnée personnelle en clair | ✅ Implémenté (payload = Guid + expiration uniquement) |
 | REQ-SEC-02 | Validation de fenêtre exclusivement serveur | ✅ Implémenté (`IDateTimeProvider`, jamais l'heure client) |
 | REQ-SEC-03 | Anti-rejeu atomique, scans simultanés | ✅ Implémenté (verrou `FOR UPDATE` + contrainte unique) |
@@ -189,10 +220,26 @@ déploiement, pas du code, et ne sont pas listées ici).
 | REQ-SEC-05 | Tentatives journalisées comme événements de sécurité | ✅ Implémenté (`IsSecurityEvent`) |
 | REQ-SEC-06 (proposition) | Mode dégradé sécurisé | 🟡 Signature de liste hors ligne implémentée ; app MAUI = Jalon 2 |
 | 8.2 | Rate limiting sur endpoints sensibles | ✅ Implémenté (fixed window limiter) |
-| 8.2 | 2FA, gestion de session | ❌ Non commencé — Jalon 2 (Identity) |
-| 8.5 | RBAC par profil | ❌ Non commencé — Jalon 2 (Identity + policies) |
+| 8.2 | Authentification, gestion de session | ✅ JWT (web) + clé API (agents) + 2FA TOTP (codes de récupération) ; persistance de session |
+| 8.5 | RBAC par profil (Hôte/Agent/Sûreté/Admin) | ✅ Policies ASP.NET Core + rôles Identity ; moindre privilège appliqué |
+| 7.3 | Rétention limitée + purge automatique paramétrable | ✅ `IDataRetentionService` + `RetentionMonitor` : suppression des demandes > `VisitRetentionDays` (jamais un visiteur sur site) ET anonymisation du nom dans `scan_logs` > `JournalRetentionDays` (RGPD/ARTCI, journal conservé mais sans identité) |
+| 8.5 | Journal d'audit des actions d'administration | ✅ `admin_audit` par site, append-only (trigger), minimisé (aucun nom de visiteur) : révocation, ajout/retrait d'exclusion, purge/anonymisation ; consultation Sûreté/Admin |
+| 7.5 | Journal inaltérable | ✅ Triggers PostgreSQL : `scan_logs` et `admin_audit` bloquent DELETE/TRUNCATE et toute modification, sauf l'anonymisation contrôlée du nom (nom → sentinel) dans `scan_logs` |
 
 **Légende** : ✅ implémenté et testé · 🟡 partiellement modélisé · ❌ non commencé (Jalon 2/3 prévu)
+
+### État Jalon 2 (mise à jour)
+
+- **API** : complète et testée (88 tests : 43 unitaires + 45 d'intégration, dont
+  auth/RBAC, cloisonnement, anti-rejeu concurrent, 2FA, dashboard temps réel,
+  exclusion, rétention/purge, anonymisation RGPD des journaux, immuabilité des
+  journaux d'audit). **REQ-SEC-06 (mode dégradé)** : la signature de liste hors
+  ligne est côté API ; la consommation hors-ligne relève de l'app agent MAUI.
+- **Web (`NovAcces.Web`, Blazor Server)** : portail hôte (création + QR + liste +
+  révocation + autocomplétion), dashboard sûreté (temps réel + présents + synthèse
+  + export CSV + liste d'exclusion), administration (comptes + provisionnement de
+  site), 2FA au login, persistance de session.
+- **Mobile (`NovAcces.Mobile`, MAUI)** : non commencé — prochaine étape.
 
 ## Correspondance avec les jalons de la proposition v4
 

@@ -1,0 +1,581 @@
+@page "/surete"
+@implements IAsyncDisposable
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Dashboard sûreté</PageTitle>
+
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (CanViewDashboard)
+{
+<div class="portal">
+    <header class="portal-header">
+        <div>
+            <h1>Dashboard sûreté</h1>
+            <p class="muted">
+                Site : <strong>@(Auth.SiteId ?? "—")</strong> ·
+                <span class="dot @(_connected ? "dot-on" : "dot-off")"></span>
+                @(_connected ? "Temps réel connecté" : "Hors ligne")
+            </p>
+            <p class="hint">Supervision en direct des postes : chaque scan apparaît dans le flux. Filtrez par type, surveillez les présents et les dépassements. Recherchez dans le journal, exportez-le en CSV.</p>
+            @if (Auth.IsInRole(NovAccesRoles.Hote))
+            {
+                <div class="nav-links"><a href="/hote">→ Portail hôte</a></div>
+            }
+        </div>
+        <button class="btn-primary" style="align-self:start;max-width:230px" @onclick="ToggleWall">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Mode supervision
+        </button>
+    </header>
+
+    @if (_wallMode)
+    {
+        <div class="wall">
+            <div class="wall-top">
+                <span class="wall-brand">NOV<span>ACCÈS</span></span>
+                <span class="wall-title">Salle de supervision — @(Auth.SiteId ?? "—")</span>
+                <span class="wall-status"><span class="dot @(_connected ? "dot-on" : "dot-off")"></span> @(_connected ? "temps réel" : "hors ligne")</span>
+                <span class="wall-clock">@_clock.ToString("HH:mm:ss")</span>
+                <button class="wall-exit" @onclick="ToggleWall">✕ Quitter</button>
+            </div>
+
+            @if (_summary is not null)
+            {
+                <div class="wall-kpis">
+                    <div class="wk"><span class="wk-n">@_summary.ScansToday</span><span class="wk-l">Scans</span></div>
+                    <div class="wk"><span class="wk-n">@_summary.EntriesGranted</span><span class="wk-l">Entrées</span></div>
+                    <div class="wk"><span class="wk-n">@_summary.Exits</span><span class="wk-l">Sorties</span></div>
+                    <div class="wk warn"><span class="wk-n">@_summary.Denied</span><span class="wk-l">Refus</span></div>
+                    <div class="wk alert"><span class="wk-n">@_summary.SecurityEvents</span><span class="wk-l">Sécurité</span></div>
+                    <div class="wk in"><span class="wk-n">@_summary.OnSite</span><span class="wk-l">Présents</span></div>
+                </div>
+            }
+
+            <div class="wall-body">
+                <div class="wall-panel">
+                    <h3>Flux temps réel</h3>
+                    <ul class="wall-feed">
+                        @foreach (var e in _feed.Take(12))
+                        {
+                            <li class="feed-item @VerdictClass(e)">
+                                <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                                <span class="feed-name">@e.VisitorName</span>
+                                <span class="feed-verdict">@Humanize(e)</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                <div class="wall-panel">
+                    @if (_summary?.HourlyScans is { Count: 24 } hrs && hrs.Sum() > 0)
+                    {
+                        var maxH = hrs.Max();
+                        var nowH = DateTime.Now.Hour;
+                        <h3>Affluence par heure</h3>
+                        <div class="hchart" style="height:7rem;margin-bottom:1.2rem">
+                            @for (var h = 0; h < 24; h++)
+                            {
+                                var v = hrs[h];
+                                <div class="hbar @(v == maxH && v > 0 ? "peak" : "") @(h == nowH ? "now" : "")"
+                                     style="height:@(maxH > 0 ? Math.Max(2, (int)Math.Round(v * 100.0 / maxH)) : 0)%"></div>
+                            }
+                        </div>
+                    }
+                    <h3>Présents (@_onSite.Count)</h3>
+                    <ul class="wall-onsite">
+                        @foreach (var v in OnSiteRanked.Take(8))
+                        {
+                            <li>
+                                <strong>@v.VisitorName</strong>
+                                @if (v.OverstayMinutes > 0)
+                                {
+                                    <span class="badge @(v.OverstayLevel >= 3 ? "badge-revoked" : "badge-pending")">+@v.OverstayMinutes min</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_summary is not null)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_summary.ScansToday</span><span class="tile-l">Scans aujourd'hui</span></div>
+            <div class="tile"><span class="tile-n">@_summary.EntriesGranted</span><span class="tile-l">Entrées</span></div>
+            <div class="tile"><span class="tile-n">@_summary.Exits</span><span class="tile-l">Sorties</span></div>
+            <div class="tile tile-warn"><span class="tile-n">@_summary.Denied</span><span class="tile-l">Refus</span></div>
+            <div class="tile tile-alert"><span class="tile-n">@_summary.SecurityEvents</span><span class="tile-l">Événements sécu.</span></div>
+            <div class="tile"><span class="tile-n">@_summary.OnSite</span><span class="tile-l">Présents</span></div>
+        </div>
+        <p class="synthese">
+            Taux de refus : <strong>@_summary.RefusalAppreciation</strong>@(_summary.PeakHour is int h ? $" · pic d'affluence vers {h}h" : "")
+            — @_summary.Recommendation
+        </p>
+
+        @if (_summary.HourlyScans is { Count: 24 } hours && hours.Sum() > 0)
+        {
+            var maxH = hours.Max();
+            var nowH = DateTime.Now.Hour;
+            <section class="card" style="margin-bottom:1rem;">
+                <h2>Affluence par heure (aujourd'hui)</h2>
+                <div class="hchart">
+                    @for (var hr = 0; hr < 24; hr++)
+                    {
+                        var val = hours[hr];
+                        var peak = val == maxH && val > 0;
+                        <div class="hbar @(peak ? "peak" : "") @(hr == nowH ? "now" : "")"
+                             style="height:@(maxH > 0 ? Math.Max(2, (int)Math.Round(val * 100.0 / maxH)) : 0)%"
+                             title="@hr h — @val scan(s)"></div>
+                    }
+                </div>
+                <div class="hchart-axis"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>23 h</span></div>
+            </section>
+        }
+    }
+
+    <div class="toolbar">
+        <input class="search" placeholder="Rechercher dans le journal (nom, agent, détail)…"
+               @bind="_searchTerm" @bind:event="oninput"
+               @onkeydown="@(e => { if (e.Key == "Enter") _ = SearchJournalAsync(); })" />
+        <button class="btn-ghost" @onclick="SearchJournalAsync">Rechercher</button>
+        @if (_searchResults is not null)
+        {
+            <button class="btn-ghost" @onclick="ClearSearch">Effacer</button>
+        }
+        <button class="btn-ghost" @onclick="ExportCsvAsync">⬇ Exporter le journal (CSV)</button>
+    </div>
+
+    @if (_searchResults is not null)
+    {
+        <section class="card" style="margin-bottom:1rem;">
+            <h2>Résultats de recherche (@_searchResults.Count)</h2>
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Détail</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _searchResults)
+                    {
+                        <tr class="@(r.IsSecurityEvent ? "row-security" : "")">
+                            <td class="muted">@r.Timestamp.LocalDateTime.ToString("dd/MM HH:mm:ss")</td>
+                            <td>@r.VisitorName</td>
+                            <td class="muted">@r.AgentId</td>
+                            <td class="muted" style="white-space:normal">@r.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        </section>
+    }
+
+    @if (_overstayAlerts.Count > 0)
+    {
+        <div class="overstay-banner">
+            @foreach (var a in _overstayAlerts)
+            {
+                <div class="overstay-item @(a.IsSecurityEvent ? "v-security" : "v-denied")">
+                    ⏱ <strong>@a.VisitorName</strong> — dépassement +@a.OverstayMinutes min (niveau @a.Level)@(a.IsSecurityEvent ? " · ⚠ vérification physique recommandée" : "")
+                </div>
+            }
+        </div>
+    }
+
+    <div class="cards">
+        <section class="card">
+            <h2>Flux des scans (temps réel)</h2>
+            @if (_feed.Count == 0)
+            {
+                <div class="empty">
+                    @EmptyIcon()
+                    <p>En attente de scans…</p>
+                    <p class="hint">Un passage à un poste s'affichera ici instantanément.</p>
+                </div>
+            }
+            else
+            {
+                <div class="filters" style="margin-bottom:.75rem;">
+                    @foreach (var f in FeedFilters)
+                    {
+                        <button class="filter @(_feedFilter == f.Key ? "on" : "")"
+                                @onclick="() => _feedFilter = f.Key">
+                            @f.Label <span class="count">@FeedCount(f.Key)</span>
+                        </button>
+                    }
+                </div>
+
+                var feedRows = FilteredFeed;
+                if (feedRows.Count == 0)
+                {
+                    <div class="empty">@EmptyIcon()<p>Aucun scan de ce type pour l'instant.</p></div>
+                }
+                else
+                {
+                    <ul class="feed">
+                        @foreach (var e in feedRows)
+                        {
+                            <li class="feed-item @VerdictClass(e)">
+                                <span class="feed-time">@e.OccurredAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                                <span class="feed-name">@e.VisitorName</span>
+                                <span class="feed-verdict">@Humanize(e)</span>
+                                <span class="feed-agent">@e.AgentId</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+        </section>
+
+        <section class="card">
+            <h2>Présents sur site (@_onSite.Count)</h2>
+            @if (_onSite.Count == 0)
+            {
+                <div class="empty">@EmptyIcon()<p>Aucun visiteur actuellement sur site.</p></div>
+            }
+            else
+            {
+                <ul class="onsite">
+                    @foreach (var v in OnSiteRanked)
+                    {
+                        <li class="flex flex-wrap items-center gap-x-1.5">
+                            <strong>@v.VisitorName</strong>
+                            <span class="muted"> — @v.VisitorCompany</span>
+                            @if (v.CheckedInAt is not null)
+                            {
+                                <span class="muted"> · entré à @v.CheckedInAt.Value.LocalDateTime.ToString("HH:mm")</span>
+                            }
+                            @if (v.OverstayMinutes > 0)
+                            {
+                                <span class="badge @(v.OverstayLevel >= 3 ? "badge-revoked" : "badge-expired")">
+                                    ⏱ dépassement +@v.OverstayMinutes min@(v.OverstayLevel > 0 ? $" (niv. {v.OverstayLevel})" : "")
+                                </span>
+                            }
+                            <button class="btn-ghost" style="margin-left:auto;padding:.15rem .5rem;font-size:.75rem"
+                                    @onclick="() => _historyVisitId = v.VisitId">Historique</button>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+
+    @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+    {
+        <section class="card" style="margin-top:1.2rem;">
+            <h2>Liste d'exclusion (@_exclusions.Count)</h2>
+            <p class="muted">Ces personnes se voient refuser toute nouvelle demande. Le motif reste interne à la sûreté.</p>
+            <div class="row">
+                <div class="field"><label>Nom</label><input @bind="_exclName" /></div>
+                <div class="field"><label>Motif (interne)</label><input @bind="_exclReason" /></div>
+            </div>
+            <button class="btn-primary" @onclick="AddExclusionAsync" disabled="@_exclBusy" style="max-width:220px;">Ajouter à l'exclusion</button>
+
+            @if (_exclusions.Count > 0)
+            {
+                <div class="table-wrap" style="margin-top:1rem;">
+                <table class="visits">
+                    <thead><tr><th>Nom</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var e in _exclusions)
+                        {
+                            <tr>
+                                <td>@e.DisplayName</td>
+                                <td class="muted">@e.Reason</td>
+                                <td class="muted">@e.AddedBy</td>
+                                <td class="muted">@e.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
+                                <td><button class="btn-danger" @onclick="() => RemoveExclusionAsync(e.Id)" disabled="@_exclBusy">Retirer</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+            }
+        </section>
+    }
+
+    @if (_historyVisitId is { } hid)
+    {
+        <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
+    }
+</div>
+}
+
+@code {
+    private readonly List<ScanEventDto> _feed = new();
+    private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
+    private DashboardSummaryDto? _summary;
+    private readonly List<OverstayAlertDto> _overstayAlerts = new();
+    private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
+    private string _searchTerm = "";
+    private IReadOnlyList<ScanJournalEntryDto>? _searchResults;
+    private string _exclName = "";
+    private string _exclReason = "";
+    private bool _exclBusy;
+    private HubConnection? _hub;
+    private bool _connected;
+    private bool _loaded;
+
+    private Guid? _historyVisitId;
+
+    // Mode « salle de supervision » (control-room plein écran) + horloge.
+    private bool _wallMode;
+    private DateTime _clock = DateTime.Now;
+    private System.Threading.Timer? _clockTimer;
+
+    private void ToggleWall()
+    {
+        _wallMode = !_wallMode;
+        if (_wallMode)
+        {
+            _clock = DateTime.Now;
+            _clockTimer = new System.Threading.Timer(_ =>
+            {
+                _clock = DateTime.Now;
+                InvokeAsync(StateHasChanged);
+            }, null, 1000, 1000);
+        }
+        else
+        {
+            _clockTimer?.Dispose();
+            _clockTimer = null;
+        }
+    }
+
+    // ── Listes intelligentes : filtre du flux + tri des présents ──
+    private string _feedFilter = "all";
+
+    private static readonly (string Key, string Label)[] FeedFilters =
+    {
+        ("all", "Tous"), ("granted", "Entrées"), ("exit", "Sorties"),
+        ("denied", "Refus"), ("security", "Sécurité"),
+    };
+
+    private static bool FeedMatches(ScanEventDto e, string key) => key switch
+    {
+        "granted"  => e.IsGranted && !e.IsCheckOut,
+        "exit"     => e.IsCheckOut,
+        "security" => e.IsSecurityEvent,
+        "denied"   => !e.IsGranted && !e.IsCheckOut && !e.IsSecurityEvent,
+        _          => true,
+    };
+
+    private int FeedCount(string key) => _feed.Count(e => FeedMatches(e, key));
+
+    private IReadOnlyList<ScanEventDto> FilteredFeed =>
+        _feedFilter == "all" ? _feed : _feed.Where(e => FeedMatches(e, _feedFilter)).ToList();
+
+    // Présents : les dépassements les plus critiques remontent en tête.
+    private IReadOnlyList<OnSiteVisitorDto> OnSiteRanked =>
+        _onSite.OrderByDescending(v => v.OverstayLevel)
+               .ThenByDescending(v => v.OverstayMinutes)
+               .ThenBy(v => v.VisitorName)
+               .ToList();
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+
+    private bool CanViewDashboard =>
+        Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin);
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Auth.Initialized) return;
+
+        if (!CanViewDashboard)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        if (!_loaded)
+        {
+            _loaded = true;
+
+            // État initial : synthèse + présents + amorçage du flux avec le journal récent.
+            await RefreshSummaryAsync();
+            await RefreshOnSiteAsync();
+            var journal = await Api.GetJournalAsync(20);
+            foreach (var j in journal)
+                _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+
+            await ConnectHubAsync();
+            if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
+                await RefreshExclusionsAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshExclusionsAsync()
+    {
+        try { _exclusions = await Api.GetExclusionsAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task AddExclusionAsync()
+    {
+        if (_exclBusy || string.IsNullOrWhiteSpace(_exclName) || string.IsNullOrWhiteSpace(_exclReason)) return;
+        _exclBusy = true;
+        try
+        {
+            if (await Api.AddExclusionAsync(_exclName.Trim(), _exclReason.Trim()))
+            {
+                Toasts.Success($"« {_exclName.Trim()} » ajouté à la liste d'exclusion.");
+                _exclName = _exclReason = "";
+                await RefreshExclusionsAsync();
+            }
+            else { Toasts.Error("Ajout à l'exclusion refusé."); }
+        }
+        finally { _exclBusy = false; }
+    }
+
+    private async Task RemoveExclusionAsync(Guid id)
+    {
+        if (_exclBusy) return;
+        _exclBusy = true;
+        try
+        {
+            await Api.RemoveExclusionAsync(id);
+            Toasts.Info("Personne retirée de la liste d'exclusion.");
+            await RefreshExclusionsAsync();
+        }
+        finally { _exclBusy = false; }
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task ConnectHubAsync()
+    {
+        var apiBase = Config["Api:BaseUrl"]!;
+        var site = Auth.SiteId ?? "";
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{apiBase}/hubs/scan?site={Uri.EscapeDataString(site)}", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+
+                // Dev : l'API expose un certificat auto-signé — accepté UNIQUEMENT
+                // en développement (connexion serveur-à-serveur).
+                if (Env.IsDevelopment())
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler h)
+                            h.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        return handler;
+                    };
+                    options.WebSocketConfiguration = conf =>
+                        conf.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                }
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<ScanEventDto>("ScanRecorded", async scan =>
+        {
+            _feed.Insert(0, scan);
+            if (_feed.Count > 50) _feed.RemoveRange(50, _feed.Count - 50);
+            await RefreshOnSiteAsync();          // un scan change souvent les présents
+            await RefreshSummaryAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<OverstayAlertDto>("OverstayAlert", async alert =>
+        {
+            _overstayAlerts.Insert(0, alert);
+            if (_overstayAlerts.Count > 6) _overstayAlerts.RemoveRange(6, _overstayAlerts.Count - 6);
+            await RefreshOnSiteAsync();          // met à jour les badges de dépassement
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.Reconnected += _ => { _connected = true; return InvokeAsync(StateHasChanged); };
+        _hub.Closed += _ => { _connected = false; return InvokeAsync(StateHasChanged); };
+
+        try
+        {
+            await _hub.StartAsync();
+            _connected = true;
+        }
+        catch
+        {
+            _connected = false;
+        }
+    }
+
+    private async Task RefreshOnSiteAsync()
+    {
+        try { _onSite = await Api.GetOnSiteAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task RefreshSummaryAsync()
+    {
+        try { _summary = await Api.GetSummaryAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task SearchJournalAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_searchTerm)) { _searchResults = null; return; }
+        try { _searchResults = await Api.GetJournalAsync(100, _searchTerm); } catch { /* best-effort */ }
+    }
+
+    private void ClearSearch()
+    {
+        _searchTerm = "";
+        _searchResults = null;
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            var csv = await Api.GetJournalCsvAsync();
+            await JS.InvokeVoidAsync("novaccesDownload", $"journal-{DateTime.Now:yyyyMMdd-HHmm}.csv", csv);
+        }
+        catch { /* best-effort */ }
+    }
+
+    private static string VerdictFrom(ScanJournalEntryDto j) =>
+        j switch
+        {
+            { WasCheckOut: true } => "CHECKED_OUT",
+            { WasGranted: true } => "GRANTED",
+            { IsSecurityEvent: true } => "SECURITY",
+            _ => "DENIED"
+        };
+
+    private static string Humanize(ScanEventDto e) =>
+        e switch
+        {
+            { IsCheckOut: true } => "Sortie",
+            { IsGranted: true } => "Entrée autorisée",
+            { IsSecurityEvent: true } => "⚠ Événement de sécurité",
+            _ => "Refusé"
+        };
+
+    private static string VerdictClass(ScanEventDto e) =>
+        e.IsSecurityEvent ? "v-security" : e.IsGranted ? "v-granted" : "v-denied";
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/login");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.Changed -= OnAuthChanged;
+        _clockTimer?.Dispose();
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
+}

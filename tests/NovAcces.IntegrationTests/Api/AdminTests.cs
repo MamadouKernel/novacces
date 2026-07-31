@@ -195,6 +195,40 @@ public sealed class AdminTests
         Assert.False(listed!.Single(t => t.Id == created.Id).IsActive);
     }
 
+    [SkippableFact]
+    public async Task Deactivation_RespectsRoleHierarchy_AndProtectsLastSuperAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var superAdmin = await AdminClientAsync();
+        var email = $"admin-target-{Guid.NewGuid():N}@sicopa.local";
+        const string password = "Test!Passw0rd2026";
+        var register = await superAdmin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(email, password, "Admin cible", "Admin", null));
+        Assert.Equal(HttpStatusCode.OK, register.StatusCode);
+
+        var plainClient = _factory.CreateClient();
+        var login = await plainClient.PostAsJsonAsync(
+            "/api/auth/login", new LoginRequestDto(email, password));
+        login.EnsureSuccessStatusCode();
+        var loginDto = await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json);
+        plainClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginDto!.AccessToken);
+
+        var users = await plainClient.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        var own = Assert.Single(users!, u => u.Email == email);
+        var forbidden = await plainClient.PostAsJsonAsync(
+            $"/api/admin/users/{own.Id}/deactivate",
+            new DeactivateUserRequestDto("Tentative non autorisée"));
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+
+        var all = await superAdmin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        var lastSuperAdmin = Assert.Single(all!, u =>
+            u.Email == NovAccesApiFactory.AdminEmail && u.Roles.Contains("SuperAdmin"));
+        var conflict = await superAdmin.PostAsJsonAsync(
+            $"/api/admin/users/{lastSuperAdmin.Id}/deactivate",
+            new DeactivateUserRequestDto("Test garde dernier SuperAdmin"));
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+    }
     // ---- Aides ----
 
     private async Task<HttpClient> AdminClientAsync()

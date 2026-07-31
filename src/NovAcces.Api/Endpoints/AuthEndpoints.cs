@@ -289,48 +289,19 @@ public static class AuthEndpoints
         .WithName("Logout")
         .WithSummary("Révoque le refresh token de la session.");
 
-        // --- Suppression de compte : self-delete uniquement ---
-        group.MapDelete("/me", async (
-            ClaimsPrincipal principal,
-            UserManager<ApplicationUser> users,
-            IRefreshTokenService refresh,
-            CurrentTenant tenant,
-            IAdminAuditLog audit,
-            ILoggerFactory loggerFactory,
-            CancellationToken ct) =>
-        {
-            var user = await users.GetUserAsync(principal);
-            if (user is null)
-                return Results.Unauthorized();
-
-            var actor = user.Id.ToString();
-            // Le compte ne peut supprimer que son propre compte : aucun id cible
-            // n'est accepté par cette route. L'action est journalisée avant la
-            // suppression afin de conserver une preuve même si Identity échoue.
-            if (!string.IsNullOrWhiteSpace(user.SiteId))
-            {
-                tenant.Resolve(user.SiteId);
-                await audit.RecordAsync(
-                    AdminAuditAction.AccountSelfDeleted, actor, actor,
-                    "Demande de suppression volontaire du compte par son titulaire.", ct);
-            }
-            else
-            {
-                loggerFactory.CreateLogger("NovAcces.Auth")
-                    .LogWarning("Self-delete demandé par le compte global {Actor}.", actor);
-            }
-
-            await refresh.RevokeAllForSubjectAsync("user", actor, ct);
-            user.Deactivate(DateTimeOffset.UtcNow);
-            var updated = await users.UpdateAsync(user);
-            if (!updated.Succeeded)
-                return Results.BadRequest(new { error = "Désactivation du compte refusée.", details = updated.Errors.Select(e => e.Description) });
-
-            return Results.NoContent();
-        })
+        // --- Désactivation de compte : réservée à l'administration ---
+        // Les comptes ordinaires ne peuvent pas se désactiver eux-mêmes. La
+        // désactivation logique d'un compte est effectuée via
+        // POST /api/admin/users/{id}/deactivate, avec contrôle hiérarchique,
+        // révocation des sessions et audit.
+        group.MapDelete("/me", () =>
+            Results.Json(
+                new { error = "La désactivation d'un compte est réservée à un Admin ou un SuperAdmin." },
+                statusCode: StatusCodes.Status403Forbidden))
         .RequireAuthorization()
         .WithName("SelfDeleteAccount")
-        .WithSummary("Désactive logiquement le compte de l'utilisateur authentifié (self-delete)." );
+        .WithSummary("La désactivation autonome est interdite ; utiliser l'administration.");
+
         // --- Profil : modifier son nom affiché (authentifié) ---
         group.MapPost("/me/display-name", async (
             UpdateDisplayNameRequestDto request,

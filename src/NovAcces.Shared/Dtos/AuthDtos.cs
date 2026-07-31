@@ -83,6 +83,9 @@ public sealed record TwoFactorLoginRequestDto(string Email, string Password, str
 
 // ---- Administration ----
 
+/// <summary>Demande de désactivation logique d'un compte par un administrateur.</summary>
+public sealed record DeactivateUserRequestDto(string Reason);
+
 /// <summary>Compte tel qu'affiché dans la console d'administration.</summary>
 public sealed record AdminUserDto(
     Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, string? SiteId, bool TwoFactorEnabled,

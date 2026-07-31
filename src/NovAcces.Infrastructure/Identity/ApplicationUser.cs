@@ -25,7 +25,7 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     /// <summary>Nom affiché (journalisation, dashboard).</summary>
     public string DisplayName { get; set; } = string.Empty;
 
-    /// <summary>Suppression logique demandée par le titulaire du compte.</summary>
+    /// <summary>Désactivation logique : les données sont conservées pour audit et conformité.</summary>
     public bool IsDeactivated { get; private set; }
     public DateTimeOffset? DeactivatedAt { get; private set; }
 

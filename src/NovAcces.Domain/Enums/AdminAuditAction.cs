@@ -31,6 +31,9 @@ public enum AdminAuditAction
     /// <summary>Révocation d'un terminal (clé désactivée).</summary>
     TerminalRevoked,
 
-    /// <summary>Suppression volontaire du compte par son propre titulaire.</summary>
-    AccountSelfDeleted
+    /// <summary>Ancienne action conservée pour les journaux historiques.</summary>
+    AccountSelfDeleted,
+
+    /// <summary>Désactivation logique d'un compte par un Admin/SuperAdmin.</summary>
+    AccountDeactivated
 }

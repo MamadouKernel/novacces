@@ -59,6 +59,90 @@ public static class AdminEndpoints
         })
         .WithName("AdminListUsers")
         .WithSummary("Liste les comptes (tous sites).");
+        // Désactivation logique d'un compte : aucun DELETE physique. Le contrôle
+        // hiérarchique est centralisé dans NovAccesAuthorizationMatrix.
+        group.MapPost("/users/{id:guid}/deactivate", async (
+            Guid id,
+            DeactivateUserRequestDto request,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            NovAccesIdentityDbContext identityDb,
+            IRefreshTokenService refresh,
+            IDateTimeProvider clock,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
+        {
+            var reason = request?.Reason?.Trim();
+            if (string.IsNullOrWhiteSpace(reason) || reason.Length < 5 || reason.Length > 500)
+                return Results.BadRequest(new { error = "Un motif de désactivation (5 à 500 caractères) est obligatoire." });
+
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            await using var transaction = await identityDb.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+
+            var target = await users.FindByIdAsync(id.ToString());
+            if (target is null)
+                return Results.NotFound(new { error = "Compte introuvable." });
+
+            if (target.IsDeactivated)
+                return Results.Conflict(new { error = "Ce compte est déjà désactivé." });
+
+            var targetRoles = await users.GetRolesAsync(target);
+            if (!NovAccesAuthorizationMatrix.CanDeactivateAccount(caller, targetRoles))
+                return Results.Json(
+                    new { error = "Votre rôle ne permet pas de désactiver ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (targetRoles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal))
+            {
+                var activeSuperAdmins = (await users.GetUsersInRoleAsync(NovAccesRoles.SuperAdmin))
+                    .Count(u => !u.IsDeactivated);
+                if (activeSuperAdmins <= 1)
+                    return Results.Conflict(new
+                    {
+                        error = "Le dernier SuperAdmin actif ne peut pas être désactivé."
+                    });
+            }
+
+            target.Deactivate(clock.UtcNow);
+            var updated = await users.UpdateAsync(target);
+            if (!updated.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Désactivation du compte refusée.",
+                    details = updated.Errors.Select(e => e.Description)
+                });
+
+            await refresh.RevokeAllForSubjectAsync("user", target.Id.ToString(), ct);
+            await transaction.CommitAsync(ct);
+
+            // Le journal métier est cloisonné par site. Les comptes globaux
+            // restent couverts par le journal technique transversal de la requête.
+            if (!string.IsNullOrWhiteSpace(target.SiteId)
+                && CurrentTenant.IsValidSiteId(target.SiteId))
+            {
+                tenant.Resolve(target.SiteId);
+                await audit.RecordAsync(
+                    AdminAuditAction.AccountDeactivated,
+                    actor.Id.ToString(),
+                    target.Id.ToString(),
+                    $"Compte désactivé. Motif : {reason}",
+                    ct);
+            }
+
+            return Results.Ok(new
+            {
+                message = "Compte désactivé. Les données historiques sont conservées.",
+                userId = target.Id,
+                target.IsDeactivated
+            });
+        })
+        .WithName("AdminDeactivateUser")
+        .WithSummary("Désactive logiquement un compte et révoque ses sessions.");
 
         // Provisionnement d'un site depuis la console : désormais possible en HTTP
         // car protégé par le rôle Admin (auth en place). Le service reste aussi

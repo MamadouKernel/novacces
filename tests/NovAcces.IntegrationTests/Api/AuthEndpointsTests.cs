@@ -253,7 +253,7 @@ public sealed class AuthEndpointsTests
     }
 
     [SkippableFact]
-    public async Task SelfDelete_DeactivatesOnlyCurrentAccount_RevokesRefreshAndIsAudited()
+    public async Task OrdinaryUser_CannotSelfDelete_ButAdminCanDeactivateAndRevoke()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
@@ -262,8 +262,26 @@ public sealed class AuthEndpointsTests
         var client = _factory.CreateClient();
         SetBearer(client, session.AccessToken);
 
-        var deleted = await client.DeleteAsync("/api/auth/me");
-        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        var forbidden = await client.DeleteAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+
+        // Le compte reste actif tant qu'un administrateur ne l'a pas désactivé.
+        Assert.Equal(HttpStatusCode.OK,
+            (await _factory.CreateClient().PostAsJsonAsync(
+                "/api/auth/login", new LoginRequestDto(email, password))).StatusCode);
+
+        var superAdmin = await LoginAsync(_factory.CreateClient(),
+            NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
+        var adminClient = _factory.CreateClient();
+        SetBearer(adminClient, superAdmin.AccessToken);
+
+        var users = await adminClient.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        var target = Assert.Single(users!, u => u.Email == email);
+
+        var deactivated = await adminClient.PostAsJsonAsync(
+            $"/api/admin/users/{target.Id}/deactivate",
+            new DeactivateUserRequestDto("Départ de l'organisation"));
+        Assert.Equal(HttpStatusCode.OK, deactivated.StatusCode);
 
         var relogin = await _factory.CreateClient().PostAsJsonAsync(
             "/api/auth/login", new LoginRequestDto(email, password));
@@ -277,16 +295,16 @@ public sealed class AuthEndpointsTests
         {
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT \"IsDeactivated\" FROM \"identity\".\"AspNetUsers\" WHERE \"NormalizedEmail\" = @email";
+            command.CommandText = @"SELECT ""IsDeactivated"" FROM ""identity"".""AspNetUsers"" WHERE ""NormalizedEmail"" = @email";
             command.Parameters.AddWithValue("email", email.ToUpperInvariant());
             Assert.True(Convert.ToBoolean(await command.ExecuteScalarAsync()));
         }
 
-        var superAdmin = await LoginAsync(_factory.CreateClient(), NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
-        var auditClient = _factory.CreateClient();
-        SetBearer(auditClient, superAdmin.AccessToken);
-        var audit = await auditClient.GetFromJsonAsync<List<ApplicationAuditDto>>("/api/audit/application", Json);
-        Assert.Contains(audit!, e => e.Path == "/api/auth/me" && e.Method == "DELETE");
+        var audit = await adminClient.GetFromJsonAsync<List<ApplicationAuditDto>>(
+            "/api/audit/application", Json);
+        Assert.Contains(audit!, e =>
+            e.Path.Contains($"/api/admin/users/{target.Id:D}/deactivate", StringComparison.Ordinal)
+            && e.Method == "POST");
     }
     [SkippableFact]
     public async Task SuperAdmin_CanViewAndExportCompleteApplicationAudit()

@@ -4,10 +4,15 @@ namespace NovAcces.Shared.Dtos;
 public sealed record CreateTerminalRequestDto(string Label, IReadOnlyList<string> SiteIds);
 
 /// <summary>
-/// Réponse historique de création. Les nouveaux clients doivent utiliser le
-/// ticket QR d'enrôlement ; ApiKey est conservée pour compatibilité API.
+/// Réponse de création : aucun secret n'est remis à cette étape.
+/// Le secret opérationnel est délivré uniquement après activation QR.
 /// </summary>
-public sealed record CreateTerminalResponseDto(Guid Id, string Label, string ApiKey);
+public sealed record CreateTerminalResponseDto(Guid Id, string Label)
+{
+    // Compatibilité source uniquement : jamais renseignée ni sérialisée.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApiKey { get; init; }
+}
 
 /// <summary>Terminal listé dans la console Admin — jamais la clé ni son empreinte.</summary>
 public sealed record TerminalSummaryDto(
@@ -21,9 +26,13 @@ public sealed record EnrollmentTicketResponseDto(
     Guid TerminalId,
     string Label,
     IReadOnlyList<string> SiteIds,
-    string Ticket,
     string QrPayload,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt)
+{
+    // Compatibilité avec les clients historiques : jamais renseigné ni sérialisé.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ticket { get; init; }
+}
 
 /// <summary>Demande envoyée par un mobile après lecture du QR d'enrôlement.</summary>
 public sealed record DeviceEnrollmentRequestDto(

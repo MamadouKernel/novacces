@@ -214,8 +214,8 @@ public sealed class DashboardTests
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
-        // Sûreté rattachée à « othersite », qui tente de viser le site sicopa.
-        var foreignToken = await GetTokenForSiteAsync("Surete", "othersite");
+        // Sûreté rattachée à « sanpedro », qui tente de viser le site sicopa.
+        var foreignToken = await GetTokenForSiteAsync("Surete", NovAccesApiFactory.TestSite2);
 
         await using var hub = new HubConnectionBuilder()
             .WithUrl(new Uri(_factory.Server.BaseAddress, $"hubs/scan?site={NovAccesApiFactory.TestSite}"), options =>

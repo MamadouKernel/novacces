@@ -40,7 +40,11 @@ public static class ScanEndpoints
             // claim brut, absent pour un terminal partagé entre plusieurs sites.
             var siteId = tenant.SiteId;
             var shiftToken = http.Headers["X-Shift-Token"].ToString();
-            var shift = string.IsNullOrWhiteSpace(shiftToken) ? null : jwt.ValidateShiftToken(shiftToken, siteId);
+            var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsedTerminalId)
+                ? parsedTerminalId : (Guid?)null;
+            var shift = string.IsNullOrWhiteSpace(shiftToken)
+                ? null
+                : jwt.ValidateShiftToken(shiftToken, siteId, terminalId);
             var agentId = shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
 
             var command = new ScanQrCommand(

@@ -28,6 +28,7 @@ public static class AgentEndpoints
             IAgentDirectory agents,
             IJwtTokenService jwt,
             ICurrentTenant tenant,
+            ClaimsPrincipal user,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.Pin))
@@ -41,7 +42,11 @@ public static class AgentEndpoints
             // (claim SiteId du terminal, ou en-tête X-Site-Id revalidé contre la
             // liste AllowedSite pour un terminal partagé) — jamais relu du claim
             // brut, qui peut être absent pour un terminal multi-sites.
-            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, tenant.SiteId);
+            var terminalId = user.FindFirstValue(NovAccesClaimTypes.TerminalId);
+            if (!Guid.TryParse(terminalId, out var parsedTerminalId))
+                return Results.Forbid();
+
+            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, tenant.SiteId, parsedTerminalId);
 
             return Results.Ok(new ShiftStartResponseDto(agent.Matricule, agent.DisplayName, token, expiresAt));
         })

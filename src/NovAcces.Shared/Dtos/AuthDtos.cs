@@ -48,6 +48,20 @@ public sealed record RegisterUserRequestDto(
 public sealed record TwoFactorRequiredDto(bool RequiresTwoFactor = true);
 
 /// <summary>
+/// Réponse de première connexion d'un compte privilégié sans 2FA. Aucun JWT
+/// n'est délivré tant que l'enrôlement TOTP n'est pas terminé.
+/// </summary>
+public sealed record TwoFactorEnrollmentRequiredDto(
+    bool RequiresTwoFactorEnrollment = true);
+
+/// <summary>
+/// Demande de bootstrap TOTP pour un compte privilégié qui ne possède encore
+/// aucune session authentifiée. Le mot de passe est toujours vérifié côté API.
+/// </summary>
+public sealed record TwoFactorBootstrapRequestDto(string Email, string Password);
+public sealed record TwoFactorBootstrapEnableRequestDto(string Email, string Password, string Code);
+
+/// <summary>
 /// Données d'enrôlement TOTP : clé partagée (saisie manuelle possible dans
 /// l'app d'authentification) et URI otpauth:// (à encoder en QR côté client).
 /// </summary>

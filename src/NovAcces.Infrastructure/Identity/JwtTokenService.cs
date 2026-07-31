@@ -67,8 +67,9 @@ public sealed class JwtTokenService : IJwtTokenService
     private const string ClaimMatricule = "nva_mat";
     private const string ClaimAgentName = "nva_name";
     private const string ClaimShiftMarker = "nva_shift"; // "1" = jeton de poste
+    private const string ClaimTerminalId = "nva_terminal";
 
-    public (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId)
+    public (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId)
     {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.AddHours(Math.Max(1, _options.ShiftExpiryHours));
@@ -80,6 +81,7 @@ public sealed class JwtTokenService : IJwtTokenService
             new(ClaimTypes.Role, NovAccesRoles.Agent),
             new(ClaimAgentName, displayName),
             new(NovAccesClaimTypes.SiteId, siteId),
+            new(ClaimTerminalId, terminalId.ToString("D")),
             new(ClaimShiftMarker, "1"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
@@ -117,7 +119,7 @@ public sealed class JwtTokenService : IJwtTokenService
         return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
     }
 
-    public ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId)
+    public ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId, Guid? expectedTerminalId = null)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
 
@@ -141,9 +143,19 @@ public sealed class JwtTokenService : IJwtTokenService
             var siteId = principal.FindFirst(NovAccesClaimTypes.SiteId)?.Value;
             if (!string.Equals(siteId, expectedSiteId, StringComparison.Ordinal)) return null;
 
+            var terminalClaim = principal.FindFirst(ClaimTerminalId)?.Value;
+            if (expectedTerminalId.HasValue
+                && (!Guid.TryParse(terminalClaim, out var tokenTerminalId)
+                    || tokenTerminalId != expectedTerminalId.Value))
+                return null;
+
             var matricule = principal.FindFirst(ClaimMatricule)?.Value;
             var name = principal.FindFirst(ClaimAgentName)?.Value ?? matricule;
-            return string.IsNullOrWhiteSpace(matricule) ? null : new ShiftIdentity(matricule, name!, siteId!);
+            var tokenTerminalIdOptional = Guid.TryParse(terminalClaim, out var parsedTerminalId)
+                ? parsedTerminalId : (Guid?)null;
+            return string.IsNullOrWhiteSpace(matricule)
+                ? null
+                : new ShiftIdentity(matricule, name!, siteId!, tokenTerminalIdOptional);
         }
         catch
         {

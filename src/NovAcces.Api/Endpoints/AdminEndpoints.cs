@@ -68,11 +68,12 @@ public static class AdminEndpoints
             ITenantProvisioningService provisioning,
             CancellationToken ct) =>
         {
-            if (!CurrentTenant.IsValidSiteId(request.SiteId))
+            var siteId = request.SiteId?.Trim().ToLowerInvariant();
+            if (!CurrentTenant.IsValidSiteId(siteId))
                 return Results.BadRequest(new { error = "Identifiant de site invalide (a-z, 0-9, _ ; max 40)." });
 
-            await provisioning.ProvisionAsync(request.SiteId, ct);
-            return Results.Ok(new { message = $"Site '{request.SiteId}' provisionné." });
+            await provisioning.ProvisionAsync(siteId!, ct);
+            return Results.Ok(new { message = $"Site '{siteId}' provisionné." });
         })
         .WithName("AdminProvisionSite")
         .WithSummary("Provisionne un nouveau site (schéma + modèle + journal append-only).");
@@ -112,31 +113,36 @@ public static class AdminEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            if (!CurrentTenant.IsValidSiteId(request.SiteId))
+            var siteId = request.SiteId?.Trim().ToLowerInvariant();
+            var matricule = request.Matricule?.Trim();
+            var displayName = request.DisplayName?.Trim();
+            var pin = request.Pin?.Trim();
+            if (!CurrentTenant.IsValidSiteId(siteId))
                 return Results.BadRequest(new { error = "Identifiant de site invalide." });
-            if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.DisplayName))
+            if (string.IsNullOrWhiteSpace(matricule) || matricule.Length > 80
+                || string.IsNullOrWhiteSpace(displayName) || displayName.Length > 160)
                 return Results.BadRequest(new { error = "Matricule et nom requis." });
-            if ((request.Pin ?? string.Empty).Trim().Length < 4)
-                return Results.BadRequest(new { error = "PIN d'au moins 4 chiffres requis." });
+            if (string.IsNullOrWhiteSpace(pin) || pin.Length is < 4 or > 8 || !pin.All(char.IsDigit))
+                return Results.BadRequest(new { error = "PIN numérique de 4 à 8 chiffres requis." });
 
             using var scope = scopeFactory.CreateScope();
-            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(request.SiteId);
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId!);
             var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
 
             try
             {
-                await agents.AddAsync(request.Matricule, request.DisplayName, request.Pin, ct);
+                await agents.AddAsync(matricule!, displayName!, pin!, ct);
             }
             catch (InvalidOperationException ex)
             {
                 return Results.Conflict(new { error = ex.Message });
             }
 
-            await audit.RecordAsync(AdminAuditAction.AgentCreated, user.HostIdentifier(), request.Matricule,
-                $"Création de l'agent « {request.DisplayName} » (matricule {request.Matricule}).", ct);
+            await audit.RecordAsync(AdminAuditAction.AgentCreated, user.HostIdentifier(), matricule!,
+                $"Création de l'agent « {displayName} » (matricule {matricule}).", ct);
 
-            return Results.Ok(new { message = $"Agent {request.Matricule} créé pour le site {request.SiteId}." });
+            return Results.Ok(new { message = $"Agent {matricule} créé pour le site {siteId}." });
         })
         .WithName("AdminCreateAgent")
         .WithSummary("Crée un agent (matricule + PIN) pour la prise de poste sur un site.");
@@ -167,11 +173,13 @@ public static class AdminEndpoints
             CreateTerminalRequestDto request,
             ITerminalDirectory terminals,
             IServiceScopeFactory scopeFactory,
+            ISiteCatalog sites,
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(request.Label))
-                return Results.BadRequest(new { error = "Libellé requis." });
+            var label = request.Label?.Trim();
+            if (string.IsNullOrWhiteSpace(label) || label.Length > 120)
+                return Results.BadRequest(new { error = "Libellé requis (120 caractères maximum)." });
 
             var siteIds = (request.SiteIds ?? Array.Empty<string>())
                 .Select(s => s.Trim().ToLowerInvariant())
@@ -184,7 +192,11 @@ public static class AdminEndpoints
             if (siteIds.Any(s => !CurrentTenant.IsValidSiteId(s)))
                 return Results.BadRequest(new { error = "Un des identifiants de site est invalide." });
 
-            var (id, apiKey) = await terminals.CreateAsync(request.Label, siteIds, ct);
+            var provisioned = await sites.GetSiteIdsAsync(ct);
+            if (siteIds.Any(site => !provisioned.Contains(site, StringComparer.OrdinalIgnoreCase)))
+                return Results.BadRequest(new { error = "Tous les sites doivent être provisionnés avant l'enrôlement du terminal." });
+
+            var id = await terminals.CreateAsync(label!, siteIds, ct);
 
             // Le terminal n'appartient à aucun tenant en particulier (il peut en
             // servir plusieurs) : l'action est inscrite dans le journal d'audit
@@ -192,9 +204,9 @@ public static class AdminEndpoints
             // voie qu'un terminal a été autorisé à le servir.
             await RecordOnEachSiteAsync(scopeFactory, siteIds,
                 AdminAuditAction.TerminalCreated, user.HostIdentifier(), id.ToString(),
-                $"Terminal « {request.Label} » enrôlé pour {string.Join(", ", siteIds)}.", ct);
+                $"Terminal « {label} » enrôlé pour {string.Join(", ", siteIds)}.", ct);
 
-            return Results.Ok(new CreateTerminalResponseDto(id, request.Label, apiKey));
+            return Results.Created($"/api/admin/terminals/{id:D}", new CreateTerminalResponseDto(id, label!));
         })
         .WithName("AdminCreateTerminal")
         .WithSummary("Provisionne un terminal ; son activation se fait par ticket QR temporaire.");
@@ -207,6 +219,7 @@ public static class AdminEndpoints
             ClaimsPrincipal user,
             HttpRequest http,
             IConfiguration configuration,
+            IHostEnvironment environment,
             CancellationToken ct) =>
         {
             var minutes = configuration.GetValue<double?>("Enrollment:TicketLifetimeMinutes") ?? 60d;
@@ -216,10 +229,29 @@ public static class AdminEndpoints
             if (ticket is null)
                 return Results.NotFound(new { error = "Terminal introuvable ou révoqué." });
 
-            var configuredBaseUrl = configuration["Api:PublicBaseUrl"];
-            var publicBaseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
-                ? http.Scheme + "://" + http.Host
-                : configuredBaseUrl.TrimEnd('/');
+            var configuredBaseUrl = configuration["Api:PublicBaseUrl"]?.Trim();
+            string publicBaseUrl;
+            if (string.IsNullOrWhiteSpace(configuredBaseUrl))
+            {
+                if (environment.IsProduction())
+                    return Results.Problem("Api:PublicBaseUrl doit être configurée en production.", statusCode: StatusCodes.Status500InternalServerError);
+                publicBaseUrl = $"{http.Scheme}://{http.Host}";
+            }
+            else if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var baseUri)
+                || baseUri.Scheme is not ("https" or "http")
+                || !string.IsNullOrEmpty(baseUri.Query)
+                || !string.IsNullOrEmpty(baseUri.Fragment))
+            {
+                return Results.Problem("Api:PublicBaseUrl doit être une URL absolue sans query ni fragment.", statusCode: StatusCodes.Status500InternalServerError);
+            }
+            else if (environment.IsProduction() && !string.Equals(baseUri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Problem("Api:PublicBaseUrl doit utiliser HTTPS en production.", statusCode: StatusCodes.Status500InternalServerError);
+            }
+            else
+            {
+                publicBaseUrl = configuredBaseUrl.TrimEnd('/');
+            }
             var qrPayload = $"novacces://enroll?api={Uri.EscapeDataString(publicBaseUrl)}&ticket={Uri.EscapeDataString(ticket.Ticket)}&terminal={ticket.TerminalId:D}&expires={ticket.ExpiresAt.ToUnixTimeSeconds()}";
 
             await RecordOnEachSiteAsync(scopeFactory, ticket.SiteIds,
@@ -227,7 +259,7 @@ public static class AdminEndpoints
                 $"Ticket QR temporaire créé pour le terminal « {ticket.Label} » (expiration {ticket.ExpiresAt:O}).", ct);
 
             return Results.Ok(new EnrollmentTicketResponseDto(
-                ticket.TerminalId, ticket.Label, ticket.SiteIds, ticket.Ticket, qrPayload, ticket.ExpiresAt));
+                ticket.TerminalId, ticket.Label, ticket.SiteIds, qrPayload, ticket.ExpiresAt));
         })
         .RequireRateLimiting("sensitive")
         .WithName("CreateTerminalEnrollmentTicket")

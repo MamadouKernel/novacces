@@ -82,7 +82,7 @@ public sealed class AdminTests
     }
 
     [SkippableFact]
-    public async Task CreateTerminal_ByAdmin_ApiKeyAuthenticatesAndMatchesSites()
+    public async Task CreateTerminal_ByAdmin_DoesNotExposeApiKey()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
@@ -91,21 +91,15 @@ public sealed class AdminTests
 
         var create = await admin.PostAsJsonAsync("/api/admin/terminals",
             new CreateTerminalRequestDto(label, new[] { NovAccesApiFactory.TestSite }));
-        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
-        Assert.False(string.IsNullOrWhiteSpace(created!.ApiKey));
+        Assert.NotNull(created);
 
-        // La clé nouvellement générée authentifie réellement le terminal.
-        var terminalClient = _factory.CreateClient();
-        terminalClient.DefaultRequestHeaders.Add("X-Api-Key", created.ApiKey);
-        var sites = await terminalClient.GetFromJsonAsync<List<string>>("/api/agent/sites", Json);
-        Assert.Equal(new[] { NovAccesApiFactory.TestSite }, sites);
-
-        // Le terminal apparaît dans la liste, actif, sans exposer sa clé.
         var listed = await admin.GetFromJsonAsync<List<TerminalSummaryDto>>("/api/admin/terminals", Json);
-        var summary = listed!.Single(t => t.Id == created.Id);
+        var summary = listed!.Single(t => t.Id == created!.Id);
         Assert.Equal(label, summary.Label);
         Assert.True(summary.IsActive);
+        Assert.False(summary.IsEnrolled);
     }
 
     [SkippableFact]
@@ -130,7 +124,7 @@ public sealed class AdminTests
         var deviceId = Guid.NewGuid().ToString("D");
         var activation = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(ticket.Ticket, deviceId, ecdsa.ExportSubjectPublicKeyInfoPem()));
+            new DeviceEnrollmentRequestDto(TicketFromQr(ticket.QrPayload), deviceId, ecdsa.ExportSubjectPublicKeyInfoPem()));
         Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
         var activated = await activation.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
         Assert.NotNull(activated);
@@ -143,12 +137,19 @@ public sealed class AdminTests
         // Le même ticket ne peut plus activer un deuxième téléphone.
         var second = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(ticket.Ticket, Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+            new DeviceEnrollmentRequestDto(TicketFromQr(ticket.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
         Assert.Equal(HttpStatusCode.Gone, second.StatusCode);
 
-        // L'activation a fait tourner la clé historique remise à la création.
+        // Un nouveau ticket réenrôle le terminal et invalide la clé précédente.
+        var replacementTicketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        var replacementTicket = await replacementTicketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        var replacement = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(TicketFromQr(replacementTicket!.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+        Assert.Equal(HttpStatusCode.OK, replacement.StatusCode);
+
         var oldKey = _factory.CreateClient();
-        oldKey.DefaultRequestHeaders.Add("X-Api-Key", created.ApiKey);
+        oldKey.DefaultRequestHeaders.Add("X-Api-Key", activated.ApiKey);
         Assert.Equal(HttpStatusCode.Unauthorized, (await oldKey.GetAsync("/api/agent/sites")).StatusCode);
     }
     [SkippableFact]
@@ -171,9 +172,16 @@ public sealed class AdminTests
         var create = await admin.PostAsJsonAsync("/api/admin/terminals",
             new CreateTerminalRequestDto($"ARévoquer-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
         var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
-
+        Assert.NotNull(created);
+        var ticketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var activationResponse = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(TicketFromQr(ticket!.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+        var activated = await activationResponse.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
         var terminalClient = _factory.CreateClient();
-        terminalClient.DefaultRequestHeaders.Add("X-Api-Key", created!.ApiKey);
+        terminalClient.DefaultRequestHeaders.Add("X-Api-Key", activated!.ApiKey);
         Assert.Equal(HttpStatusCode.OK, (await terminalClient.GetAsync("/api/agent/sites")).StatusCode);
 
         var revoke = await admin.PostAsync($"/api/admin/terminals/{created.Id}/revoke", null);
@@ -215,6 +223,17 @@ public sealed class AdminTests
         var token = (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
+    }
+
+    private static string TicketFromQr(string payload)
+    {
+        var marker = "ticket=";
+        var start = payload.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        start += marker.Length;
+        var end = payload.IndexOf('&', start);
+        var encoded = end >= 0 ? payload[start..end] : payload[start..];
+        return Uri.UnescapeDataString(encoded);
     }
 
     private static async Task<bool> SchemaHasTableAsync(string schema, string table)

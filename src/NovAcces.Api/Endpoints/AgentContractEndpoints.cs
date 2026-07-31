@@ -107,7 +107,10 @@ public static class AgentContractEndpoints
             if (request is null || request.Count == 0)
                 return Results.BadRequest(new { error = "Le lot de resynchronisation ne peut pas être vide." });
 
-            var shift = jwt.ValidateShiftToken(http.Headers["X-Shift-Token"].ToString(), tenant.SiteId);
+            var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsedTerminalId)
+                ? parsedTerminalId : (Guid?)null;
+            var shift = jwt.ValidateShiftToken(
+                http.Headers["X-Shift-Token"].ToString(), tenant.SiteId, terminalId);
             var agentId = shift?.Matricule
                 ?? user.FindFirstValue("nva_mat")
                 ?? user.FindFirstValue(ClaimTypes.Name)

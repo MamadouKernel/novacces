@@ -29,21 +29,21 @@ public sealed class TerminalDirectory : ITerminalDirectory
 
         var hash = ComputeKeyHash(presentedApiKey);
         var terminal = await _db.Terminals.FirstOrDefaultAsync(
-            t => t.ApiKeyHash == hash && t.IsActive, ct);
+            t => t.ApiKeyHash == hash && t.IsActive && t.DeviceInstanceId != null && t.EnrolledAt != null, ct);
 
         return terminal is null ? null : new TerminalIdentity(terminal.Id, terminal.Label, terminal.SiteIds);
     }
 
-    public async Task<(Guid Id, string ApiKey)> CreateAsync(
+    public async Task<Guid> CreateAsync(
         string label, IReadOnlyList<string> siteIds, CancellationToken ct)
     {
-        var apiKey = GenerateSecret();
-        var terminal = Terminal.Create(label, ComputeKeyHash(apiKey), siteIds, DateTimeOffset.UtcNow);
+        var reservedHash = ComputeKeyHash(GenerateSecret());
+        var terminal = Terminal.Create(label, reservedHash, siteIds, DateTimeOffset.UtcNow);
 
         _db.Terminals.Add(terminal);
         await _db.SaveChangesAsync(ct);
 
-        return (terminal.Id, apiKey);
+        return terminal.Id;
     }
 
     public async Task<IReadOnlyList<TerminalSummary>> ListAsync(CancellationToken ct) =>
@@ -60,6 +60,11 @@ public sealed class TerminalDirectory : ITerminalDirectory
 
         var now = DateTimeOffset.UtcNow;
         terminal.Revoke(now);
+        var pendingTickets = await _db.TerminalEnrollmentTickets
+            .Where(t => t.TerminalId == id && t.UsedAt == null && t.RevokedAt == null)
+            .ToListAsync(ct);
+        foreach (var pending in pendingTickets)
+            pending.Revoke(now);
         await _db.SaveChangesAsync(ct);
         return true;
     }

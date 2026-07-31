@@ -58,6 +58,7 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         {
             new(ClaimTypes.Name, string.IsNullOrWhiteSpace(terminal.Label) ? "terminal" : terminal.Label),
             new(ClaimTypes.Role, NovAccesRoles.Agent),
+            new(NovAccesClaimTypes.TerminalId, terminal.Id.ToString("D")),
         };
 
         if (terminal.SiteIds.Count == 1)

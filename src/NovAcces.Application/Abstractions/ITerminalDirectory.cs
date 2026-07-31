@@ -32,10 +32,10 @@ public interface ITerminalDirectory
     Task<TerminalIdentity?> VerifyAsync(string presentedApiKey, CancellationToken ct);
 
     /// <summary>
-    /// Création historique : génère une clé API (retournée pour compatibilité).
-    /// Le parcours Web utilise ensuite le ticket QR et ne l'affiche plus.
+    /// Création d'un terminal non enrôlé. Aucun secret n'est retourné.
+    /// Le secret opérationnel est généré uniquement lors de l'activation QR.
     /// </summary>
-    Task<(Guid Id, string ApiKey)> CreateAsync(string label, IReadOnlyList<string> siteIds, CancellationToken ct);
+    Task<Guid> CreateAsync(string label, IReadOnlyList<string> siteIds, CancellationToken ct);
 
     Task<IReadOnlyList<TerminalSummary>> ListAsync(CancellationToken ct);
 

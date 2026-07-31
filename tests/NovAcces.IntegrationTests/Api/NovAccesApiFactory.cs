@@ -78,10 +78,18 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
         NovAccesIdentityDbContext db, string label, string apiKey, string[] siteIds)
     {
         var hash = TerminalDirectory.ComputeKeyHash(apiKey);
-        if (db.Terminals.Any(t => t.ApiKeyHash == hash))
-            return; // idempotent d'un run de tests à l'autre (base persistée)
+        var existing = db.Terminals.FirstOrDefault(t => t.ApiKeyHash == hash);
+        if (existing is not null)
+        {
+            if (!existing.IsEnrolled)
+                existing.BindDevice(Guid.NewGuid().ToString("D"), "test-public-key", hash, DateTimeOffset.UtcNow);
+            db.SaveChanges();
+            return;
+        }
 
-        db.Terminals.Add(Terminal.Create(label, hash, siteIds, DateTimeOffset.UtcNow));
+        var terminal = Terminal.Create(label, hash, siteIds, DateTimeOffset.UtcNow);
+        terminal.BindDevice(Guid.NewGuid().ToString("D"), "test-public-key", hash, DateTimeOffset.UtcNow);
+        db.Terminals.Add(terminal);
         db.SaveChanges();
     }
 
@@ -98,6 +106,7 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
                 ["Jwt:Issuer"] = "NovAcces",
                 ["Jwt:Audience"] = "NovAcces",
                 ["Jwt:ExpiryMinutes"] = "60",
+                ["Auth:RequireTwoFactorForPrivileged"] = "false",
                 // Les terminaux de test (TestApiKey / TestApiKeyMultiSite) sont
                 // désormais enrôlés directement en base — voir SeedTerminal
                 // ci-dessus — plus de configuration statique ApiKeys:Terminals.

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
+using NovAcces.Api.Auth;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Enums;
 using NovAcces.Infrastructure.Identity;
@@ -27,6 +29,7 @@ public static class AuthEndpoints
             IRefreshTokenService refresh,
             CurrentTenant tenant,
             HttpRequest http,
+            IOptions<AuthenticationSecurityOptions> security,
             CancellationToken ct) =>
         {
             if (!string.IsNullOrWhiteSpace(request.Matricule))
@@ -49,6 +52,12 @@ public static class AuthEndpoints
             if (user is null)
                 return InvalidCredentials();
 
+            var roles = await users.GetRolesAsync(user);
+            if (security.Value.RequireTwoFactorForPrivileged
+                && IsPrivilegedRole(roles)
+                && !await users.GetTwoFactorEnabledAsync(user))
+                return Results.Ok(new TwoFactorEnrollmentRequiredDto());
+
             if (await users.GetTwoFactorEnabledAsync(user))
                 return Results.Ok(new TwoFactorRequiredDto());
 
@@ -70,11 +79,8 @@ public static class AuthEndpoints
                 return InvalidCredentials();
 
             var code = (request.Code ?? string.Empty).Replace(" ", string.Empty);
-
             var totpValid = await users.VerifyTwoFactorTokenAsync(
                 user, TokenOptions.DefaultAuthenticatorProvider, code);
-
-            // À défaut d'un TOTP valide, on tente un code de récupération (usage unique).
             var accepted = totpValid
                 || (await users.RedeemTwoFactorRecoveryCodeAsync(user, code)).Succeeded;
 
@@ -90,34 +96,111 @@ public static class AuthEndpoints
         .WithName("LoginTwoFactor")
         .WithSummary("Valide le second facteur (TOTP ou code de récupération) et délivre le JWT.");
 
+        // Bootstrap TOTP initial : aucun JWT privilégié n'est délivré avant activation.
+        group.MapPost("/2fa/bootstrap/setup", async (
+            TwoFactorBootstrapRequestDto request,
+            UserManager<ApplicationUser> users,
+            IOptions<AuthenticationSecurityOptions> security) =>
+        {
+            if (!security.Value.RequireTwoFactorForPrivileged)
+                return Results.BadRequest(new { error = "L'enrôlement obligatoire du 2FA est désactivé dans cet environnement." });
+
+            var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
+            if (user is null)
+                return InvalidCredentials();
+
+            var roles = await users.GetRolesAsync(user);
+            if (!IsPrivilegedRole(roles) || await users.GetTwoFactorEnabledAsync(user))
+                return InvalidCredentials();
+
+            var key = await users.GetAuthenticatorKeyAsync(user);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                await users.ResetAuthenticatorKeyAsync(user);
+                key = await users.GetAuthenticatorKeyAsync(user);
+            }
+
+            return Results.Ok(new TwoFactorSetupDto(key!, BuildAuthenticatorUri(user.Email!, key!)));
+        })
+        .WithName("TwoFactorBootstrapSetup")
+        .WithSummary("Prépare l'enrôlement TOTP initial sans délivrer de JWT.");
+
+        group.MapPost("/2fa/bootstrap/enable", async (
+            TwoFactorBootstrapEnableRequestDto request,
+            UserManager<ApplicationUser> users,
+            IOptions<AuthenticationSecurityOptions> security) =>
+        {
+            if (!security.Value.RequireTwoFactorForPrivileged)
+                return Results.BadRequest(new { error = "L'enrôlement obligatoire du 2FA est désactivé dans cet environnement." });
+
+            var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
+            if (user is null)
+                return InvalidCredentials();
+
+            var roles = await users.GetRolesAsync(user);
+            if (!IsPrivilegedRole(roles) || await users.GetTwoFactorEnabledAsync(user))
+                return InvalidCredentials();
+
+            var code = (request.Code ?? string.Empty).Replace(" ", string.Empty);
+            if (!await users.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code))
+            {
+                await users.AccessFailedAsync(user);
+                return InvalidCredentials();
+            }
+
+            var enabled = await users.SetTwoFactorEnabledAsync(user, true);
+            if (!enabled.Succeeded)
+                return Results.BadRequest(new { error = "Activation du 2FA refusée." });
+
+            await users.ResetAccessFailedCountAsync(user);
+            var recovery = await users.GenerateNewTwoFactorRecoveryCodesAsync(user, 10);
+            return Results.Ok(new TwoFactorRecoveryCodesDto(recovery?.ToList() ?? new List<string>()));
+        })
+        .WithName("TwoFactorBootstrapEnable")
+        .WithSummary("Active le TOTP initial après vérification du code.");
+
         // --- Création de compte (Admin uniquement, sauf Admin/SuperAdmin) ---
         group.MapPost("/register", async (
             RegisterUserRequestDto request,
-            System.Security.Claims.ClaimsPrincipal caller,
-            UserManager<ApplicationUser> users) =>
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            ISiteCatalog sites,
+            CancellationToken ct) =>
         {
-            if (!NovAccesRoles.All.Contains(request.Role))
+            var role = request.Role?.Trim();
+            if (string.IsNullOrWhiteSpace(role) || !NovAccesRoles.All.Contains(role, StringComparer.Ordinal))
                 return Results.BadRequest(new { error = $"Rôle invalide. Attendus : {string.Join(", ", NovAccesRoles.All)}." });
 
-            // Un compte Admin ou SuperAdmin donne un accès global : seul un
-            // SuperAdmin peut en créer un (jamais un Admin simple, même pour
-            // lui-même) — protection contre l'auto-escalade côté client.
-            var isElevatedRole = request.Role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
+            var isElevatedRole = role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
             if (isElevatedRole && !caller.IsInRole(NovAccesRoles.SuperAdmin))
                 return Results.Json(
                     new { error = "Seul le SuperAdmin peut créer un compte Admin ou SuperAdmin." },
                     statusCode: StatusCodes.Status403Forbidden);
 
             var isGlobal = isElevatedRole;
-            if (!isGlobal && string.IsNullOrWhiteSpace(request.SiteId))
+            var siteId = request.SiteId?.Trim().ToLowerInvariant();
+            if (!isGlobal && !CurrentTenant.IsValidSiteId(siteId))
                 return Results.BadRequest(new { error = "SiteId requis pour un rôle rattaché à un site." });
+
+            if (!isGlobal)
+            {
+                var provisionedSites = await sites.GetSiteIdsAsync(ct);
+                if (!provisionedSites.Contains(siteId!, StringComparer.OrdinalIgnoreCase))
+                    return Results.BadRequest(new { error = "Le site demandé n'est pas provisionné." });
+            }
+
+            var email = request.Email?.Trim();
+            var displayName = request.DisplayName?.Trim();
+            if (string.IsNullOrWhiteSpace(email) || email.Length > 254
+                || string.IsNullOrWhiteSpace(displayName) || displayName.Length > 160)
+                return Results.BadRequest(new { error = "Email ou nom affiché invalide." });
 
             var user = new ApplicationUser
             {
-                UserName = request.Email,
-                Email = request.Email,
-                DisplayName = request.DisplayName,
-                SiteId = isGlobal ? null : request.SiteId,
+                UserName = email,
+                Email = email,
+                DisplayName = displayName,
+                SiteId = isGlobal ? null : siteId,
                 EmailConfirmed = true,
             };
 
@@ -125,13 +208,14 @@ public static class AuthEndpoints
             if (!created.Succeeded)
                 return Results.BadRequest(new { error = "Création refusée.", details = created.Errors.Select(e => e.Description) });
 
-            await users.AddToRoleAsync(user, request.Role);
-            // SuperAdmin hérite AUSSI du rôle Admin : toutes les policies existantes
-            // qui exigent Admin restent satisfaites sans devoir toucher à chacune.
-            if (request.Role == NovAccesRoles.SuperAdmin)
+            var roleResult = await users.AddToRoleAsync(user, role);
+            if (!roleResult.Succeeded)
+                return Results.BadRequest(new { error = "Rôle non attribué.", details = roleResult.Errors.Select(e => e.Description) });
+
+            if (role == NovAccesRoles.SuperAdmin)
                 await users.AddToRoleAsync(user, NovAccesRoles.Admin);
 
-            return Results.Ok(new { user.Id, user.Email, user.DisplayName, request.Role, user.SiteId });
+            return Results.Ok(new { user.Id, user.Email, user.DisplayName, Role = role, user.SiteId });
         })
         .RequireAuthorization(NovAccesRoles.Admin)
         .WithName("RegisterUser")
@@ -142,20 +226,31 @@ public static class AuthEndpoints
             IRefreshTokenService refresh,
             UserManager<ApplicationUser> users,
             IJwtTokenService jwt,
+            IOptions<AuthenticationSecurityOptions> security,
             CancellationToken ct) =>
         {
             var subject = await refresh.RotateAsync(request.RefreshToken, ct);
             if (subject is null)
-                return Results.Json(new { error = "Refresh token invalide, expiré ou révoqué." }, statusCode: StatusCodes.Status401Unauthorized);
+                return Results.Json(new { error = "Refresh token invalide, expiré ou révoqué." },
+                    statusCode: StatusCodes.Status401Unauthorized);
 
             if (subject.SubjectType == "user")
             {
                 var user = await users.FindByIdAsync(subject.SubjectId);
-                if (user is null) return InvalidCredentials();
+                if (user is null)
+                    return InvalidCredentials();
+
                 var roles = await users.GetRolesAsync(user);
+                if (security.Value.RequireTwoFactorForPrivileged
+                    && IsPrivilegedRole(roles)
+                    && !await users.GetTwoFactorEnabledAsync(user))
+                    return Results.Json(new { error = "Enrôlement 2FA requis avant de renouveler la session." },
+                        statusCode: StatusCodes.Status403Forbidden);
+
                 var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
                 var next = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
-                return Results.Ok(new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, next.Token, SecondsUntil(expiresAt)));
+                return Results.Ok(new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(),
+                    user.SiteId, next.Token, SecondsUntil(expiresAt)));
             }
 
             if (subject.SubjectType == "agent" && !string.IsNullOrWhiteSpace(subject.SiteId))
@@ -165,7 +260,8 @@ public static class AuthEndpoints
                 var name = subject.DisplayName ?? matricule;
                 var (token, expiresAt) = jwt.CreateAgentToken(matricule, name, subject.SiteId);
                 var next = await refresh.IssueAsync("agent", subject.SubjectId, name, subject.SiteId, ct);
-                return Results.Ok(new AgentLoginResponseDto(token, next.Token, SecondsUntil(expiresAt), new AgentLoginIdentityDto(matricule, name)));
+                return Results.Ok(new AgentLoginResponseDto(token, next.Token, SecondsUntil(expiresAt),
+                    new AgentLoginIdentityDto(matricule, name)));
             }
 
             return InvalidCredentials();
@@ -395,6 +491,11 @@ public static class AuthEndpoints
         var refreshToken = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
         return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt));
     }
+
+    private static bool IsPrivilegedRole(IEnumerable<string> roles) =>
+        roles.Contains(NovAccesRoles.Admin, StringComparer.Ordinal)
+        || roles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal)
+        || roles.Contains(NovAccesRoles.Surete, StringComparer.Ordinal);
 
     private static int SecondsUntil(DateTimeOffset expiresAt) =>
         Math.Max(0, (int)Math.Ceiling((expiresAt - DateTimeOffset.UtcNow).TotalSeconds));

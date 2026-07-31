@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using NovAcces.Api;
 using NovAcces.Api.Auth;
+using NovAcces.Api.Configuration;
 using NovAcces.Api.Endpoints;
 using NovAcces.Api.Hubs;
 using NovAcces.Api.Middleware;
@@ -12,6 +13,9 @@ using NovAcces.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (!builder.Environment.IsDevelopment())
+    ProductionConfigurationValidator.Validate(builder.Configuration);
+
 // --- Services ---
 builder.Services.AddNovAccesInfrastructure(builder.Configuration);
 
@@ -19,9 +23,11 @@ builder.Services.AddNovAccesInfrastructure(builder.Configuration);
 // AddDefaultTokenProviders (2FA TOTP + codes de récupération) est ajouté ici,
 // côté hôte web, car il dépend de l'assembly ASP.NET Core Identity.
 builder.Services.AddNovAccesIdentity(builder.Configuration).AddDefaultTokenProviders();
+builder.Services.Configure<AuthenticationSecurityOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddNovAccesAuthentication(builder.Configuration);
 builder.Services.AddNovAccesAuthorization();
 
+builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -104,6 +110,9 @@ if (app.Environment.IsDevelopment())
     // d'exploitation explicites, pas un effet de bord du démarrage.
     await app.EnsureIdentityReadyAsync();
 }
+
+if (!app.Environment.IsDevelopment())
+    app.UseExceptionHandler();
 
 // En-têtes de sécurité HTTP (OWASP A05) sur TOUTES les réponses : anti-sniffing
 // MIME, anti-clickjacking, pas de fuite de referrer, pas de politique Flash/PDF.

@@ -51,4 +51,7 @@ public static class NovAccesClaimTypes
     /// arbitraire), via l'en-tête X-Site-Id (TenantResolutionMiddleware).
     /// </summary>
     public const string AllowedSite = "novacces:allowed_site";
+
+    /// <summary>Identifiant du terminal qui a authentifié une requête API key.</summary>
+    public const string TerminalId = "novacces:terminal_id";
 }

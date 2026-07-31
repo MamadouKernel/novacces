@@ -305,7 +305,7 @@ public sealed class AuthEndpointsTests
     // ---- Aides ----
 
     private static CreateVisitRequestDto SampleVisit() => new(
-        VisitorName: "Visiteur Test",
+        VisitorName: $"Visiteur Test {Guid.NewGuid():N}",
         VisitorCompany: "ACME",
         Motif: "Test intégration",
         Mode: "Unique",

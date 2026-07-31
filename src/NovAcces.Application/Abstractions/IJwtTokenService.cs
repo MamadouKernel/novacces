@@ -16,14 +16,14 @@ public interface IJwtTokenService
     /// (fin de service). Prouve que le matricule a été vérifié (matricule + PIN),
     /// pour tamponner les scans à cet agent sans qu'il puisse être auto-déclaré.
     /// </summary>
-    (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId);
+    (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId);
 
     /// <summary>Valide un jeton de poste ; retourne l'identité de l'agent, ou null si invalide/expiré.</summary>
     /// <summary>JWT Agent du contrat mobile, utilisable sans clé de terminal.</summary>
     (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId);
 
-    ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId);
+    ShiftIdentity? ValidateShiftToken(string token, string expectedSiteId, Guid? expectedTerminalId = null);
 }
 
 /// <summary>Identité d'agent portée par un jeton de poste validé.</summary>
-public sealed record ShiftIdentity(string Matricule, string DisplayName, string SiteId);
+public sealed record ShiftIdentity(string Matricule, string DisplayName, string SiteId, Guid? TerminalId = null);

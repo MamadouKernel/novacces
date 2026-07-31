@@ -58,7 +58,10 @@ public static class DependencyInjection
 
         // Jours ouvrés (REQ-F-05) : week-ends + jours fériés paramétrables.
         services.Configure<BusinessDayOptions>(configuration.GetSection("BusinessDays"));
-        services.AddSingleton<IBusinessDayService, BusinessDayService>();
+        services.AddScoped<IBusinessDayService>(sp =>
+            new BusinessDayService(
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BusinessDayOptions>>(),
+                sp.GetRequiredService<ICurrentTenant>()));
 
         // Supervision des dépassements (§7) : catalogue de sites + scanner.
         services.AddSingleton<ISiteCatalog, SiteCatalog>();

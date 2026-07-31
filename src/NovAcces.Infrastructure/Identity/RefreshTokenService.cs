@@ -33,12 +33,25 @@ public sealed class RefreshTokenService : IRefreshTokenService
 
     public async Task<RefreshTokenSubject?> RotateAsync(string refreshToken, CancellationToken ct)
     {
-        if (!TryUnprotect(refreshToken, out var raw)) return null;
-        var session = await _db.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == Hash(raw), ct);
+        if (!TryUnprotect(refreshToken, out var raw))
+            return null;
+
         var now = _clock.UtcNow;
-        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= now) return null;
-        session.Revoke(now);
-        await _db.SaveChangesAsync(ct);
+        var hash = Hash(raw);
+        var session = await _db.RefreshSessions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
+        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= now)
+            return null;
+
+        // Rotation atomique : une seule requête concurrente peut satisfaire
+        // la clause RevokedAt IS NULL.
+        var affected = await _db.RefreshSessions
+            .Where(x => x.Id == session.Id && x.RevokedAt == null && x.ExpiresAt > now)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.RevokedAt, now), ct);
+        if (affected != 1)
+            return null;
+
         return new RefreshTokenSubject(session.SubjectType, session.SubjectId, session.DisplayName, session.SiteId);
     }
 

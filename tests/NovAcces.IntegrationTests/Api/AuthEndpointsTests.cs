@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Npgsql;
 using NovAcces.Shared.Dtos;
 using Xunit;
 
@@ -252,7 +253,7 @@ public sealed class AuthEndpointsTests
     }
 
     [SkippableFact]
-    public async Task SelfDelete_RemovesOnlyCurrentAccount_RevokesRefreshAndIsAudited()
+    public async Task SelfDelete_DeactivatesOnlyCurrentAccount_RevokesRefreshAndIsAudited()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
@@ -271,6 +272,15 @@ public sealed class AuthEndpointsTests
         var refresh = await _factory.CreateClient().PostAsJsonAsync(
             "/api/auth/refresh", new RefreshTokenRequestDto(session.RefreshToken!));
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
+
+        await using (var connection = new NpgsqlConnection(NovAccesApiFactory.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT \"IsDeactivated\" FROM \"identity\".\"AspNetUsers\" WHERE \"NormalizedEmail\" = @email";
+            command.Parameters.AddWithValue("email", email.ToUpperInvariant());
+            Assert.True(Convert.ToBoolean(await command.ExecuteScalarAsync()));
+        }
 
         var superAdmin = await LoginAsync(_factory.CreateClient(), NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword);
         var auditClient = _factory.CreateClient();

@@ -52,7 +52,7 @@ public static class AdminEndpoints
                 if (!callerIsSuperAdmin && roles.Contains(NovAccesRoles.SuperAdmin))
                     continue;
 
-                result.Add(new AdminUserDto(u.Id, u.Email!, u.DisplayName, roles.ToList(), u.SiteId, u.TwoFactorEnabled));
+                result.Add(new AdminUserDto(u.Id, u.Email!, u.DisplayName, roles.ToList(), u.SiteId, u.TwoFactorEnabled, u.IsDeactivated));
             }
 
             return Results.Ok(result);

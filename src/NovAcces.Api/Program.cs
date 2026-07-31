@@ -149,6 +149,7 @@ app.UseAuthorization();
 
 // Traçabilité transversale : chaque action API est inscrite dans le journal global.
 app.UseApplicationAudit();
+app.UseActiveUser();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow, serverTimeUtc = DateTimeOffset.UtcNow }));
 

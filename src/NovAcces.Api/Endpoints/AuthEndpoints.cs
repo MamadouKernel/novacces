@@ -49,7 +49,7 @@ public static class AuthEndpoints
             }
 
             var user = await AuthenticatePasswordAsync(users, request.Email, request.EffectivePassword);
-            if (user is null)
+            if (user is null || user.IsDeactivated)
                 return InvalidCredentials();
 
             var roles = await users.GetRolesAsync(user);
@@ -106,7 +106,7 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "L'enrôlement obligatoire du 2FA est désactivé dans cet environnement." });
 
             var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
-            if (user is null)
+            if (user is null || user.IsDeactivated)
                 return InvalidCredentials();
 
             var roles = await users.GetRolesAsync(user);
@@ -134,7 +134,7 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error = "L'enrôlement obligatoire du 2FA est désactivé dans cet environnement." });
 
             var user = await AuthenticatePasswordAsync(users, request.Email, request.Password);
-            if (user is null)
+            if (user is null || user.IsDeactivated)
                 return InvalidCredentials();
 
             var roles = await users.GetRolesAsync(user);
@@ -237,8 +237,8 @@ public static class AuthEndpoints
             if (subject.SubjectType == "user")
             {
                 var user = await users.FindByIdAsync(subject.SubjectId);
-                if (user is null)
-                    return InvalidCredentials();
+                if (user is null || user.IsDeactivated)
+                return InvalidCredentials();
 
                 var roles = await users.GetRolesAsync(user);
                 if (security.Value.RequireTwoFactorForPrivileged
@@ -309,15 +309,16 @@ public static class AuthEndpoints
             }
 
             await refresh.RevokeAllForSubjectAsync("user", actor, ct);
-            var deleted = await users.DeleteAsync(user);
-            if (!deleted.Succeeded)
-                return Results.BadRequest(new { error = "Suppression du compte refusée.", details = deleted.Errors.Select(e => e.Description) });
+            user.Deactivate(DateTimeOffset.UtcNow);
+            var updated = await users.UpdateAsync(user);
+            if (!updated.Succeeded)
+                return Results.BadRequest(new { error = "Désactivation du compte refusée.", details = updated.Errors.Select(e => e.Description) });
 
             return Results.NoContent();
         })
         .RequireAuthorization()
         .WithName("SelfDeleteAccount")
-        .WithSummary("Supprime uniquement le compte de l'utilisateur authentifié (self-delete)." );
+        .WithSummary("Désactive logiquement le compte de l'utilisateur authentifié (self-delete)." );
         // --- Profil : modifier son nom affiché (authentifié) ---
         group.MapPost("/me/display-name", async (
             UpdateDisplayNameRequestDto request,
@@ -469,7 +470,7 @@ public static class AuthEndpoints
             return null;
         }
 
-        if (await users.IsLockedOutAsync(user))
+        if (user.IsDeactivated || await users.IsLockedOutAsync(user))
             return null;
 
         if (!await users.CheckPasswordAsync(user, password ?? string.Empty))

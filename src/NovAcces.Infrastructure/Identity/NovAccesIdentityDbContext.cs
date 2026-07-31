@@ -33,6 +33,12 @@ public sealed class NovAccesIdentityDbContext
         base.OnModelCreating(builder);
         builder.HasDefaultSchema(Schema);
 
+        builder.Entity<ApplicationUser>(u =>
+        {
+            u.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            u.HasIndex(x => x.IsDeactivated);
+        });
+
         builder.Entity<Terminal>(t =>
         {
             t.ToTable("terminals");

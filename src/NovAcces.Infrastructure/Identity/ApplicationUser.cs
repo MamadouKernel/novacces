@@ -24,4 +24,16 @@ public sealed class ApplicationUser : IdentityUser<Guid>
 
     /// <summary>Nom affiché (journalisation, dashboard).</summary>
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>Suppression logique demandée par le titulaire du compte.</summary>
+    public bool IsDeactivated { get; private set; }
+    public DateTimeOffset? DeactivatedAt { get; private set; }
+
+    public void Deactivate(DateTimeOffset now)
+    {
+        IsDeactivated = true;
+        DeactivatedAt = now;
+        LockoutEnd = now.AddYears(100);
+        SecurityStamp = Guid.NewGuid().ToString("N");
+    }
 }

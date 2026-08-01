@@ -20,10 +20,8 @@ caméra Android, câblage DI (`MauiProgram.cs`), et référence à `NovAcces.Sha
    > reste de la solution. **Visual Studio, lui, compile le projet sans
    > problème.** (Si tu veux l'ajouter au `.sln` définitivement, fais-le
    > depuis VS et compile via VS, pas via `dotnet build` en CLI.)
-2. Renseigner `AgentConfig` dans `MauiProgram.cs` (URL API, clé API du
-   terminal, clé PUBLIQUE ES256) — à externaliser en stockage sécurisé à
-   l'enrôlement.
-3. Sélectionner une cible **Android** (terminal ou émulateur) et lancer.
+2. Au premier lancement, scanner le QR d'enrôlement temporaire affiché par l'administration. La clé API et la clé publique de vérification sont provisionnées automatiquement puis conservées dans SecureStorage.
+3. Sélectionner une cible Android (terminal ou émulateur) et lancer.
 
 ### Fonctionnalités implémentées (à compiler/tester dans VS)
 - ✅ **Persistance SQLite** des scans hors-ligne (`OfflineScanStore`, `sqlite-net-pcl`) :
@@ -98,7 +96,7 @@ dotnet new maui -n NovAcces.Mobile -o NovAcces.Mobile.shell
 4. **Permission caméra Android** : dans `Platforms/Android/AndroidManifest.xml`,
    ajouter `<uses-permission android:name="android.permission.CAMERA" />` et
    demander la permission runtime au lancement de `ScanPage`.
-5. Renseigner `AgentConfig` (URL API, clé API du terminal, clé PUBLIQUE ES256)
+5. Renseigner `AgentConfig` (QR d'enrôlement temporaire affiché par l'administration (la clé API est provisionnée automatiquement))
    dans `MauiProgram.cs` — à externaliser en stockage sécurisé à l'enrôlement.
 
 ### Fichiers déjà fournis (à compiler chez toi)

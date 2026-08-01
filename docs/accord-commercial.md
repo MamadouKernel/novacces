@@ -51,14 +51,25 @@ L'audit externe reste **recommandé formellement** avant tout déploiement
 chez un client tiers de Sigasécurité — la responsabilité du prestataire
 étant alors limitée à la bonne exécution du dispositif de tests internes.
 
-## Notifications : WhatsApp (pas SMS)
-API officielle **WhatsApp Business Platform (Meta Cloud API)**. Accès API
-gratuit ; messages "utility" facturés au réel (3-8 FCFA/message, zone
-"Rest of Africa", ≈ 7 000-12 000 FCFA/mois pour un site à 50 visiteurs/jour).
-Repli automatique par email. Prérequis à initier dès le cadrage : compte
-Meta Business vérifié au nom de Sigasécurité, numéro dédié, approbation des
-templates (24-72h, catégorie "Utility" recommandée pour le coût et la
-facilité d'approbation).
+## Notifications : email uniquement (pas de WhatsApp, pas de SMS)
+
+> **Mise à jour du 01/08/2026** : accord verbal de M. Kodjo — le canal
+> WhatsApp Business Platform initialement prévu est abandonné pour la mise
+> en production. Le QR est transmis à l'invité **par email uniquement**.
+> Cette décision simplifie l'implémentation (plus de compte Meta Business,
+> de numéro dédié ni d'approbation de template à obtenir) mais rend l'email
+> **seul canal** de remise du QR — sa fiabilité de délivrabilité devient donc
+> critique, alors qu'il n'était jusqu'ici qu'un canal de repli. Recommandation
+> du prestataire : passer par un service d'envoi transactionnel (Amazon SES,
+> Brevo, Mailgun...) plutôt qu'une boîte mail classique, pour éviter les
+> limites d'envoi quotidiennes et le risque de classement en spam d'un envoi
+> automatisé. Techniquement sans impact sur le code (le service NovAcces
+> parle SMTP standard, compatible avec ces prestataires).
+
+Prérequis à fournir par Sigasécurité : domaine mail professionnel existant
+(oui/non), fournisseur retenu, adresse d'envoi dédiée, nom d'expéditeur
+affiché. Le mot de passe d'envoi (ou clé API SMTP) est transmis par canal
+sécurisé, jamais par email ou messagerie en clair.
 
 ## Perspective non engageante
 Sigasécurité a exprimé son intention de confier ensuite au prestataire la
@@ -75,8 +86,8 @@ chiffré, cadrage dédié à venir après NovAcces.
 - Ne pas développer de fonctionnalité d'audit d'intrusion automatisé
   poussé — le dispositif de sécurité est la recette interne + OWASP, pas
   un outil de pentest à construire.
-- Le canal de notification à implémenter est **WhatsApp**, pas de code SMS
-  à écrire.
+- Les canaux de notification à implémenter sont **WhatsApp et email**, sans
+  code SMS à écrire.
 - Le récurrent étant unique (pas de distinction hébergement/maintenance
   facturée séparément), aucune logique de facturation différenciée n'est
   nécessaire côté produit — c'est purement contractuel.

@@ -29,10 +29,18 @@ public static class AgentContractEndpoints
         .WithSummary("Vérifie la disponibilité de l'API et fournit l'heure serveur.");
 
         // Nécessaire avant connexion pour vérifier les listes signées hors ligne.
+        // Les clés retirées encore acceptées sont incluses : sans elles, un
+        // terminal en mode dégradé refuserait pendant une rotation les QR
+        // longue durée signés avec l'ancienne clé.
         app.MapGet("/api/keys/public", (IOptions<QrSigningOptions> options) =>
-            Results.Ok(new PublicKeyDto(options.Value.KeyId, options.Value.PublicKeyPem)))
+            Results.Ok(new PublicKeyDto(
+                options.Value.KeyId,
+                options.Value.PublicKeyPem,
+                options.Value.RetiredVerificationKeys
+                    .Select(k => new PublicKeyEntryDto(k.KeyId, k.PublicKeyPem))
+                    .ToList())))
             .WithName("PublicQrSigningKey")
-            .WithSummary("Retourne la clé publique ES256 courante.");
+            .WithSummary("Retourne la clé publique ES256 courante et les clés retirées encore acceptées.");
 
         var agent = app.MapGroup("/api")
             .RequireAuthorization(NovAccesPolicies.AgentTerminal)
@@ -70,6 +78,7 @@ public static class AgentContractEndpoints
         agent.MapGet("/offline-list", async (
             IVisitRepository visits,
             IQrSigningService signing,
+            IExclusionListService exclusions,
             IDateTimeProvider clock,
             IConfiguration configuration,
             CancellationToken ct) =>
@@ -78,8 +87,12 @@ public static class AgentContractEndpoints
             var ttl = Math.Clamp(configuration.GetValue("Agent:OfflineListTtlHours", 4), 1, 4);
             var expiresAt = issuedAt.AddHours(ttl);
             var today = await visits.GetTodayActiveVisitsAsync(issuedAt, ct);
+
+            // Exclusion évaluée à l'ÉMISSION, pas figée à la création (REQ-F-11).
+            var excluded = await exclusions.GetExcludedNormalizedNamesAsync(ct);
+
             var entries = today.Select(v => new OfflineListEntry(
-                v.Id, v.VisitToken, v.ScheduledAt, v.IsExcluded, v.IsOnSite,
+                v.Id, v.VisitToken, v.ScheduledAt, AgentEndpoints.IsExcluded(v, excluded), v.IsOnSite,
                 v.VisitorName, v.Mode.ToString(),
                 v.ScheduledAt?.AddMinutes(-20), v.ScheduledAt?.AddMinutes(15), v.Status.ToString())).ToList();
             var signed = signing.SignDailyOfflineList(entries, issuedAt, expiresAt);
@@ -106,6 +119,15 @@ public static class AgentContractEndpoints
         {
             if (request is null || request.Count == 0)
                 return Results.BadRequest(new { error = "Le lot de resynchronisation ne peut pas être vide." });
+
+            // Même plafond que /api/agent/resync : chaque élément écrit une ligne
+            // ineffaçable au journal, un lot non borné est un DoS doublé d'un
+            // moyen de noyer la traçabilité.
+            if (request.Count > AgentEndpoints.MaxResyncBatchSize)
+                return Results.BadRequest(new
+                {
+                    error = $"Lot trop volumineux ({AgentEndpoints.MaxResyncBatchSize} scans maximum par envoi)."
+                });
 
             var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsedTerminalId)
                 ? parsedTerminalId : (Guid?)null;
@@ -143,6 +165,7 @@ public static class AgentContractEndpoints
                 ? Results.Ok(response)
                 : Results.Json(response, statusCode: StatusCodes.Status409Conflict);
         })
+        .RequireRateLimiting("sensitive")
         .WithName("ContractScanSync")
         .WithSummary("Resynchronise un tableau de scans hors ligne en réutilisant le handler métier et la vérification JWS.");
     }

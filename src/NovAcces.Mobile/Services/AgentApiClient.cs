@@ -17,7 +17,28 @@ public sealed class AgentApiClient
     {
         _http = http;
         _http.BaseAddress = new Uri(config.ApiBaseUrl);
-        _http.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
+        if (!string.IsNullOrWhiteSpace(config.ApiKey))
+            _http.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
+    }
+
+    /// <summary>
+    /// Sites que CE terminal est autorisé à servir (un seul, la plupart du
+    /// temps). Si plusieurs, l'agent doit en choisir un via <see cref="SetSite"/>
+    /// avant la prise de poste.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetAllowedSitesAsync(CancellationToken ct = default)
+        => await _http.GetFromJsonAsync<List<string>>("/api/agent/sites", ct) ?? new();
+
+    /// <summary>
+    /// Fixe le site choisi par l'agent (terminal multi-sites) pour toutes les
+    /// requêtes suivantes (en-tête X-Site-Id, revalidé côté serveur contre la
+    /// liste des sites autorisés de ce terminal — jamais un site arbitraire).
+    /// </summary>
+    public void SetSite(string? siteId)
+    {
+        _http.DefaultRequestHeaders.Remove("X-Site-Id");
+        if (!string.IsNullOrWhiteSpace(siteId))
+            _http.DefaultRequestHeaders.Add("X-Site-Id", siteId);
     }
 
     /// <summary>Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.</summary>

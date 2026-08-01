@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
 
@@ -13,12 +14,18 @@ public sealed class RefreshTokenService : IRefreshTokenService
     private readonly NovAccesIdentityDbContext _db;
     private readonly IOptions<JwtOptions> _jwtOptions;
     private readonly IDateTimeProvider _clock;
+    private readonly ILogger<RefreshTokenService> _logger;
 
-    public RefreshTokenService(NovAccesIdentityDbContext db, IOptions<JwtOptions> jwtOptions, IDateTimeProvider clock)
+    public RefreshTokenService(
+        NovAccesIdentityDbContext db,
+        IOptions<JwtOptions> jwtOptions,
+        IDateTimeProvider clock,
+        ILogger<RefreshTokenService> logger)
     {
         _db = db;
         _jwtOptions = jwtOptions;
         _clock = clock;
+        _logger = logger;
     }
 
     public async Task<RefreshTokenIssued> IssueAsync(string subjectType, string subjectId, string? displayName, string? siteId, CancellationToken ct)
@@ -41,7 +48,30 @@ public sealed class RefreshTokenService : IRefreshTokenService
         var session = await _db.RefreshSessions
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.TokenHash == hash, ct);
-        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= now)
+        if (session is null)
+            return null;
+
+        // DÉTECTION DE RÉUTILISATION. Les jetons sont à usage unique : un jeton
+        // DÉJÀ consommé qu'on nous représente signifie qu'il a fuité (vol de
+        // stockage, rejeu réseau) — soit le légitime rejoue, soit l'attaquant
+        // utilise sa copie, et on ne peut pas distinguer les deux. Le refuser
+        // seul ne suffit pas : celui des deux qui détient le jeton SUIVANT
+        // garde un accès valide. On révoque donc toute la lignée du sujet, ce
+        // qui force une réauthentification complète — la seule issue sûre.
+        //
+        // Un jeton simplement EXPIRÉ n'est pas suspect : c'est le cours normal
+        // des choses, on refuse sans rien révoquer.
+        if (session.RevokedAt is not null)
+        {
+            await RevokeAllForSubjectAsync(session.SubjectType, session.SubjectId, ct);
+            _logger.LogWarning(
+                "Réutilisation d'un refresh token déjà consommé ({SubjectType}/{SubjectId}) : "
+                + "toutes les sessions de ce sujet ont été révoquées.",
+                session.SubjectType, session.SubjectId);
+            return null;
+        }
+
+        if (session.ExpiresAt <= now)
             return null;
 
         // Rotation atomique : une seule requête concurrente peut satisfaire
@@ -49,8 +79,19 @@ public sealed class RefreshTokenService : IRefreshTokenService
         var affected = await _db.RefreshSessions
             .Where(x => x.Id == session.Id && x.RevokedAt == null && x.ExpiresAt > now)
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.RevokedAt, now), ct);
+
+        // Perdu la course : une autre requête vient de consommer CE jeton. Deux
+        // usages simultanés du même jeton à usage unique = même signal que
+        // ci-dessus, même réponse.
         if (affected != 1)
+        {
+            await RevokeAllForSubjectAsync(session.SubjectType, session.SubjectId, ct);
+            _logger.LogWarning(
+                "Usage concurrent d'un refresh token ({SubjectType}/{SubjectId}) : "
+                + "toutes les sessions de ce sujet ont été révoquées.",
+                session.SubjectType, session.SubjectId);
             return null;
+        }
 
         return new RefreshTokenSubject(session.SubjectType, session.SubjectId, session.DisplayName, session.SiteId);
     }

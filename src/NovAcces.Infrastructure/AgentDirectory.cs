@@ -80,7 +80,21 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.EnsureTenantResolvedAsync(ct);
         return await _db.Agents
             .OrderBy(a => a.Matricule)
-            .Select(a => new AgentIdentity(a.Matricule, a.DisplayName))
+            .Select(a => new AgentIdentity(a.Matricule, a.DisplayName, a.IsActive))
             .ToListAsync(ct);
+    }
+
+    public async Task<bool> DeactivateAsync(string matricule, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var m = (matricule ?? string.Empty).Trim();
+
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m, ct);
+        if (agent is null)
+            return false;
+
+        agent.Deactivate();
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 }

@@ -23,6 +23,15 @@ public sealed class ExclusionListService : IExclusionListService
         return await _db.ExclusionEntries.AnyAsync(e => e.NormalizedName == normalized, ct);
     }
 
+    public async Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var names = await _db.ExclusionEntries
+            .Select(e => e.NormalizedName)
+            .ToListAsync(ct);
+        return names.ToHashSet(StringComparer.Ordinal);
+    }
+
     public async Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
@@ -50,15 +59,20 @@ public sealed class ExclusionListService : IExclusionListService
         return entry.Id;
     }
 
-    public async Task<bool> RemoveAsync(Guid id, CancellationToken ct)
+    public async Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
         var entry = await _db.ExclusionEntries.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (entry is null)
-            return false;
+            return null;
+
+        // On capture le contenu AVANT suppression : c'est ce que l'appelant
+        // inscrira au journal d'audit inaltérable.
+        var removed = new ExclusionEntryView(
+            entry.Id, entry.DisplayName, entry.Reason, entry.AddedBy, entry.CreatedAt);
 
         _db.ExclusionEntries.Remove(entry);
         await _db.SaveChangesAsync(ct);
-        return true;
+        return removed;
     }
 }

@@ -28,12 +28,101 @@
             <div class="eyebrow">Sécurité</div>
             <PasswordBox @bind-Value="_current" Label="Mot de passe actuel" Autocomplete="current-password" />
             <PasswordBox @bind-Value="_new" Label="Nouveau mot de passe" Autocomplete="new-password" />
-            <p class="hint" style="margin-top:-.6rem">12 caractères minimum.</p>
+            <p class="hint" style="margin-top:-.6rem">12 caractères minimum, avec majuscule, minuscule, chiffre et caractère spécial.</p>
             <button class="btn-primary" style="max-width:220px" @onclick="ChangePasswordAsync" disabled="@_busy">
                 Changer le mot de passe
             </button>
 
             @if (_error is not null) { <p class="error">@_error</p> }
+
+            <hr class="sep" />
+
+            <div class="eyebrow">Double authentification</div>
+
+            @if (_twoFactorEnabled is null)
+            {
+                <p class="hint">Chargement…</p>
+            }
+            else if (_twoFaStep == TwoFaStep.Status)
+            {
+                <p class="hint" style="margin-top:-.4rem">
+                    @(_twoFactorEnabled == true
+                        ? "Activée — un code de votre application d'authentification est demandé à chaque connexion."
+                        : "Désactivée.")
+                </p>
+                @if (_twoFactorEnabled == true)
+                {
+                    <button class="btn-ghost" style="max-width:220px" @onclick="@(() => _twoFaStep = TwoFaStep.ConfirmDisable)">
+                        Désactiver
+                    </button>
+                }
+                else
+                {
+                    <button class="btn-primary" style="max-width:220px" @onclick="StartTwoFactorSetupAsync" disabled="@_twoFaBusy">
+                        Activer
+                    </button>
+                }
+            }
+            else if (_twoFaStep == TwoFaStep.Enroll)
+            {
+                <ol class="hint" style="margin-top:-.4rem">
+                    <li><strong>1.</strong> Scannez ce QR avec Google Authenticator, Microsoft Authenticator ou FreeOTP.</li>
+                    <li><strong>2.</strong> Saisissez le code à 6 chiffres affiché par l'application.</li>
+                </ol>
+
+                @if (_setup is not null)
+                {
+                    <div class="mb-3 flex justify-center rounded-lg border border-line bg-paper p-4">
+                        <img src="@QrImage.ToDataUri(_setup.AuthenticatorUri)" alt="QR d'enrôlement de l'authentificateur" class="h-40 w-40" />
+                    </div>
+                    <p class="mb-1 font-mono text-[0.65rem] uppercase tracking-[0.14em] text-amber-700">
+                        Saisie manuelle si le scan échoue
+                    </p>
+                    <p class="mb-3 select-all break-all font-mono text-xs text-ink2">@_setup.SharedKey</p>
+                }
+
+                <div class="field">
+                    <label>Code à 6 chiffres</label>
+                    <input type="text" inputmode="numeric" class="tracking-[0.4em] text-center text-lg"
+                           @bind="_twoFaCode" @bind:event="oninput"
+                           @onkeydown="@(e => { if (e.Key == "Enter") _ = ConfirmEnableTwoFactorAsync(); })" />
+                </div>
+                <div style="display:flex;gap:.5rem">
+                    <button class="btn-primary" style="max-width:220px" @onclick="ConfirmEnableTwoFactorAsync" disabled="@_twoFaBusy">
+                        Activer
+                    </button>
+                    <button class="btn-ghost" @onclick="CancelTwoFaFlow">Annuler</button>
+                </div>
+            }
+            else if (_twoFaStep == TwoFaStep.RecoveryCodes)
+            {
+                <div class="mb-3 grid grid-cols-2 gap-2 rounded-lg border border-line bg-paper p-4 font-mono text-sm">
+                    @foreach (var recoveryCode in _recoveryCodes)
+                    {
+                        <span class="select-all">@recoveryCode</span>
+                    }
+                </div>
+                <p class="hint">
+                    Chacun de ces codes permet une connexion si vous perdez votre téléphone.
+                    Notez-les avant de continuer — ils ne seront plus jamais affichés.
+                </p>
+                <button class="btn-primary" style="max-width:220px" @onclick="@(() => { _twoFaStep = TwoFaStep.Status; _recoveryCodes = Array.Empty<string>(); })">
+                    J'ai noté ces codes
+                </button>
+            }
+            else if (_twoFaStep == TwoFaStep.ConfirmDisable)
+            {
+                <p class="hint" style="margin-top:-.4rem">Confirmez avec votre mot de passe pour désactiver le 2FA.</p>
+                <PasswordBox @bind-Value="_twoFaPassword" Label="Mot de passe" Autocomplete="current-password" />
+                <div style="display:flex;gap:.5rem">
+                    <button class="btn-danger" style="max-width:220px" @onclick="ConfirmDisableTwoFactorAsync" disabled="@_twoFaBusy">
+                        Confirmer la désactivation
+                    </button>
+                    <button class="btn-ghost" @onclick="CancelTwoFaFlow">Annuler</button>
+                </div>
+            }
+
+            @if (_twoFaError is not null) { <p class="error">@_twoFaError</p> }
         </div>
 
         <div class="modal-f">
@@ -45,13 +134,29 @@
 @code {
     [Parameter] public EventCallback OnClose { get; set; }
 
+    private enum TwoFaStep { Status, Enroll, RecoveryCodes, ConfirmDisable }
+
     private string _name = "";
     private string _current = "";
     private string _new = "";
     private bool _busy;
     private string? _error;
 
-    protected override void OnInitialized() => _name = Auth.DisplayName ?? "";
+    private bool? _twoFactorEnabled;
+    private TwoFaStep _twoFaStep = TwoFaStep.Status;
+    private TwoFactorSetupDto? _setup;
+    private string _twoFaCode = "";
+    private string _twoFaPassword = "";
+    private IReadOnlyList<string> _recoveryCodes = Array.Empty<string>();
+    private bool _twoFaBusy;
+    private string? _twoFaError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _name = Auth.DisplayName ?? "";
+        try { _twoFactorEnabled = await Api.GetTwoFactorStatusAsync(); }
+        catch { _twoFactorEnabled = false; }
+    }
 
     private async Task SaveNameAsync()
     {
@@ -84,6 +189,70 @@
         }
         catch { _error = "Service indisponible."; }
         finally { _busy = false; }
+    }
+
+    private async Task StartTwoFactorSetupAsync()
+    {
+        if (_twoFaBusy) return;
+        _twoFaBusy = true; _twoFaError = null;
+        try
+        {
+            _setup = await Api.SetupTwoFactorAsync();
+            if (_setup is null) { _twoFaError = "Impossible de préparer la double authentification."; return; }
+            _twoFaStep = TwoFaStep.Enroll;
+        }
+        catch { _twoFaError = "Service indisponible."; }
+        finally { _twoFaBusy = false; }
+    }
+
+    private async Task ConfirmEnableTwoFactorAsync()
+    {
+        if (_twoFaBusy) return;
+        _twoFaBusy = true; _twoFaError = null;
+        try
+        {
+            var (codes, err) = await Api.EnableTwoFactorAsync(_twoFaCode.Trim());
+            if (codes is null)
+            {
+                _twoFaError = err ?? "Code invalide — vérifiez l'heure de votre téléphone et réessayez.";
+                return;
+            }
+
+            _recoveryCodes = codes.RecoveryCodes;
+            _twoFaCode = "";
+            _twoFactorEnabled = true;
+            _twoFaStep = TwoFaStep.RecoveryCodes;
+            Toasts.Success("Double authentification activée.");
+        }
+        catch { _twoFaError = "Service indisponible."; }
+        finally { _twoFaBusy = false; }
+    }
+
+    private async Task ConfirmDisableTwoFactorAsync()
+    {
+        if (_twoFaBusy) return;
+        _twoFaBusy = true; _twoFaError = null;
+        try
+        {
+            var (ok, err) = await Api.DisableTwoFactorAsync(_twoFaPassword);
+            _twoFaPassword = "";
+            if (!ok) { _twoFaError = err ?? "Désactivation refusée."; return; }
+
+            _twoFactorEnabled = false;
+            _twoFaStep = TwoFaStep.Status;
+            Toasts.Success("Double authentification désactivée.");
+        }
+        catch { _twoFaError = "Service indisponible."; }
+        finally { _twoFaBusy = false; }
+    }
+
+    private void CancelTwoFaFlow()
+    {
+        _twoFaStep = TwoFaStep.Status;
+        _twoFaCode = "";
+        _twoFaPassword = "";
+        _setup = null;
+        _twoFaError = null;
     }
 
     private async Task Close() => await OnClose.InvokeAsync();

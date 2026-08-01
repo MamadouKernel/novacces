@@ -9,10 +9,6 @@
       {
         "Path": "src\\NovAcces.Web\\NovAcces.Web.csproj",
         "Action": "Start"
-      },
-      {
-        "Path": "src\\NovAcces.Mobile\\NovAcces.Mobile.csproj",
-        "Action": "Start"
       }
     ]
   }

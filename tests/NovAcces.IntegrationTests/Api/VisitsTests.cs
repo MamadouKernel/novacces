@@ -237,6 +237,72 @@ public sealed class VisitsTests
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
     }
 
+    [SkippableFact]
+    public async Task ReissueQr_ForOwner_ReturnsWorkingPayload()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Cas d'usage réel : le visiteur a perdu le message WhatsApp/email
+        // avant de se présenter. L'hôte doit pouvoir réafficher le badge —
+        // et ce badge doit rester un QR RÉELLEMENT utilisable au poste, pas
+        // une simple image de courtoisie.
+        var hote = await LoginNewUserAsync("Hote");
+        var visitId = await CreateVisitAsync(hote, $"Reissue-{Guid.NewGuid():N}");
+
+        var resp = await hote.GetAsync($"/api/visits/{visitId}/qr");
+        resp.EnsureSuccessStatusCode();
+        var reissued = await resp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+        Assert.Equal(visitId, reissued!.VisitId);
+        Assert.False(string.IsNullOrWhiteSpace(reissued.SignedQrPayload));
+
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+        var scan = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(reissued.SignedQrPayload, "Entry", "ignore"));
+        scan.EnsureSuccessStatusCode();
+        var scanResult = await scan.Content.ReadFromJsonAsync<ScanResponseDto>(Json);
+        Assert.True(scanResult!.IsGranted);
+    }
+
+    [SkippableFact]
+    public async Task ReissueQr_ForOthersVisit_AsHote_Is403()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var owner = await LoginNewUserAsync("Hote");
+        var other = await LoginNewUserAsync("Hote");
+        var visitId = await CreateVisitAsync(owner, $"ReissueOwned-{Guid.NewGuid():N}");
+
+        var resp = await other.GetAsync($"/api/visits/{visitId}/qr");
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ReissueQr_ForRevokedVisit_Is409()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var visitId = await CreateVisitAsync(hote, $"ReissueRevoked-{Guid.NewGuid():N}");
+        (await hote.PostAsync($"/api/visits/{visitId}/revoke", null)).EnsureSuccessStatusCode();
+
+        var resp = await hote.GetAsync($"/api/visits/{visitId}/qr");
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ReissueQr_AsSurete_Succeeds()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var hote = await LoginNewUserAsync("Hote");
+        var surete = await LoginNewUserAsync("Surete");
+        var visitId = await CreateVisitAsync(hote, $"ReissueSurete-{Guid.NewGuid():N}");
+
+        var resp = await surete.GetAsync($"/api/visits/{visitId}/qr");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
     // ---- Aides ----
 
     private static async Task<Guid> CreateVisitAsync(HttpClient hote, string visitorName)

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 using NovAcces.Shared.Auth;
 
@@ -30,7 +31,7 @@ public sealed class TenantResolutionMiddleware
 
     public TenantResolutionMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context, CurrentTenant currentTenant)
+    public async Task InvokeAsync(HttpContext context, CurrentTenant currentTenant, ISiteCatalog sites)
     {
         if (IsExempt(context.Request.Path))
         {
@@ -92,6 +93,18 @@ public sealed class TenantResolutionMiddleware
             {
                 context.Response.StatusCode = StatusCodes.Status400BadRequest;
                 await context.Response.WriteAsJsonAsync(new { error = "Identifiant de site invalide." });
+                return;
+            }
+
+            // Le format valide ne suffit pas : le schéma doit EXISTER. Sinon le
+            // search_path pointe vers un schéma absent, les requêtes retombent
+            // sur « public » et l'appelant reçoit une erreur PostgreSQL brute en
+            // 500. Cas réaliste : un Admin global qui vise un site par
+            // X-Site-Id avec une coquille.
+            if (!await sites.ExistsAsync(currentTenant.SiteId, context.RequestAborted))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(new { error = "Site inconnu ou non provisionné." });
                 return;
             }
         }

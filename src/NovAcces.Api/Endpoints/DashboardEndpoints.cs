@@ -1,23 +1,30 @@
 using NovAcces.Shared.Auth;
 using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
+using NovAcces.Domain.Enums;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
 
 /// <summary>
-/// Lectures du dashboard sûreté (REQ-F-07). Réservées à la policy « Dashboard »
-/// (Sûreté / Hôte / Admin). Le tenant vient du jeton : chaque appelant ne voit
-/// que le journal et les présents de SON site.
+/// Lectures du dashboard sûreté (REQ-F-07). Réservées à la Sûreté et l'Admin
+/// (policy « SecurityJournal ») : ces vues portent sur TOUS les visiteurs du
+/// site, pas seulement ceux d'un hôte donné. Un hôte consulte ses propres
+/// demandes via /api/visits/mine et /api/visits/{id}/history, qui filtrent sur
+/// lui — moindre privilège §8.5.
+///
+/// Le tenant vient du jeton : chaque appelant ne voit que le journal et les
+/// présents de SON site.
 /// </summary>
 public static class DashboardEndpoints
 {
     public static RouteGroupBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard")
-            .RequireAuthorization(NovAccesPolicies.DashboardApi);
+            .RequireAuthorization(NovAccesPolicies.SecurityJournal);
 
         group.MapGet("/journal", async (IScanLogRepository logs, int? limit, string? q, CancellationToken ct) =>
         {
@@ -46,6 +53,77 @@ public static class DashboardEndpoints
         })
         .WithName("OnSiteVisitors")
         .WithSummary("Visiteurs actuellement présents sur le site.");
+
+        // §7 — Sortie enregistrée MANUELLEMENT par la sûreté, sans scan.
+        // Cas réel : le visiteur repart sans présenter son QR (téléphone
+        // déchargé, autre accès, oubli). Sans cette action il resterait
+        // « présent » indéfiniment et continuerait à générer des alertes de
+        // dépassement que personne ne peut clore.
+        group.MapPost("/on-site/{visitId:guid}/check-out", async (
+            Guid visitId,
+            ClaimsPrincipal user,
+            IVisitRepository visits,
+            IScanLogRepository logs,
+            IScanEventBroadcaster broadcaster,
+            IHostDirectory hosts,
+            INotificationService notifications,
+            IAdminAuditLog audit,
+            IDateTimeProvider clock,
+            CancellationToken ct) =>
+        {
+            var visit = await visits.GetByIdAsync(visitId, ct);
+            if (visit is null)
+                return Results.NotFound(new { error = "Demande introuvable." });
+
+            var now = clock.UtcNow;
+            var actor = user.HostIdentifier();
+            var outcome = visit.ForceCheckOut(now);
+
+            if (!outcome.IsCheckOut)
+                return Results.Conflict(new { error = "Ce visiteur n'est pas enregistré comme présent." });
+
+            // Journalisée comme toute sortie, mais explicitement attribuée à
+            // l'agent de sûreté et signalée comme manuelle : le journal doit
+            // permettre de distinguer une sortie constatée au poste d'une
+            // sortie déclarée depuis le dashboard.
+            await logs.AddAsync(ScanLogEntry.Create(
+                visit.Id, visit.VisitorName, actor, CheckpointDirection.Exit,
+                outcome, degradedMode: false,
+                $"Sortie enregistrée manuellement depuis le dashboard sûreté (sans scan)"
+                + (outcome.OverstayMinutesAtCheckOut > 0
+                    ? $" · dépassement +{outcome.OverstayMinutesAtCheckOut} min"
+                    : string.Empty),
+                now), ct);
+
+            await visits.SaveChangesAsync(ct);
+
+            await audit.RecordAsync(
+                AdminAuditAction.ManualCheckOut, actor, visit.Id.ToString(),
+                "Sortie enregistrée manuellement (visiteur reparti sans scanner).", ct);
+
+            try
+            {
+                await broadcaster.BroadcastAsync(new ScanBroadcastEvent(
+                    visit.Id, visit.VisitorName, "CHECKED_OUT", true, true, false, actor, now), ct);
+
+                var host = await hosts.FindAsync(visit.HostUserId, ct);
+                if (host is not null)
+                    await notifications.NotifyHostAsync(new HostEventNotification(
+                        HostEventKind.Departure, visit.Id, visit.VisitorName, host, now,
+                        PresenceMinutes: outcome.PresenceMinutesAtCheckOut,
+                        OverstayMinutes: outcome.OverstayMinutesAtCheckOut), ct);
+            }
+            catch
+            {
+                // Best-effort : la sortie est enregistrée, c'est l'essentiel.
+            }
+
+            return Results.Ok(new ManualCheckOutResponseDto(
+                visit.Id, visit.VisitorName,
+                outcome.PresenceMinutesAtCheckOut, outcome.OverstayMinutesAtCheckOut));
+        })
+        .WithName("ManualCheckOut")
+        .WithSummary("Enregistre manuellement la sortie d'un visiteur présent (sans scan).");
 
         group.MapGet("/summary", async (
             IScanLogRepository logs, IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>

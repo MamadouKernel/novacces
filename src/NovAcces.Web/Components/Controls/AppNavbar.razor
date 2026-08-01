@@ -8,7 +8,14 @@
 {
     <header class="navbar">
         <div class="navbar-in">
-            <a class="navbar-brand" href="@Landing()">NOV<span>ACCÈS</span></a>
+            @* Bloc de marque identique à la maquette : le nom, et en dessous
+               l'exploitant et l'objet du produit. Sans le sous-titre, la barre
+               ne dit pas au garde ni à l'hôte sous quelle responsabilité il
+               agit — c'est une information d'exploitation, pas décorative. *@
+            <a class="navbar-brand" href="@Landing()">
+                <span class="navbar-brand-name">NOV<span>ACCÈS</span></span>
+                <span class="navbar-brand-sub">Sigasécurité · Contrôle des visiteurs</span>
+            </a>
 
             <div class="navbar-user">
                 <button class="navbar-userbtn" @onclick="Toggle" @onclick:stopPropagation="true">
@@ -79,13 +86,24 @@
         : Auth.IsInRole(NovAccesRoles.Surete) ? "Sûreté"
         : Auth.IsInRole(NovAccesRoles.Hote) ? "Hôte" : "";
 
+    /// <summary>
+    /// Initiales de l'avatar. On ne retient que les fragments COMMENÇANT par
+    /// une lettre : un nom affiché comme « Admin (dev) » produisait « A( »,
+    /// la parenthèse étant prise pour une initiale. Les qualificatifs entre
+    /// parenthèses et la ponctuation sont donc ignorés.
+    /// </summary>
     private string Initials()
     {
-        var name = (Auth.DisplayName ?? "").Trim();
-        if (name.Length == 0) return "?";
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2
-            ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
-            : name[..1].ToUpperInvariant();
+        var words = (Auth.DisplayName ?? "")
+            .Split(new[] { ' ', '-', '\'', '.' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => char.IsLetter(w[0]))
+            .ToList();
+
+        return words.Count switch
+        {
+            0 => "?",
+            1 => words[0][..1].ToUpperInvariant(),
+            _ => $"{words[0][0]}{words[1][0]}".ToUpperInvariant(),
+        };
     }
 }

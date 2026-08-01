@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Npgsql;
 using NovAcces.Shared.Dtos;
@@ -124,7 +125,7 @@ public sealed class AdminTests
         var deviceId = Guid.NewGuid().ToString("D");
         var activation = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(TicketFromQr(ticket.QrPayload), deviceId, ecdsa.ExportSubjectPublicKeyInfoPem()));
+            EnrollmentRequest(ecdsa, TicketFromQr(ticket.QrPayload), deviceId));
         Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
         var activated = await activation.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
         Assert.NotNull(activated);
@@ -137,7 +138,7 @@ public sealed class AdminTests
         // Le même ticket ne peut plus activer un deuxième téléphone.
         var second = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(TicketFromQr(ticket.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+            EnrollmentRequest(ecdsa, TicketFromQr(ticket.QrPayload), Guid.NewGuid().ToString("D")));
         Assert.Equal(HttpStatusCode.Gone, second.StatusCode);
 
         // Un nouveau ticket réenrôle le terminal et invalide la clé précédente.
@@ -145,13 +146,52 @@ public sealed class AdminTests
         var replacementTicket = await replacementTicketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
         var replacement = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(TicketFromQr(replacementTicket!.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+            EnrollmentRequest(ecdsa, TicketFromQr(replacementTicket!.QrPayload), Guid.NewGuid().ToString("D")));
         Assert.Equal(HttpStatusCode.OK, replacement.StatusCode);
 
         var oldKey = _factory.CreateClient();
         oldKey.DefaultRequestHeaders.Add("X-Api-Key", activated.ApiKey);
         Assert.Equal(HttpStatusCode.Unauthorized, (await oldKey.GetAsync("/api/agent/sites")).StatusCode);
     }
+    [SkippableFact]
+    public async Task DeviceActivation_WithoutProofOfPossession_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"PoP-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        var ticketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        var rawTicket = TicketFromQr(ticket!.QrPayload);
+
+        using var deviceKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var deviceId = Guid.NewGuid().ToString("D");
+
+        // 1. Aucune preuve : la clé publique déclarée n'atteste de rien.
+        var noProof = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(rawTicket, deviceId, deviceKey.ExportSubjectPublicKeyInfoPem()));
+        Assert.Equal(HttpStatusCode.BadRequest, noProof.StatusCode);
+
+        // 2. Preuve signée par une AUTRE clé que celle déclarée : c'est le
+        //    scénario du ticket intercepté par un appareil tiers.
+        using var attackerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var wrongProof = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            new DeviceEnrollmentRequestDto(rawTicket, deviceId, deviceKey.ExportSubjectPublicKeyInfoPem(),
+                SignProof(attackerKey, rawTicket, deviceId)));
+        Assert.Equal(HttpStatusCode.BadRequest, wrongProof.StatusCode);
+
+        // 3. Le ticket n'a PAS été consommé par ces tentatives : le device
+        //    légitime peut toujours s'enrôler.
+        var legitimate = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            EnrollmentRequest(deviceKey, rawTicket, deviceId));
+        Assert.Equal(HttpStatusCode.OK, legitimate.StatusCode);
+    }
+
     [SkippableFact]
     public async Task CreateTerminal_ForbiddenForNonAdmin()
     {
@@ -178,7 +218,7 @@ public sealed class AdminTests
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var activationResponse = await _factory.CreateClient().PostAsJsonAsync(
             "/api/device-enrollments/activate",
-            new DeviceEnrollmentRequestDto(TicketFromQr(ticket!.QrPayload), Guid.NewGuid().ToString("D"), ecdsa.ExportSubjectPublicKeyInfoPem()));
+            EnrollmentRequest(ecdsa, TicketFromQr(ticket!.QrPayload), Guid.NewGuid().ToString("D")));
         var activated = await activationResponse.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
         var terminalClient = _factory.CreateClient();
         terminalClient.DefaultRequestHeaders.Add("X-Api-Key", activated!.ApiKey);
@@ -257,6 +297,23 @@ public sealed class AdminTests
         var token = (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
+    }
+
+    /// <summary>
+    /// Construit une demande d'activation complète, PREUVE DE POSSESSION
+    /// comprise : le device signe « ticket|deviceInstanceId » avec sa clé
+    /// privée. Reproduit exactement ce que fait l'app mobile (EnrollmentPage).
+    /// </summary>
+    private static DeviceEnrollmentRequestDto EnrollmentRequest(
+        ECDsa deviceKey, string ticket, string deviceInstanceId)
+        => new(ticket, deviceInstanceId, deviceKey.ExportSubjectPublicKeyInfoPem(),
+            SignProof(deviceKey, ticket, deviceInstanceId));
+
+    private static string SignProof(ECDsa deviceKey, string ticket, string deviceInstanceId)
+    {
+        var signature = deviceKey.SignData(
+            Encoding.UTF8.GetBytes($"{ticket}|{deviceInstanceId}"), HashAlgorithmName.SHA256);
+        return Convert.ToBase64String(signature).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
     private static string TicketFromQr(string payload)

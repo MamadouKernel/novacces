@@ -68,7 +68,7 @@ public sealed class AgentTests
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
         var name = $"Resync-{Guid.NewGuid():N}";
-        var visitId = await CreateVisitAsync(name);
+        var (visitId, payload) = await CreateVisitWithQrAsync(name);
         var token = await ReadVisitTokenAsync(visitId);
 
         // Le QR est révoqué (comme depuis le dashboard pendant une coupure).
@@ -77,11 +77,39 @@ public sealed class AgentTests
 
         // Un scan accordé hors ligne pour ce QR doit remonter en conflit.
         var resync = await AgentClient().PostAsJsonAsync("/api/agent/resync", new ResyncRequestDto(
-            new List<OfflineScanDto> { new(token, "Entry", true, DateTimeOffset.UtcNow) }));
+            new List<OfflineScanDto> { new(token, "Entry", true, DateTimeOffset.UtcNow, SignedQrPayload: payload) }));
         var result = await resync.Content.ReadFromJsonAsync<ResyncResultDto>(Json);
 
         Assert.Equal(1, result!.Processed);
         Assert.Contains(result.Conflicts, c => c.VisitToken == token);
+    }
+
+    [SkippableFact]
+    public async Task Resync_FabricatedGrant_WithoutValidSignature_IsNeverJournaledAsGranted()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Un terminal (clé API volée) prétend avoir accordé un accès hors ligne,
+        // en fournissant un jeton de visite RÉEL mais aucune enveloppe signée
+        // valide. Le serveur rejoue la vérification ES256 : rien ne doit être
+        // inscrit comme « accordé » dans un journal qu'on ne peut pas effacer,
+        // et l'écart doit remonter en conflit à la sûreté.
+        var name = $"ResyncForge-{Guid.NewGuid():N}";
+        var visitId = await CreateVisitAsync(name);
+        var token = await ReadVisitTokenAsync(visitId);
+
+        var resync = await AgentClient().PostAsJsonAsync("/api/agent/resync", new ResyncRequestDto(
+            new List<OfflineScanDto>
+            {
+                new(token, "Entry", true, DateTimeOffset.UtcNow, "Recognized", false, "charge-utile-forgee"),
+            }));
+        var result = await resync.Content.ReadFromJsonAsync<ResyncResultDto>(Json);
+
+        Assert.Single(result!.Conflicts);
+        Assert.Equal(0, await CountGrantedScanLogsAsync(visitId));
+
+        // La visite ne doit pas non plus être passée « sur site ».
+        Assert.False(await IsOnSiteAsync(visitId));
     }
 
     [SkippableFact]
@@ -90,7 +118,7 @@ public sealed class AgentTests
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
 
         var name = $"ResyncJournal-{Guid.NewGuid():N}";
-        var visitId = await CreateVisitAsync(name);
+        var (visitId, payload) = await CreateVisitWithQrAsync(name);
         var token = await ReadVisitTokenAsync(visitId);
 
         // QR valide (non révoqué) : un scan accordé + un scan refusé hors ligne.
@@ -98,8 +126,8 @@ public sealed class AgentTests
         var resync = await AgentClient().PostAsJsonAsync("/api/agent/resync", new ResyncRequestDto(
             new List<OfflineScanDto>
             {
-                new(token, "Entry", true, DateTimeOffset.UtcNow, "Recognized", false),
-                new(token, "Entry", false, DateTimeOffset.UtcNow, "TooLate", true),
+                new(token, "Entry", true, DateTimeOffset.UtcNow, "Recognized", false, payload),
+                new(token, "Entry", false, DateTimeOffset.UtcNow, "TooLate", true, payload),
             }));
         var result = await resync.Content.ReadFromJsonAsync<ResyncResultDto>(Json);
 
@@ -141,6 +169,54 @@ public sealed class AgentTests
 
         Assert.True(await CountScanLogsByAgentAsync(visitId, matricule) >= 1,
             "Le scan aurait dû être tracé au matricule de l'agent.");
+    }
+
+    [SkippableFact]
+    public async Task AgentLogin_WithSiteOutsideTerminalAllowList_IsRejected()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Un agent parfaitement valide sur TestSite2…
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "8531";
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite2, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        // …présenté depuis un terminal enrôlé UNIQUEMENT pour TestSite.
+        // /api/auth étant exempté du middleware de tenant, c'est l'endpoint
+        // lui-même qui doit refuser : sinon le terminal du site A pourrait
+        // éprouver les PIN des agents du site B (verrouillage à distance,
+        // oracle de matricule) — fuite de cloisonnement entre clients.
+        var agent = AgentClient();
+        agent.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite2);
+        var resp = await agent.PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(null, pin) { Matricule = matricule });
+
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task AgentLogin_WithOwnSite_Succeeds()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "7712";
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        var agent = AgentClient();
+        agent.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite);
+        var resp = await agent.PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(null, pin) { Matricule = matricule });
+
+        resp.EnsureSuccessStatusCode();
+        var login = await resp.Content.ReadFromJsonAsync<AgentLoginResponseDto>(Json);
+        Assert.Equal(matricule, login!.Agent.Matricule);
     }
 
     [SkippableFact]
@@ -297,6 +373,28 @@ public sealed class AgentTests
             visitorName, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json))!.VisitId;
+    }
+
+    private static async Task<long> CountGrantedScanLogsAsync(Guid visitId)
+    {
+        await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"SELECT count(*) FROM \"site_{NovAccesApiFactory.TestSite}\".scan_logs " +
+            "WHERE \"VisitId\" = @id AND \"WasGranted\" = true";
+        cmd.Parameters.AddWithValue("id", visitId);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
+
+    private static async Task<bool> IsOnSiteAsync(Guid visitId)
+    {
+        await using var conn = new NpgsqlConnection(NovAccesApiFactory.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT \"IsOnSite\" FROM \"site_{NovAccesApiFactory.TestSite}\".visits WHERE \"Id\" = @id";
+        cmd.Parameters.AddWithValue("id", visitId);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
     }
 
     private static async Task<Guid> ReadVisitTokenAsync(Guid visitId)

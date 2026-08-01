@@ -9,7 +9,7 @@ contractuel actuel** (CDC + note d'analyse). Aucune n'est bloquante pour le pilo
 SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicatifs**
 (base avenant : 90 000 FCFA / jour-homme) et à confirmer.
 
-## 1. Identification individuelle de l'agent (« prise de poste »)
+## 1. Identification individuelle de l'agent (« prise de poste ») — ✅ réalisé (26/07/2026)
 
 - **Aujourd'hui** : l'app agent authentifie le **terminal** (clé API), pas la
   personne. Le journal attribue les scans au poste, pas à un agent nommé.
@@ -20,6 +20,22 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
   (badge agent scanné, ou matricule + PIN **vérifié serveur**), qui tamponne
   chaque scan avec l'agent. Léger, sans mot de passe/2FA sur le terminal partagé.
 - **Chiffrage indicatif** : ~3 à 5 jours-homme.
+- **Réalisé** : matricule + PIN vérifié serveur (`PasswordHasher` PBKDF2), jeton
+  de poste signé joint à chaque scan, gestion des agents dans la console Admin.
+  Extension additionnelle : un terminal peut désormais servir **plusieurs
+  sites** (liste blanche en configuration serveur, l'agent choisit le site à la
+  prise de poste, revalidé côté serveur) — décision prise avec Mamadou le
+  26/07/2026, gardée en configuration (pas de table d'enrôlement) pour ne pas
+  empiéter sur le périmètre de l'évolution #3 ci-dessous.
+  **Addendum (01/08/2026)** : un agent (personne) n'est pas figé sur un site
+  — il peut faire une période sur le site A puis être affecté au site B.
+  Comme chaque site est un schéma isolé (frontière de cloisonnement
+  multi-tenant, §7.3), l'agent reste rattaché à un site à la fois : la
+  réaffectation crée un nouveau matricule+PIN sur le site B (déjà possible
+  via la console Admin), et **désactive** l'ancien enregistrement sur le
+  site A pour ne pas laisser un PIN valide indéfiniment sur un site quitté
+  (capacité ajoutée le 01/08/2026 — `Agent.Deactivate()` existait côté
+  domaine mais n'était exposée par aucun endpoint).
 
 ## 2. Clé de signature par site (isolation cryptographique multi-tenant)
 
@@ -33,26 +49,20 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
   globale pour le **pilote** (un site) ; à faire évoluer avant la phase revente.
 - **Chiffrage indicatif** : ~3 à 4 jours-homme.
 
-## 3. Console de gestion des terminaux + QR d'enrôlement
+## 3. Console de gestion des terminaux + QR d'enrôlement — ✅ réalisé (31/07/2026)
 
-- **Aujourd'hui** : les terminaux sont **statiques en configuration** serveur.
-  Ajouter/retirer un terminal = éditer la config + redémarrer. Pas de révocation
-  ni de rotation de clé ; la clé se recopie à la main.
-- **Enjeu** : ingérable à l'échelle multi-tenant (plusieurs clients, plusieurs
-  postes), et pas de réponse en cas de terminal volé/perdu.
-- **Recommandation** : une **console d'administration des terminaux** (création,
-  révocation, rotation, par site) qui **génère une clé unique** et produit un
-  **QR d'enrôlement** ; l'agent **scanne ce QR** sur l'appareil pour l'enrôler
-  (zéro saisie manuelle). Réutilise la crypto et le geste « scanner » déjà en place.
-- **Chiffrage indicatif** : ~5 à 8 jours-homme.
-
+- La console Admin crée, liste et révoque les terminaux par site.
+- L'Admin génère un ticket QR temporaire, valable quelques minutes et utilisable une seule fois.
+- Le Mobile scanne le QR, génère une paire de clés, active le device et reçoit automatiquement une nouvelle clé API.
+- Le ticket est hashé en base, invalidé après activation ou lors de la génération d'un nouveau QR.
+- L'activation, la rotation de clé, la révocation et chaque requête API sont tracées.
 ## Synthèse
 
 | # | Évolution | Priorité | Indicatif (j-h) |
 |---|---|---|---|
-| 1 | Prise de poste agent | Recommandée (traçabilité) | 3–5 |
+| 1 | Prise de poste agent | ✅ Réalisée (26/07/2026) | 3–5 |
 | 2 | Clé de signature par site | Avant phase revente | 3–4 |
-| 3 | Console terminaux + QR d'enrôlement | Avant phase revente | 5–8 |
+| 3 | Console terminaux + QR d'enrôlement | ✅ Réalisée | 5–8 |
 
 **Décision attendue** : confirmer si l'une ou l'autre entre dans le périmètre du
 pilote (auquel cas avenant), ou est planifiée pour la phase de déploiement

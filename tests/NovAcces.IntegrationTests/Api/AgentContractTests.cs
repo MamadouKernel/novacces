@@ -58,6 +58,40 @@ public sealed class AgentContractTests
     }
 
     [SkippableFact]
+    public async Task RefreshTokenReuse_RevokesTheWholeChain()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Compte DÉDIÉ : révoquer toute sa lignée ne doit pas perturber les
+        // autres tests, qui partagent le compte Admin d'amorçage.
+        var (email, password) = await CreateUserAsync("Hote");
+        var client = _factory.CreateClient();
+
+        var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequestDto(email, password));
+        login.EnsureSuccessStatusCode();
+        var first = (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!;
+
+        // Rotation normale : le jeton n°1 est consommé, le n°2 est délivré.
+        var rotated = await client.PostAsJsonAsync("/api/auth/refresh",
+            new RefreshTokenRequestDto(first.RefreshToken!));
+        rotated.EnsureSuccessStatusCode();
+        var second = (await rotated.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!;
+
+        // Réutilisation du jeton n°1 : signe qu'il a fuité. Refusé…
+        var replay = await client.PostAsJsonAsync("/api/auth/refresh",
+            new RefreshTokenRequestDto(first.RefreshToken!));
+        Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+
+        // …et surtout, le jeton n°2 — que détient peut-être l'attaquant — ne
+        // doit plus valoir non plus : toute la lignée tombe. Sans cela, refuser
+        // le rejeu ne servait à rien : celui des deux qui détient le jeton
+        // suivant gardait un accès parfaitement valide.
+        var descendant = await client.PostAsJsonAsync("/api/auth/refresh",
+            new RefreshTokenRequestDto(second.RefreshToken!));
+        Assert.Equal(HttpStatusCode.Unauthorized, descendant.StatusCode);
+    }
+
+    [SkippableFact]
     public async Task AgentLogin_UsesContractPayload_AndCanReadSiteConfig()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
@@ -181,6 +215,18 @@ public sealed class AgentContractTests
         var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(created!.VisitId, evt.VisitId);
         Assert.Equal(visitorName, evt.VisitorName);
+    }
+
+    /// <summary>Crée un compte jetable et renvoie ses identifiants.</summary>
+    private async Task<(string Email, string Password)> CreateUserAsync(string role)
+    {
+        var admin = await LoginAdminAsync();
+        var email = $"{role.ToLowerInvariant()}-{Guid.NewGuid():N}@sicopa.local";
+        const string password = "Test!Passw0rd2026";
+        (await admin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(email, password, $"{role} Test", role, NovAccesApiFactory.TestSite)))
+            .EnsureSuccessStatusCode();
+        return (email, password);
     }
 
     private async Task<HttpClient> LoginAdminAsync()

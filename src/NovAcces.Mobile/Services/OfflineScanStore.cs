@@ -65,6 +65,13 @@ public sealed class PendingScanRow
     public string? VerdictCode { get; set; }
     public bool WasSecurityEvent { get; set; }
 
+    /// <summary>
+    /// Enveloppe ES256 telle que présentée au poste. C'est ELLE que le serveur
+    /// rejoue à la resynchronisation — le verdict local ne fait pas foi. Sans ce
+    /// champ, la resynchronisation ne serait qu'une déclaration du terminal.
+    /// </summary>
+    public string SignedQrPayload { get; set; } = "";
+
     public static PendingScanRow From(OfflineScanDto s) => new()
     {
         VisitToken = s.VisitToken.ToString(),
@@ -73,6 +80,7 @@ public sealed class PendingScanRow
         OccurredAtUnix = s.OccurredAt.ToUnixTimeMilliseconds(),
         VerdictCode = s.VerdictCode,
         WasSecurityEvent = s.WasSecurityEvent,
+        SignedQrPayload = s.SignedQrPayload,
     };
 
     public OfflineScanDto ToDto() => new(
@@ -81,5 +89,6 @@ public sealed class PendingScanRow
         WasGranted,
         DateTimeOffset.FromUnixTimeMilliseconds(OccurredAtUnix),
         VerdictCode,
-        WasSecurityEvent);
+        WasSecurityEvent,
+        SignedQrPayload);
 }

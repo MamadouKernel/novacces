@@ -12,12 +12,36 @@ public partial class ShiftPage : ContentPage
 {
     private readonly AgentSession _session;
     private readonly IServiceProvider _services;
+    private IReadOnlyList<string> _allowedSites = Array.Empty<string>();
 
     public ShiftPage(AgentSession session, IServiceProvider services)
     {
         InitializeComponent();
         _session = session;
         _services = services;
+    }
+
+    // Terminal à site unique (cas courant) : aucun sélecteur affiché, rien ne
+    // change pour l'agent. Terminal partagé entre plusieurs sites : le
+    // sélecteur apparaît et le choix est obligatoire avant la prise de poste.
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+
+        try
+        {
+            _allowedSites = await _session.GetAllowedSitesAsync();
+        }
+        catch
+        {
+            _allowedSites = Array.Empty<string>();
+        }
+
+        var showPicker = _allowedSites.Count > 1;
+        SiteLabel.IsVisible = showPicker;
+        SitePicker.IsVisible = showPicker;
+        if (showPicker)
+            SitePicker.ItemsSource = _allowedSites.ToList();
     }
 
     private async void OnStartShift(object? sender, EventArgs e)
@@ -29,6 +53,17 @@ public partial class ShiftPage : ContentPage
         {
             StatusLabel.Text = "Matricule et PIN requis.";
             return;
+        }
+
+        if (_allowedSites.Count > 1)
+        {
+            var site = SitePicker.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(site))
+            {
+                StatusLabel.Text = "Choisissez le site avant de prendre le poste.";
+                return;
+            }
+            _session.SetSite(site);
         }
 
         StartButton.IsEnabled = false;

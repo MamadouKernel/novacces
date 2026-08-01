@@ -71,7 +71,7 @@ public sealed class ConcurrencyAntiReplayTests
             var visit = await repo.GetForUpdateAsync(token, ct);
             Assert.NotNull(visit);
 
-            var outcome = visit!.Scan(CheckpointDirection.Entry, true, now);
+            var outcome = visit!.Scan(CheckpointDirection.Entry, true, now, isOnExclusionList: false);
 
             // Fenêtre pendant laquelle le verrou DOIT rester tenu : sans la
             // transaction englobante, une tentative concurrente s'y glisserait.

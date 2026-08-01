@@ -30,6 +30,7 @@ public static class IdentityStartup
         var config = sp.GetRequiredService<IConfiguration>();
         var adminEmail = config["SeedAdmin:Email"] ?? "admin@novacces.local";
         var adminPassword = config["SeedAdmin:Password"] ?? "ChangeMoi!2026Dev";
+        var adminDisplayName = config["SeedAdmin:DisplayName"] ?? "Admin (dev)";
 
         var users = sp.GetRequiredService<UserManager<ApplicationUser>>();
         var admin = await users.FindByEmailAsync(adminEmail);
@@ -39,7 +40,7 @@ public static class IdentityStartup
             {
                 UserName = adminEmail,
                 Email = adminEmail,
-                DisplayName = "Admin (dev)",
+                DisplayName = adminDisplayName,
                 SiteId = null, // Admin global
                 EmailConfirmed = true,
             };

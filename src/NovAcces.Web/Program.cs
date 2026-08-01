@@ -31,6 +31,9 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// Empreinte du CSS pour le cache-busting (voir AssetVersion et App.razor).
+AssetVersion.Initialize(app.Environment.WebRootPath);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);

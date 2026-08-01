@@ -43,6 +43,19 @@ public static class AuthEndpoints
                 if (!CurrentTenant.IsValidSiteId(siteId))
                     return Results.BadRequest(new { error = "X-Site-Id requis et invalide pour la connexion agent." });
 
+                // CLOISONNEMENT (§7.3) : /api/auth est exempté de
+                // TenantResolutionMiddleware, c'est donc ICI que le site demandé
+                // doit être confronté aux claims du terminal. Sans ce contrôle,
+                // un terminal enrôlé pour le site A pourrait faire vérifier des
+                // matricules/PIN contre l'annuaire du site B — verrouillage à
+                // distance des comptes d'un autre client de Sigasécurité, oracle
+                // d'existence de matricule, et jeton agent émis pour un site que
+                // ce terminal n'a jamais eu le droit de servir.
+                if (!TerminalMayServeSite(principal, siteId))
+                    return Results.Json(
+                        new { error = "Site non autorisé pour ce terminal." },
+                        statusCode: StatusCodes.Status403Forbidden);
+
                 tenant.Resolve(siteId);
                 var agent = await agents.VerifyAsync(request.Matricule, request.EffectivePassword, ct);
                 if (agent is null)
@@ -347,6 +360,21 @@ public static class AuthEndpoints
         .WithName("ChangePassword")
         .WithSummary("Change le mot de passe de l'utilisateur connecté (ancien requis).");
 
+        // --- 2FA : état actuel (authentifié) — pour afficher activer/désactiver dans le profil ---
+        group.MapGet("/me/2fa-status", async (
+            System.Security.Claims.ClaimsPrincipal principal,
+            UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.GetUserAsync(principal);
+            if (user is null)
+                return Results.Unauthorized();
+
+            return Results.Ok(new TwoFactorStatusDto(await users.GetTwoFactorEnabledAsync(user)));
+        })
+        .RequireAuthorization()
+        .WithName("TwoFactorStatus")
+        .WithSummary("État actuel du 2FA pour l'utilisateur connecté.");
+
         // --- 2FA : enrôlement (authentifié) — renvoie la clé + l'URI otpauth ---
         group.MapPost("/2fa/setup", async (
             System.Security.Claims.ClaimsPrincipal principal,
@@ -474,6 +502,23 @@ public static class AuthEndpoints
         var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
         var refreshToken = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
         return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt));
+    }
+
+    /// <summary>
+    /// Le terminal authentifié a-t-il le droit de servir ce site ? Applique
+    /// exactement la même règle que TenantResolutionMiddleware :
+    ///  - terminal mono-site : le claim SiteId fait foi, tout autre site est un refus ;
+    ///  - terminal multi-sites : le site doit figurer dans ses claims AllowedSite ;
+    ///  - aucun claim de site : identité qui n'est pas un terminal → refus.
+    /// </summary>
+    private static bool TerminalMayServeSite(ClaimsPrincipal principal, string siteId)
+    {
+        var claimSite = principal.FindFirstValue(NovAccesClaimTypes.SiteId);
+        if (!string.IsNullOrWhiteSpace(claimSite))
+            return string.Equals(claimSite, siteId, StringComparison.OrdinalIgnoreCase);
+
+        var allowedSites = principal.FindAll(NovAccesClaimTypes.AllowedSite).Select(c => c.Value).ToList();
+        return allowedSites.Contains(siteId, StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsPrivilegedRole(IEnumerable<string> roles) =>

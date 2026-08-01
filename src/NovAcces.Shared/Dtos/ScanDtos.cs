@@ -8,4 +8,5 @@ public sealed record ScanResponseDto(
     bool IsSecurityEvent,
     string VerdictCode,
     string? VisitorName,
-    int? OverstayMinutes);
+    int? OverstayMinutes,
+    int? PresenceMinutes = null); // durée de présence à la sortie (§1.6)

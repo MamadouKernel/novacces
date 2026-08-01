@@ -64,7 +64,7 @@ public sealed record ShiftStartResponseDto(
 public sealed record CreateAgentRequestDto(string SiteId, string Matricule, string DisplayName, string Pin);
 
 /// <summary>Agent listé dans la console d'administration (sans le PIN).</summary>
-public sealed record AgentSummaryDto(string Matricule, string DisplayName);
+public sealed record AgentSummaryDto(string Matricule, string DisplayName, bool IsActive = true);
 
 /// <summary>
 /// Un scan effectué hors ligne, remonté à la resynchronisation. Porte le verdict
@@ -72,13 +72,24 @@ public sealed record AgentSummaryDto(string Matricule, string DisplayName);
 /// serveur puisse journaliser fidèlement CHAQUE scan hors-ligne (REQ-F-07, §6.2),
 /// accordé comme refusé, et pas seulement les conflits.
 /// </summary>
+/// <summary>
+/// Scan réalisé hors ligne, remonté à la resynchronisation.
+///
+/// <see cref="SignedQrPayload"/> est le SEUL champ que le serveur croit : il
+/// rejoue la vérification ES256 puis la règle métier complète. Les autres champs
+/// (verdict local, jeton de visite) sont des informations du terminal — utiles
+/// pour détecter un écart en ligne/hors ligne et pour l'état local, mais jamais
+/// une autorisation. Sans cela, un terminal compromis pourrait inscrire des
+/// « accès accordé » arbitraires dans un journal que rien ne peut effacer.
+/// </summary>
 public sealed record OfflineScanDto(
-    Guid VisitToken,
+    Guid VisitToken,               // usage LOCAL au terminal (état « sur site ») — non fiable côté serveur
     string Direction,              // Entry | Exit
-    bool WasGranted,
+    bool WasGranted,               // verdict LOCAL, confronté au verdict serveur
     DateTimeOffset OccurredAt,
     string? VerdictCode = null,    // ex. « Recognized », « TooLate », « Expired »
-    bool WasSecurityEvent = false);
+    bool WasSecurityEvent = false,
+    string SignedQrPayload = "");  // enveloppe ES256 d'origine — fait foi
 
 /// <summary>Lot de scans hors-ligne à confronter au registre central.</summary>
 public sealed record ResyncRequestDto(IReadOnlyList<OfflineScanDto> Scans);

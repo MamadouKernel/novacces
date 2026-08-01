@@ -8,7 +8,11 @@
 
 ## 1. Cycle de vie d'une visite (mode Unique)
 
-1. L'hôte crée une demande → QR généré et signé, envoyé par WhatsApp + email.
+1. L'hôte crée une demande → QR généré et signé, envoyé par **email
+   uniquement** (WhatsApp abandonné — décision M. Kodjo du 01/08/2026, voir
+   `docs/accord-commercial.md`).
+   > Canal à sens unique : NovAcces envoie une notification, il n'y a aucun
+   > traitement d'une éventuelle réponse du destinataire.
 2. Fenêtre de validité = **rendez-vous −20 min à +15 min**, calculée côté
    serveur exclusivement (jamais l'heure du téléphone de l'agent).
 3. **Poste ENTRÉE**, scan dans la fenêtre → écran **VERT**, "ACCÈS AUTORISÉ",

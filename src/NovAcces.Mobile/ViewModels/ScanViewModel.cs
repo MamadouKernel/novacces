@@ -34,7 +34,9 @@ public sealed class ScanViewModel
             {
                 var r = await _api.ScanAsync(signedQr, _session.Direction, _session.ShiftToken, ct);
                 if (r is not null)
-                    return ScanVerdict.FromApi(r.VerdictCode, r.IsGranted, r.IsCheckOut, r.IsSecurityEvent, r.VisitorName);
+                    return ScanVerdict.FromApi(
+                        r.VerdictCode, r.IsGranted, r.IsCheckOut, r.IsSecurityEvent, r.VisitorName,
+                        r.PresenceMinutes, r.OverstayMinutes);
             }
             catch
             {
@@ -64,9 +66,13 @@ public sealed class ScanViewModel
         if (verdict.VisitToken is { } token)
         {
             var granted = verdict.Outcome is OfflineOutcome.Recognized or OfflineOutcome.CheckedOut;
+
+            // L'enveloppe signée d'origine est conservée telle quelle : c'est
+            // elle que le serveur rejoue à la resynchronisation (le verdict
+            // local n'est qu'une indication, confrontée au registre central).
             await _session.EnqueueOfflineScanAsync(new OfflineScanDto(
                 token, _session.Direction, granted, now,
-                verdict.Outcome.ToString(), verdict.IsSecurityEvent));
+                verdict.Outcome.ToString(), verdict.IsSecurityEvent, signedQr));
         }
 
         return ScanVerdict.FromOffline(verdict);
@@ -83,14 +89,29 @@ public sealed record ScanVerdict(string Title, string Subtitle, string ColorHex,
     private const string Red = "#C92A2A";
     private const string Orange = "#E0932A";
 
-    public static ScanVerdict FromApi(string verdict, bool granted, bool checkOut, bool security, string? name) => verdict switch
+    public static ScanVerdict FromApi(
+        string verdict, bool granted, bool checkOut, bool security, string? name,
+        int? presenceMinutes = null, int? overstayMinutes = null) => verdict switch
     {
-        "CHECKED_OUT" => new("SORTIE ENREGISTRÉE", name ?? "", Blue, false),
+        // §1.6 : la durée de présence est affichée à la sortie — c'est
+        // l'information que l'agent lit à voix haute au visiteur.
+        "CHECKED_OUT" => new("SORTIE ENREGISTRÉE", FormatSortie(name, presenceMinutes, overstayMinutes), Blue, false),
         "GRANTED" => new("ACCÈS AUTORISÉ", name ?? "", Green, false),
         "INVALID_SIGNATURE" => new("SIGNATURE INVALIDE", "QR altéré ou expiré", Red, true),
         _ when security => new("ACCÈS REFUSÉ", "Événement de sécurité", Red, true),
         _ => new("ACCÈS REFUSÉ", "Voir poste de garde", Orange, false),
     };
+
+    private static string FormatSortie(string? name, int? presenceMinutes, int? overstayMinutes)
+    {
+        var nom = name ?? "";
+        if (presenceMinutes is not { } minutes || minutes <= 0)
+            return nom;
+
+        var duree = minutes < 60 ? $"{minutes} min" : $"{minutes / 60} h {minutes % 60:00}";
+        var depassement = overstayMinutes is > 0 ? $" · +{overstayMinutes} min" : "";
+        return $"{nom} · {duree} sur site{depassement}";
+    }
 
     public static ScanVerdict FromOffline(OfflineVerdict v) => v.Outcome switch
     {

@@ -30,7 +30,7 @@ h1,h2,h3,.disp{font-family:'Barlow Condensed',sans-serif;letter-spacing:.01em}
 .brand .n span{color:var(--amber)}
 .brand .s{font-size:11px;opacity:.75;text-transform:uppercase;letter-spacing:.14em}
 .demo-tag{font-family:var(--mono);font-size:10.5px;background:rgba(245,163,0,.15);color:var(--amber);border:1px solid rgba(245,163,0,.5);padding:3px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.08em}
-.roles{display:flex;gap:6px;margin-left:auto}
+.roles{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
 .role{background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.85);padding:8px 16px;border-radius:4px;font-size:13px;font-weight:600;transition:.15s}
 .role:hover{border-color:var(--amber);color:#fff}
 .role.on{background:var(--amber);border-color:var(--amber);color:var(--navy);font-weight:700}
@@ -220,6 +220,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
       <button class="role" data-v="agent" onclick="go('agent')">App agent<small>A. Traoré — Poste 1</small></button>
       <button class="role" data-v="surete" onclick="go('surete')">Dashboard sûreté<small>Resp. sûreté SICOPA</small></button>
       <button class="role" data-v="admin" onclick="go('admin')">Admin multi-sites<small>Sigasécurité — vue globale</small></button>
+      <button class="role" data-v="superadmin" onclick="go('superadmin')">SuperAdmin plateforme<small>Prestataire — vue technique</small></button>
     </nav>
   </div>
 </header>
@@ -425,6 +426,55 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     </div>
   </div>
 </section>
+<!-- ================= SUPERADMIN PRESTATAIRE ================= -->
+<section class="view" id="v-superadmin">
+  <div class="vhead">
+    <div>
+      <div class="eyebrow">Opérations plateforme — prestataire</div>
+      <h1>SuperAdmin plateforme</h1>
+    </div>
+    <div class="who">Connecté : <b>Support NovAccès</b> · <span class="mono">2FA ✓ · accès audité</span></div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">15</div><div class="l">Tenants actifs</div></div>
+    <div class="kpi"><div class="v">99,97 %</div><div class="l">Disponibilité API · 30 jours</div></div>
+    <div class="kpi warn"><div class="v">2</div><div class="l">Alertes techniques ouvertes</div></div>
+    <div class="kpi"><div class="v">184</div><div class="l">Notifications délivrées aujourd'hui</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Tenants et provisionnement</h2>
+      <div style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-a btn-sm" onclick="toast('Provisionnement','Le nouveau tenant sera créé après validation du dossier client')">+ Provisionner un tenant</button>
+        <button class="btn btn-o btn-sm" onclick="toast('Export','Export technique sans données personnelles préparé')">Exporter la configuration</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Tenant</th><th>Client</th><th>Sites</th><th>État API</th><th>Dernière sauvegarde</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">sicopa</td><td>SICOPA</td><td>3</td><td><span class="pill pi-ok">Opérationnel</span></td><td class="mono">02:00 UTC</td><td><button class="btn btn-o btn-sm" onclick="toast('Tenant SICOPA','Accès d’exploitation protégé et journalisé')">Superviser</button></td></tr>
+            <tr><td class="mono">port-sanpedro</td><td>Port de San Pedro</td><td>2</td><td><span class="pill pi-ok">Opérationnel</span></td><td class="mono">02:04 UTC</td><td><button class="btn btn-o btn-sm" onclick="toast('Tenant Port San Pedro','Aucune anomalie détectée')">Superviser</button></td></tr>
+            <tr><td class="mono">agro-ci</td><td>Agro CI</td><td>1</td><td><span class="pill pi-wait">Installation</span></td><td class="mono">—</td><td><button class="btn btn-o btn-sm" onclick="toast('Installation','Checklist de mise en production à compléter')">Checklist</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">Le SuperAdmin agit sur la plateforme, pas sur le métier du client. Toute session de support est limitée dans le temps et inscrite dans l'audit.</div>
+    </div>
+
+    <div class="card">
+      <h2>Contrôles techniques</h2>
+      <div class="pad" style="display:grid;gap:10px">
+        <div><b>API</b><span class="pill pi-ok" style="float:right">Healthy</span><small style="display:block;color:var(--muted)">/health · temps serveur synchronisé</small></div>
+        <div><b>PostgreSQL</b><span class="pill pi-ok" style="float:right">Healthy</span><small style="display:block;color:var(--muted)">15 schémas isolés · sauvegarde chiffrée</small></div>
+        <div><b>WhatsApp</b><span class="pill pi-ok" style="float:right">Opérationnel</span><small style="display:block;color:var(--muted)">89 délivrés · 3 en reprise</small></div>
+        <div><b>Email SMTP</b><span class="pill pi-ok" style="float:right">Opérationnel</span><small style="display:block;color:var(--muted)">95 délivrés · 1 en reprise</small></div>
+        <button class="btn btn-o btn-sm" onclick="toast('Support audité','Une session temporaire sera créée avec expiration automatique')">Ouvrir un support audité</button>
+      </div>
+    </div>
+  </div>
+</section>
 </main>
 
 <div class="footer">Maquette de démonstration NOVACCÈS · Aucune donnée réelle · Candidature M. KONATE — AO CDC-DEV-NOVACCES-2026-001</div>
@@ -442,7 +492,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
         <div><label>Heure</label><input id="f-heure" type="time" value="14:30"></div>
         <div><label>Durée de visite prévue</label><select id="f-dur"><option value="30">30 minutes</option><option value="60" selected>1 heure</option><option value="120">2 heures</option><option value="240">Demi-journée</option><option value="480">Journée</option></select></div>
         <div><label>Email du visiteur</label><input id="f-mail" type="email" placeholder="visiteur@exemple.ci"></div>
-        <div><label>Téléphone (SMS)</label><input id="f-tel" placeholder="07 XX XX XX XX"></div>
+        <div><label>Téléphone WhatsApp</label><input id="f-tel" placeholder="07 XX XX XX XX"></div>
         <div class="full">
           <label>Mode de validité</label>
           <div class="radio-row">
@@ -467,8 +517,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
       <div style="font-size:14px"><b id="q-nom"></b> — <span id="q-ent" style="color:var(--muted)"></span></div>
       <div class="qrbox"><canvas id="q-canvas" width="180" height="180"></canvas></div>
       <div class="qr-meta" id="q-meta"></div>
-      <div class="sent"><span>✓ Envoyé par email</span><span>✓ Envoyé par SMS (LeTexto)</span></div>
-      <p style="font-size:12px;color:var(--muted);margin-top:14px">Le QR contient uniquement un identifiant de visite chiffré, signé Ed25519 côté serveur, avec expiration intégrée. Aucune donnée personnelle en clair (REQ-SEC-01).</p>
+      <div class="sent"><span>✓ Envoyé par email</span><span>✓ WhatsApp envoyé</span></div>
+      <p style="font-size:12px;color:var(--muted);margin-top:14px">Le QR contient uniquement un identifiant de visite chiffré, signé ES256 côté serveur, avec expiration intégrée. Aucune donnée personnelle en clair (REQ-SEC-01).</p>
     </div>
   </div>
 </div>
@@ -961,7 +1011,7 @@ function showQR(id){
   const v=visits.find(x=>x.id===id);
   document.getElementById('q-nom').textContent=v.nom;
   document.getElementById('q-ent').textContent=v.ent;
-  document.getElementById('q-meta').innerHTML='ID visite : '+v.id+' · signé Ed25519 · '+(v.mode==='unique'?('fenêtre '+fmt(v.rdvAt-20*MIN)+' → '+fmt(v.rdvAt+15*MIN)+' (RDV '+fmt(v.rdvAt)+')'):'30 jours ouvrés')+'<br>payload : eyJ2aXNpdCI6IjhmM2Ei… (chiffré — aucune donnée personnelle)';
+  document.getElementById('q-meta').innerHTML='ID visite : '+v.id+' · signé ES256 · '+(v.mode==='unique'?('fenêtre '+fmt(v.rdvAt-20*MIN)+' → '+fmt(v.rdvAt+15*MIN)+' (RDV '+fmt(v.rdvAt)+')'):'30 jours ouvrés')+'<br>payload : eyJ2aXNpdCI6IjhmM2Ei… (chiffré — aucune donnée personnelle)';
   drawQR(document.getElementById('q-canvas'),v.id,180);
   document.getElementById('ov-qr').classList.add('on');
 }

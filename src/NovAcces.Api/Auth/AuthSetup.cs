@@ -107,9 +107,18 @@ public static class AuthSetup
             // tenant est volontairement exempté pour la durée WebSocket).
             .AddPolicy(NovAccesPolicies.Dashboard, p => p.RequireRole(
                 NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))
-            // API dashboard : les dépôts métier exigent un tenant résolu.
+            // API dashboard : les dépôts métier exigent un tenant résolu. Sert
+            // aux lectures que l'endpoint filtre LUI-MÊME par propriétaire
+            // (ex. l'historique d'une demande, restreint à ses propres visites
+            // pour un Hôte).
             .AddPolicy(NovAccesPolicies.DashboardApi, p => p.RequireRole(
                 NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
+            // Journal du site et agrégats : PAS l'Hôte. Le journal expose les
+            // mouvements de tous les visiteurs du site — le rôle Hôte n'a pas à
+            // savoir qui d'autre est entré, ni quand (moindre privilège §8.5,
+            // même logique que le motif d'exclusion réservé à la Sûreté).
+            .AddPolicy(NovAccesPolicies.SecurityJournal, p => p.RequireRole(
+                NovAccesRoles.Surete, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin).RequireAssertion(HasResolvedTenant))
             // Hub du contrat mobile : l'agent reçoit les événements de sa liste locale.
             .AddPolicy(NovAccesPolicies.AgentEvents, p => p.RequireRole(
                 NovAccesRoles.Agent, NovAccesRoles.Surete, NovAccesRoles.Hote, NovAccesRoles.Admin, NovAccesRoles.SuperAdmin))

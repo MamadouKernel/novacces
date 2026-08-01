@@ -19,11 +19,19 @@ public sealed class ScanLogEntryConfiguration : IEntityTypeConfiguration<ScanLog
         builder.HasIndex(e => e.Timestamp);
         builder.HasIndex(e => e.IsSecurityEvent);
 
-        // NOTE DE PRODUCTION (à appliquer lors du script de provisionnement
-        // d'un nouveau site, hors EF Core) : une fois la table créée, retirer
-        // les droits UPDATE et DELETE de l'utilisateur applicatif sur
-        // "scan_logs" au niveau PostgreSQL (GRANT INSERT, SELECT uniquement).
-        // C'est cette contrainte au niveau base, et non le code C#, qui rend
-        // le journal réellement inaltérable (section 8.5 du CDC).
+        // INALTÉRABILITÉ (section 8.5 du CDC) — appliquée hors EF Core, par
+        // TenantProvisioningService au moment du provisionnement du site :
+        //  1. des triggers PostgreSQL interdisent DELETE, TRUNCATE et tout
+        //     UPDATE autre que l'anonymisation du nom du visiteur. Ils
+        //     s'exécutent quel que soit le rôle, superutilisateur compris :
+        //     c'est la garantie réelle ;
+        //  2. si Database:ApplicationRole désigne un rôle distinct du
+        //     propriétaire des schémas, DELETE et TRUNCATE lui sont en outre
+        //     retirés (seconde barrière si un trigger disparaissait).
+        //
+        // UPDATE ne peut PAS être retiré : la rétention (§7.3) doit pouvoir
+        // remplacer le nom du visiteur par le sentinel d'anonymisation. C'est
+        // le trigger, et non le système de privilèges, qui borne cet UPDATE à
+        // cette seule transition.
     }
 }

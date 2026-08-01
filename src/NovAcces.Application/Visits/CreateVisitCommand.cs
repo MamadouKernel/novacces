@@ -59,9 +59,11 @@ public sealed class CreateVisitHandler
             command.Mode, command.ScheduledAt, command.PlannedDurationMinutes,
             command.VisitorPhone, command.VisitorEmail, isExcluded, now);
 
-        var expiresAt = command.Mode == AccessMode.Unique
-            ? command.ScheduledAt!.Value.AddMinutes(15)
-            : now.AddDays(30);
+        // Calcul délégué au domaine (Visit.ComputeQrExpiry) : c'est la MÊME
+        // formule que réutilisera GET /api/visits/{id}/qr pour réémettre le
+        // badge d'une demande existante — une divergence produirait un second
+        // QR d'expiration différente pour une même visite.
+        var expiresAt = visit.ComputeQrExpiry();
 
         var signedPayload = _signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
 
@@ -102,12 +104,28 @@ public interface IExclusionListService
 {
     Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct);
 
+    /// <summary>
+    /// Noms NORMALISÉS de toutes les personnes exclues du site. Sert à marquer
+    /// la liste hors-ligne signée sans une requête par visiteur : le mode
+    /// dégradé doit refuser une personne écartée après l'émission de son QR,
+    /// exactement comme le scan en ligne. Ne contient aucun motif (moindre
+    /// privilège : l'agent ne doit jamais voir pourquoi).
+    /// </summary>
+    Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct);
+
     Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct);
 
     /// <summary>Ajoute (ou retrouve, si déjà présent) une entrée et retourne son identifiant.</summary>
     Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
 
-    Task<bool> RemoveAsync(Guid id, CancellationToken ct);
+    /// <summary>
+    /// Retire une entrée et renvoie ce qu'elle contenait (null si introuvable).
+    /// L'appelant DOIT inscrire ce contenu au journal d'audit : la ligne étant
+    /// physiquement supprimée, c'est la dernière occasion de conserver une trace
+    /// de QUI a été retiré de la liste et pour quel motif il y figurait — sans
+    /// quoi le journal ne référencerait qu'un identifiant devenu orphelin.
+    /// </summary>
+    Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct);
 }
 
 /// <summary>Projection d'une entrée d'exclusion pour la sûreté (motif inclus).</summary>

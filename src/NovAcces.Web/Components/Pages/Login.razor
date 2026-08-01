@@ -62,15 +62,70 @@
                 <div class="h-1 bg-amber-500"></div>
                 <div class="p-7 sm:p-8">
                 <h2 class="font-display text-2xl font-semibold text-brand-700">
-                    @(_twoFactorRequired ? "Vérification en deux étapes" : "Connexion au portail")
+                    @(_step switch
+                    {
+                        Step.TwoFactor => "Vérification en deux étapes",
+                        Step.Enroll => "Sécurisation du compte",
+                        Step.RecoveryCodes => "Codes de récupération",
+                        _ => "Connexion au portail",
+                    })
                 </h2>
                 <p class="mb-6 mt-1 text-sm text-muted">
-                    @(_twoFactorRequired
-                        ? "Saisissez le code de votre application d'authentification."
-                        : "Accès réservé au personnel autorisé.")
+                    @(_step switch
+                    {
+                        Step.TwoFactor => "Saisissez le code de votre application d'authentification.",
+                        Step.Enroll => "Ce compte dispose de droits étendus : la double authentification est obligatoire avant la première connexion.",
+                        Step.RecoveryCodes => "Conservez ces codes hors ligne. Ils ne seront plus jamais affichés.",
+                        _ => "Accès réservé au personnel autorisé.",
+                    })
                 </p>
 
-                @if (!_twoFactorRequired)
+                @if (_step == Step.Enroll)
+                {
+                    <ol class="mb-5 space-y-2 text-sm text-ink2">
+                        <li><strong>1.</strong> Scannez ce QR avec Google Authenticator, Microsoft Authenticator ou FreeOTP.</li>
+                        <li><strong>2.</strong> Saisissez le code à 6 chiffres affiché par l'application.</li>
+                    </ol>
+
+                    @if (_setup is not null)
+                    {
+                        <div class="mb-4 flex justify-center rounded-lg border border-line bg-paper p-4">
+                            <img src="@QrImage.ToDataUri(_setup.AuthenticatorUri)" alt="QR d'enrôlement de l'authentificateur"
+                                 class="h-44 w-44" />
+                        </div>
+                        <p class="mb-1 font-mono text-[0.65rem] uppercase tracking-[0.14em] text-amber-700">
+                            Saisie manuelle si le scan échoue
+                        </p>
+                        <p class="mb-5 select-all break-all font-mono text-xs text-ink2">@_setup.SharedKey</p>
+                    }
+
+                    <div class="field">
+                        <label>Code à 6 chiffres</label>
+                        <input type="text" inputmode="numeric" class="tracking-[0.4em] text-center text-lg"
+                               @bind="_code" @bind:event="oninput"
+                               @onkeydown="@(e => { if (e.Key == "Enter") _ = SubmitEnrollmentAsync(); })" />
+                    </div>
+                    <button class="btn-primary mt-2" @onclick="SubmitEnrollmentAsync" disabled="@_busy">
+                        @(_busy ? "Activation…" : "Activer et se connecter")
+                    </button>
+                }
+                else if (_step == Step.RecoveryCodes)
+                {
+                    <div class="mb-5 grid grid-cols-2 gap-2 rounded-lg border border-line bg-paper p-4 font-mono text-sm">
+                        @foreach (var recoveryCode in _recoveryCodes)
+                        {
+                            <span class="select-all">@recoveryCode</span>
+                        }
+                    </div>
+                    <p class="mb-4 text-sm text-ink2">
+                        Chacun de ces codes permet une connexion si vous perdez votre téléphone.
+                        Notez-les avant de continuer.
+                    </p>
+                    <button class="btn-primary" @onclick="FinishEnrollmentAsync" disabled="@_busy">
+                        @(_busy ? "Connexion…" : "J'ai noté ces codes, continuer")
+                    </button>
+                }
+                else if (_step == Step.Password)
                 {
                     <div class="field">
                         <label>Email</label>
@@ -106,17 +161,26 @@
             </div>
 
             <p class="mt-6 text-center font-mono text-[0.7rem] uppercase tracking-[0.1em] text-muted">
-                © @DateTime.Now.Year NovAccès — Sigasécurité
+                © @DateTime.Now.Year NovAcces — Sigasécurité
             </p>
         </div>
     </main>
 </div>
 
 @code {
+    /// <summary>
+    /// Étapes du parcours de connexion. « Enroll » et « RecoveryCodes » sont
+    /// obligatoires à la PREMIÈRE connexion d'un compte à privilèges : l'API
+    /// refuse de délivrer un jeton tant que le 2FA n'est pas actif.
+    /// </summary>
+    private enum Step { Password, TwoFactor, Enroll, RecoveryCodes }
+
     private string _email = "";
     private string _password = "";
     private string _code = "";
-    private bool _twoFactorRequired;
+    private Step _step = Step.Password;
+    private TwoFactorSetupDto? _setup;
+    private IReadOnlyList<string> _recoveryCodes = Array.Empty<string>();
     private bool _busy;
     private string? _error;
 
@@ -140,8 +204,68 @@
         {
             var outcome = await Api.LoginAsync(_email.Trim(), _password);
             if (outcome.Success) { Nav.NavigateTo(LandingPage()); return; }
-            if (outcome.RequiresTwoFactor) { _twoFactorRequired = true; return; }
+            if (outcome.RequiresTwoFactor) { _step = Step.TwoFactor; return; }
+
+            if (outcome.RequiresEnrollment)
+            {
+                // Compte à privilèges jamais enrôlé : on récupère la clé TOTP
+                // (l'API la délivre sans ouvrir de session) et on bascule sur
+                // l'écran d'enrôlement.
+                _setup = await Api.BeginTwoFactorEnrollmentAsync(_email.Trim(), _password);
+                if (_setup is null)
+                {
+                    _error = "Impossible de préparer la double authentification.";
+                    return;
+                }
+                _step = Step.Enroll;
+                return;
+            }
+
             _error = outcome.Error;
+        }
+        catch { _error = "Impossible de joindre le service d'authentification."; }
+        finally { _busy = false; }
+    }
+
+    private async Task SubmitEnrollmentAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var codes = await Api.CompleteTwoFactorEnrollmentAsync(_email.Trim(), _password, _code.Trim());
+            if (codes is null)
+            {
+                _error = "Code invalide — vérifiez l'heure de votre téléphone et réessayez.";
+                return;
+            }
+
+            _recoveryCodes = codes.RecoveryCodes;
+            _code = "";
+            _step = Step.RecoveryCodes;
+        }
+        catch { _error = "Impossible de joindre le service d'authentification."; }
+        finally { _busy = false; }
+    }
+
+    /// <summary>
+    /// Après affichage des codes de récupération, on repasse par la connexion
+    /// normale : le 2FA étant désormais actif, l'API demandera un code TOTP.
+    /// On ne délivre volontairement pas de jeton à l'enrôlement — c'est ce qui
+    /// garantit qu'aucune session privilégiée n'existe avant que le second
+    /// facteur ne soit réellement opérationnel.
+    /// </summary>
+    private async Task FinishEnrollmentAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var outcome = await Api.LoginAsync(_email.Trim(), _password);
+            _step = outcome.RequiresTwoFactor ? Step.TwoFactor : Step.Password;
+            if (!outcome.RequiresTwoFactor && !outcome.Success)
+                _error = outcome.Error;
+            if (outcome.Success) Nav.NavigateTo(LandingPage());
         }
         catch { _error = "Impossible de joindre le service d'authentification."; }
         finally { _busy = false; }

@@ -12,7 +12,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
-    <link rel="stylesheet" href="app.css" />
+    @* Empreinte du fichier en query string : sans elle, un navigateur qui a
+       mis en cache l'ancien app.css continue de l'appliquer après déploiement.
+       Le symptôme est trompeur — le HTML est à jour, les styles non — et fait
+       conclure à tort que « le rendu ne colle pas ». *@
+    <link rel="stylesheet" href="app.css?v=@AssetVersion.Css" />
     <link rel="stylesheet" href="NovAcces.Web.styles.css" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="icon" type="image/png" href="favicon.png" />

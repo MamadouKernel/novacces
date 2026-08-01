@@ -57,7 +57,8 @@ public static class ScanEndpoints
 
             var response = new ScanResponseDto(
                 result.IsGranted, result.IsCheckOut, result.IsSecurityEvent,
-                result.VerdictCode, result.VisitorName, result.OverstayMinutes);
+                result.VerdictCode, result.VisitorName, result.OverstayMinutes,
+                result.PresenceMinutes);
 
             return Results.Ok(response);
         })

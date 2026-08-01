@@ -84,8 +84,37 @@ L’API expose Swagger directement à la racine :
 Provisionnement d’un site :
 
 ~~~bash
-cd src/NovAcces.Api
-dotnet run -- provision-site <site-id>
+dotnet run --project src/NovAcces.Api -- provision-site <site-id>
+~~~
+
+### Rôles PostgreSQL (déploiement serveur)
+
+L’inaltérabilité des journaux repose sur des triggers PostgreSQL, qui
+s’appliquent à tous les rôles — superutilisateur compris. Cela fonctionne avec
+un rôle unique.
+
+Pour ajouter une **seconde barrière** (retirer `DELETE`/`TRUNCATE` sur les
+journaux au rôle qui sert les requêtes), il faut deux rôles distincts : un
+`REVOKE` reste sans effet sur le propriétaire d’une table. Un rôle unique laisse
+donc cette protection inopérante.
+
+~~~bash
+psql -U postgres -f tools/provisionner-roles-postgres.sql
+~~~
+
+Puis renseigner les deux chaînes de connexion et le nom du rôle applicatif :
+
+~~~text
+ConnectionStrings__Postgres       → novacces_app    (runtime)
+ConnectionStrings__PostgresOwner  → novacces_owner  (DDL uniquement)
+Database__ApplicationRole         → novacces_app
+~~~
+
+Enfin, appliquer les habilitations sur le schéma partagé et tous les sites déjà
+provisionnés — à rejouer après toute migration qui ajoute des tables :
+
+~~~bash
+dotnet run --project src/NovAcces.Api -- grant-app-role
 ~~~
 
 Ne jamais committer les clés privées, mots de passe, jetons ou chaînes de connexion réelles.

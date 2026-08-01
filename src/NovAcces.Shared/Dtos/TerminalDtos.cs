@@ -35,10 +35,20 @@ public sealed record EnrollmentTicketResponseDto(
 }
 
 /// <summary>Demande envoyée par un mobile après lecture du QR d'enrôlement.</summary>
+/// <summary>
+/// Activation d'un terminal par ticket QR.
+///
+/// <see cref="ProofSignature"/> est une PREUVE DE POSSESSION : signature ES256,
+/// par la clé privée du device, de la chaîne « {Ticket}|{DeviceInstanceId} »
+/// (UTF-8), encodée en Base64Url. Sans elle, la clé publique enregistrée
+/// n'était qu'une chaîne décorative — n'importe qui interceptant le ticket
+/// pouvait enrôler un appareil en déclarant une clé publique quelconque.
+/// </summary>
 public sealed record DeviceEnrollmentRequestDto(
     string Ticket,
     string DeviceInstanceId,
-    string DevicePublicKeyPem);
+    string DevicePublicKeyPem,
+    string ProofSignature = "");
 
 /// <summary>
 /// Réponse d'activation. La clé API est remise uniquement à cette étape puis

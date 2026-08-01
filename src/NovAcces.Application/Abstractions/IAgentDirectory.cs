@@ -15,7 +15,14 @@ public interface IAgentDirectory
 
     /// <summary>Liste les agents du site (sans le PIN), pour l'administration.</summary>
     Task<IReadOnlyList<AgentIdentity>> ListAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Désactive un agent sur ce site (départ, réaffectation vers un autre
+    /// site) : son PIN ne permet plus de prendre de poste ici. Retourne false
+    /// si le matricule est introuvable sur ce site.
+    /// </summary>
+    Task<bool> DeactivateAsync(string matricule, CancellationToken ct);
 }
 
 /// <summary>Identité d'un agent, sans secret.</summary>
-public sealed record AgentIdentity(string Matricule, string DisplayName);
+public sealed record AgentIdentity(string Matricule, string DisplayName, bool IsActive = true);

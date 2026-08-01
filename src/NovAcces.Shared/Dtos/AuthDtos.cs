@@ -76,6 +76,9 @@ public sealed record TwoFactorRecoveryCodesDto(IReadOnlyList<string> RecoveryCod
 /// <summary>Désactivation du 2FA : mot de passe exigé pour ré-authentifier l'action.</summary>
 public sealed record DisableTwoFactorRequestDto(string Password);
 
+/// <summary>État actuel du 2FA pour l'utilisateur connecté (profil).</summary>
+public sealed record TwoFactorStatusDto(bool Enabled);
+
 /// <summary>
 /// Second facteur au login. Code = TOTP à 6 chiffres OU code de récupération.
 /// </summary>
@@ -101,7 +104,24 @@ public sealed record UpdateDisplayNameRequestDto(string DisplayName);
 public sealed record ChangePasswordRequestDto(string CurrentPassword, string NewPassword);
 
 /// <summary>Ligne de la vue consolidée multi-sites (§10).</summary>
-public sealed record AdminSiteOverviewDto(string SiteId, int OnSite, int ScansToday);
+/// <summary>
+/// Ligne de la vue consolidée multi-sites (§10). Au-delà de l'activité, elle
+/// porte l'état des POSTES : combien de terminaux sont enrôlés sur le site,
+/// combien ont donné signe de vie récemment, et combien de scans du jour ont
+/// été validés en mode dégradé — c'est ce qui permet de voir d'un coup d'œil
+/// qu'un site est en difficulté réseau.
+/// </summary>
+public sealed record AdminSiteOverviewDto(
+    string SiteId,
+    int OnSite,
+    int ScansToday,
+    int TerminalsEnrolled = 0,
+    int TerminalsActive = 0,
+    int DegradedScansToday = 0);
+
+/// <summary>Sortie manuelle enregistrée depuis le dashboard sûreté (§7).</summary>
+public sealed record ManualCheckOutResponseDto(
+    Guid VisitId, string VisitorName, int PresenceMinutes, int OverstayMinutes);
 
 // ---- Journal d'audit des actions d'administration/sûreté (§8.5) ----
 
@@ -122,6 +142,7 @@ public sealed record RetentionStatusDto(
 
 /// <summary>Résultat d'une passe de rétention déclenchée manuellement, par site.</summary>
 public sealed record RetentionRunResultDto(
-    int TotalPurged, int TotalAnonymized, IReadOnlyList<SitePurgeDto> Sites);
+    int TotalPurged, int TotalAnonymized, IReadOnlyList<SitePurgeDto> Sites,
+    int ApplicationAuditPurged = 0, int RefreshSessionsPurged = 0);
 
 public sealed record SitePurgeDto(string SiteId, int VisitsPurged, int ScanLogsAnonymized);

@@ -211,6 +211,49 @@ public static class VisitEndpoints
         .WithName("VisitHistory")
         .WithSummary("Chronologie des statuts d'une demande de visite.");
 
+        // Réémission du QR d'une demande existante : le visiteur a perdu le
+        // message WhatsApp/email, ou son téléphone a changé — sans cette
+        // route, la seule issue pour l'hôte était de révoquer et recréer la
+        // demande. Resigne le MÊME jeton de visite (VisitToken inchangé) avec
+        // la MÊME expiration que celle calculée à la création
+        // (Visit.ComputeQrExpiry) : il ne s'agit pas d'un nouveau droit
+        // d'accès, seulement de la réimpression d'un badge déjà émis.
+        group.MapGet("/{visitId:guid}/qr", async (
+            Guid visitId,
+            ClaimsPrincipal user,
+            IVisitRepository visits,
+            IQrSigningService signing,
+            IDateTimeProvider clock,
+            CancellationToken ct) =>
+        {
+            var visit = await visits.GetByIdAsync(visitId, ct);
+            if (visit is null)
+                return Results.NotFound(new { error = "Demande introuvable." });
+
+            var canViewAny = NovAccesAuthorizationMatrix.CanViewAnyVisit(user);
+            if (!canViewAny && visit.HostUserId != user.HostIdentifier())
+                return Results.Json(new { error = "Accès refusé." }, statusCode: StatusCodes.Status403Forbidden);
+
+            // Seule une demande encore UTILISABLE peut être réimprimée :
+            //  - Status == Valid exclut Revoked, Expired, et Consumed (mode
+            //    Unique déjà entré — le revoir n'aiderait pas, le titulaire
+            //    est déjà sur site) ;
+            //  - la vérification d'expiration cryptographique couvre le
+            //    plafond de 30 jours calendaires du mode ThirtyDays, qui ne
+            //    se traduit jamais par un changement de Status.
+            var expiresAt = visit.ComputeQrExpiry();
+            if (visit.Status != VisitStatus.Valid || clock.UtcNow > expiresAt)
+                return Results.Json(
+                    new { error = "Ce QR n'est plus disponible (révoqué, expiré, ou déjà utilisé)." },
+                    statusCode: StatusCodes.Status409Conflict);
+
+            var signedPayload = signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
+            return Results.Ok(new CreateVisitResponseDto(visit.Id, signedPayload, expiresAt));
+        })
+        .RequireAuthorization(NovAccesPolicies.DashboardApi)
+        .WithName("ReissueVisitQr")
+        .WithSummary("Réémet le QR signé d'une demande encore valide (visiteur ayant perdu son message).");
+
         // REQ-F-09 : révocation manuelle par l'hôte ou la sûreté, à tout moment.
         group.MapPost("/{visitId:guid}/revoke", async (
             Guid visitId,

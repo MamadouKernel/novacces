@@ -26,6 +26,8 @@ else if (CanViewDashboard)
                 @(_connected ? "Temps réel connecté" : "Hors ligne")
             </p>
             <p class="hint">Supervision en direct des postes : chaque scan apparaît dans le flux. Filtrez par type, surveillez les présents et les dépassements. Recherchez dans le journal, exportez-le en CSV.</p>
+            @* Un compte peut cumuler Sûreté et Hôte : dans ce cas seulement, on
+               propose le raccourci vers son portail de demandes. *@
             @if (Auth.IsInRole(NovAccesRoles.Hote))
             {
                 <div class="nav-links"><a href="/hote">→ Portail hôte</a></div>
@@ -259,8 +261,15 @@ else if (CanViewDashboard)
                                     ⏱ dépassement +@v.OverstayMinutes min@(v.OverstayLevel > 0 ? $" (niv. {v.OverstayLevel})" : "")
                                 </span>
                             }
-                            <button class="btn-ghost" style="margin-left:auto;padding:.15rem .5rem;font-size:.75rem"
-                                    @onclick="() => _historyVisitId = v.VisitId">Historique</button>
+                            <div class="flex gap-1.5" style="margin-left:auto">
+                                <button class="btn-ghost" style="padding:.15rem .5rem;font-size:.75rem"
+                                        @onclick="() => _historyVisitId = v.VisitId">Historique</button>
+                                @* §7 : le visiteur a pu repartir sans scanner (téléphone
+                                   déchargé, autre accès) — sans cette action, il reste
+                                   « présent » et en dépassement indéfiniment. *@
+                                <button class="btn-ghost" style="padding:.15rem .5rem;font-size:.75rem"
+                                        @onclick="() => _pendingCheckOut = v">Sortie manuelle</button>
+                            </div>
                         </li>
                     }
                 </ul>
@@ -306,6 +315,27 @@ else if (CanViewDashboard)
     {
         <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
     }
+
+    @if (_pendingCheckOut is { } pco)
+    {
+        <div class="overlay" @onclick="() => _pendingCheckOut = null">
+            <div class="modal" style="max-width:26rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div><h2>Enregistrer la sortie ?</h2></div>
+                </div>
+                <div class="modal-b">
+                    <p><strong>@pco.VisitorName</strong> sera marqué sorti sans avoir scanné au poste.</p>
+                    <p class="hint">À utiliser uniquement si vous avez constaté son départ (téléphone déchargé, autre accès, oubli). L'action est journalisée et tracée à votre compte.</p>
+                </div>
+                <div class="modal-f">
+                    <button class="btn-ghost" @onclick="() => _pendingCheckOut = null">Annuler</button>
+                    <button class="btn-primary" style="max-width:200px" @onclick="ConfirmManualCheckOutAsync" disabled="@_checkingOut">
+                        @(_checkingOut ? "Enregistrement…" : "Oui, il est sorti")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
@@ -325,6 +355,40 @@ else if (CanViewDashboard)
     private bool _loaded;
 
     private Guid? _historyVisitId;
+    private OnSiteVisitorDto? _pendingCheckOut;
+    private bool _checkingOut;
+
+    private async Task ConfirmManualCheckOutAsync()
+    {
+        if (_pendingCheckOut is not { } v || _checkingOut) return;
+        _checkingOut = true;
+        try
+        {
+            if (await Api.ManualCheckOutAsync(v.VisitId))
+            {
+                Toasts.Success($"Sortie de « {v.VisitorName} » enregistrée.");
+                _pendingCheckOut = null;
+                await RefreshOnSiteAsync();
+                await RefreshSummaryAsync();
+            }
+            else
+            {
+                // 409 le plus probable : la sûreté a mis un temps à confirmer
+                // pendant qu'un scan réel clôturait déjà le cycle au poste.
+                Toasts.Error("Ce visiteur n'est plus présent — la liste a été actualisée.");
+                _pendingCheckOut = null;
+                await RefreshOnSiteAsync();
+            }
+        }
+        catch
+        {
+            // Panne réseau/API : ne jamais laisser l'exception atteindre
+            // Blazor — un poste de supervision qui se déconnecte au milieu
+            // d'une action de sûreté est le pire moment pour perdre la vue.
+            Toasts.Error("Service indisponible, réessayez.");
+        }
+        finally { _checkingOut = false; }
+    }
 
     // Mode « salle de supervision » (control-room plein écran) + horloge.
     private bool _wallMode;
@@ -384,8 +448,13 @@ else if (CanViewDashboard)
         builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
             stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
 
+    // Le dashboard expose le journal de TOUS les visiteurs du site : réservé à
+    // la Sûreté et l'Admin, comme la policy SecurityJournal côté API. Le rôle
+    // Hôte en est exclu (moindre privilège §8.5) — il dispose de son propre
+    // portail, limité à ses demandes. Cette liste DOIT rester alignée sur la
+    // policy serveur : sinon l'écran s'afficherait pour se remplir de 403.
     private bool CanViewDashboard =>
-        Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Hote) || Auth.IsInRole(NovAccesRoles.Admin);
+        Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin);
 
     protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
 
@@ -404,16 +473,34 @@ else if (CanViewDashboard)
             _loaded = true;
 
             // État initial : synthèse + présents + amorçage du flux avec le journal récent.
+            // Chaque appel est best-effort (comme RefreshSummaryAsync/RefreshOnSiteAsync) :
+            // une panne ponctuelle de l'API ne doit JAMAIS faire tomber tout le circuit
+            // Blazor. Une exception non rattrapée ici est fatale — elle déconnecte le
+            // poste de supervision entier, précisément le moment où la sûreté en a le
+            // plus besoin, pour un simple aléa réseau qui se serait résolu tout seul.
             await RefreshSummaryAsync();
             await RefreshOnSiteAsync();
-            var journal = await Api.GetJournalAsync(20);
-            foreach (var j in journal)
-                _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+            await SeedFeedFromJournalAsync();
 
             await ConnectHubAsync();
             if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
                 await RefreshExclusionsAsync();
             StateHasChanged();
+        }
+    }
+
+    private async Task SeedFeedFromJournalAsync()
+    {
+        try
+        {
+            var journal = await Api.GetJournalAsync(20);
+            foreach (var j in journal)
+                _feed.Add(new ScanEventDto(Guid.Empty, j.VisitorName, VerdictFrom(j), j.WasGranted, j.WasCheckOut, j.IsSecurityEvent, j.AgentId, j.Timestamp));
+        }
+        catch
+        {
+            // Best-effort : le flux démarre vide, le temps réel (ConnectHubAsync,
+            // appelé juste après) continuera de l'alimenter normalement.
         }
     }
 
@@ -436,6 +523,7 @@ else if (CanViewDashboard)
             }
             else { Toasts.Error("Ajout à l'exclusion refusé."); }
         }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _exclBusy = false; }
     }
 
@@ -445,10 +533,21 @@ else if (CanViewDashboard)
         _exclBusy = true;
         try
         {
-            await Api.RemoveExclusionAsync(id);
-            Toasts.Info("Personne retirée de la liste d'exclusion.");
-            await RefreshExclusionsAsync();
+            // Le résultat DOIT déterminer le message : lever une exclusion est
+            // une décision de sûreté (moindre privilège, §8.5) — annoncer un
+            // retrait qui n'a pas eu lieu laisserait croire qu'une personne
+            // écartée peut de nouveau être invitée.
+            if (await Api.RemoveExclusionAsync(id))
+            {
+                Toasts.Info("Personne retirée de la liste d'exclusion.");
+                await RefreshExclusionsAsync();
+            }
+            else
+            {
+                Toasts.Error("Le retrait a échoué — réessayez.");
+            }
         }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _exclBusy = false; }
     }
 

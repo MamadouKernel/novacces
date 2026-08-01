@@ -40,7 +40,14 @@ public class Visit
     /// <summary>Vrai dès qu'un cycle entrée/sortie complet a eu lieu (mode Unique => QR définitivement clos).</summary>
     public bool HasCompletedCycle { get; private set; }
 
-    /// <summary>Vrai si la personne figure sur la liste d'exclusion du site (REQ-F-11).</summary>
+    /// <summary>
+    /// Vrai si la personne figurait sur la liste d'exclusion du site AU MOMENT
+    /// DE LA CRÉATION de la demande (REQ-F-11). C'est un instantané historique,
+    /// PAS la source de vérité du scan : une personne inscrite sur la liste
+    /// après l'émission de son QR doit être refusée elle aussi. L'état courant
+    /// est relu en base et passé à <see cref="Scan"/> — voir le paramètre
+    /// <c>isOnExclusionList</c>.
+    /// </summary>
     public bool IsExcluded { get; private set; }
 
     public DateTimeOffset CreatedAt { get; private set; }
@@ -111,10 +118,23 @@ public class Visit
     /// Appelé dans une transaction sérialisable avec verrou pessimiste (voir
     /// Infrastructure/Persistence — REQ-SEC-03 : consommation atomique).
     /// </summary>
-    public ScanOutcome Scan(CheckpointDirection direction, bool isBusinessDay, DateTimeOffset now)
+    /// <param name="isOnExclusionList">
+    /// État COURANT de la liste d'exclusion du site pour ce visiteur, relu en
+    /// base au moment du scan par l'appelant. Paramètre obligatoire et non
+    /// optionnel à dessein : un appelant qui oublierait de le fournir laisserait
+    /// passer une personne écartée, c'est au compilateur de l'en empêcher.
+    /// </param>
+    public ScanOutcome Scan(
+        CheckpointDirection direction, bool isBusinessDay, DateTimeOffset now, bool isOnExclusionList)
     {
-        // 1. Liste d'exclusion : refus générique, motif réservé à la sûreté (REQ-F-11)
-        if (IsExcluded && !IsOnSite)
+        // 1. Liste d'exclusion : refus générique, motif réservé à la sûreté (REQ-F-11).
+        //    On retient l'instantané de création OU l'état courant : une personne
+        //    ajoutée à la liste APRÈS l'émission de son QR doit être refusée —
+        //    c'est le cas d'usage principal (personne écartée en cours de route).
+        //    Réciproquement, on ne « déverrouille » pas un QR émis pour une
+        //    personne déjà exclue : son retrait de la liste est une décision de
+        //    sûreté qui passe par une nouvelle demande de visite.
+        if ((IsExcluded || isOnExclusionList) && !IsOnSite)
             return ScanOutcome.Denied(ScanDenialReason.Excluded, isSecurityEvent: true);
 
         // 2. Poste SORTIE : ne gère que des sorties, jamais d'entrée
@@ -176,6 +196,7 @@ public class Visit
     private ScanOutcome CheckOut(DateTimeOffset now)
     {
         var overstayMinutes = ComputeOverstayMinutes(now);
+        var presenceMinutes = ComputePresenceMinutes(now);
 
         IsOnSite = false;
         CheckedOutAt = now;
@@ -185,7 +206,45 @@ public class Visit
         if (Mode == AccessMode.Unique)
             HasCompletedCycle = true;
 
-        return ScanOutcome.CheckedOut(overstayMinutes);
+        return ScanOutcome.CheckedOut(overstayMinutes, presenceMinutes);
+    }
+
+    /// <summary>
+    /// Sortie enregistrée par la SÛRETÉ depuis le dashboard, sans scan
+    /// (téléphone déchargé, visiteur reparti par un autre accès, oubli). Même
+    /// effet qu'une sortie au poste : le visiteur cesse d'être compté présent
+    /// et ses alertes de dépassement retombent — sans quoi il resterait
+    /// « présent » et en dépassement indéfiniment.
+    ///
+    /// Passe par le domaine et non par une écriture directe : la clôture d'un
+    /// cycle est une règle de sûreté, elle n'a pas à être réécrite ailleurs.
+    /// </summary>
+    public ScanOutcome ForceCheckOut(DateTimeOffset now)
+    {
+        if (!IsOnSite)
+            return ScanOutcome.Denied(ScanDenialReason.NoActiveEntry, isSecurityEvent: false);
+
+        return CheckOut(now);
+    }
+
+    /// <summary>
+    /// Expiration CRYPTOGRAPHIQUE du QR de cette visite. Définie ici, et non
+    /// chez l'appelant, pour que la génération initiale et toute réémission
+    /// ultérieure produisent rigoureusement le même jeton : deux formules
+    /// divergentes donneraient deux QR d'expirations différentes pour une même
+    /// visite, dont un que le poste refuserait sans explication.
+    /// </summary>
+    public DateTimeOffset ComputeQrExpiry() =>
+        Mode == AccessMode.Unique && ScheduledAt is { } scheduled
+            ? scheduled.AddMinutes(15)   // borne haute de la fenêtre -20/+15
+            : CreatedAt.AddDays(30);     // accès 30 jours, depuis la création
+
+    /// <summary>Durée de présence effective, en minutes (0 si jamais entré).</summary>
+    public int ComputePresenceMinutes(DateTimeOffset now)
+    {
+        if (CheckedInAt is null) return 0;
+        var minutes = (now - CheckedInAt.Value).TotalMinutes;
+        return minutes > 0 ? (int)minutes : 0;
     }
 
     /// <summary>Révocation manuelle par l'hôte ou la sûreté (REQ-F-09), possible à tout moment.</summary>
@@ -257,17 +316,23 @@ public sealed class ScanOutcome
     public ScanDenialReason? DenialReason { get; }
     public int OverstayMinutesAtCheckOut { get; }
 
-    private ScanOutcome(bool granted, bool checkOut, bool securityEvent, ScanDenialReason? reason, int overstay)
+    /// <summary>Durée de présence effective à la sortie, en minutes (§1.6 : affichée à l'agent).</summary>
+    public int PresenceMinutesAtCheckOut { get; }
+
+    private ScanOutcome(
+        bool granted, bool checkOut, bool securityEvent, ScanDenialReason? reason, int overstay, int presence)
     {
         IsGranted = granted;
         IsCheckOut = checkOut;
         IsSecurityEvent = securityEvent;
         DenialReason = reason;
         OverstayMinutesAtCheckOut = overstay;
+        PresenceMinutesAtCheckOut = presence;
     }
 
-    public static ScanOutcome Granted() => new(true, false, false, null, 0);
-    public static ScanOutcome CheckedOut(int overstayMinutes) => new(true, true, false, null, overstayMinutes);
+    public static ScanOutcome Granted() => new(true, false, false, null, 0, 0);
+    public static ScanOutcome CheckedOut(int overstayMinutes, int presenceMinutes = 0) =>
+        new(true, true, false, null, overstayMinutes, presenceMinutes);
     public static ScanOutcome Denied(ScanDenialReason reason, bool isSecurityEvent) =>
-        new(false, false, isSecurityEvent, reason, 0);
+        new(false, false, isSecurityEvent, reason, 0, 0);
 }

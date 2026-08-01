@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Enums;
+using NovAcces.Infrastructure.Identity;
 using NovAcces.Infrastructure.Persistence;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 
@@ -38,6 +39,24 @@ public sealed class RetentionOptions
 
     /// <summary>Intervalle entre deux passes de purge automatique, en heures.</summary>
     public int RunIntervalHours { get; set; } = 24;
+
+    /// <summary>
+    /// Durée de conservation du JOURNAL GLOBAL des requêtes API
+    /// (ApplicationAudit, schéma partagé), en jours. Ce journal prend une ligne
+    /// par requête — y compris les sondes de supervision et les rejets
+    /// anonymes : sans purge il croît indéfiniment. Il est technique et
+    /// transversal, à distinguer des journaux MÉTIER par site (scan_logs,
+    /// admin_audit) qui, eux, ne sont jamais supprimés. &lt;= 0 désactive.
+    /// </summary>
+    public int ApplicationAuditRetentionDays { get; set; } = 180;
+
+    /// <summary>
+    /// Délai de conservation des sessions de rafraîchissement DÉJÀ expirées ou
+    /// révoquées, en jours. Elles n'ont plus aucune valeur d'authentification ;
+    /// on les garde un court moment pour l'analyse post-incident, puis on
+    /// supprime. &lt;= 0 désactive.
+    /// </summary>
+    public int RefreshSessionRetentionDays { get; set; } = 30;
 }
 
 /// <summary>
@@ -75,36 +94,96 @@ public sealed class DataRetentionService : IDataRetentionService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<SitePurgeResult>> PurgeOnceAsync(CancellationToken ct)
+    public async Task<RetentionPurgeResult> PurgeOnceAsync(CancellationToken ct)
     {
         var results = new List<SitePurgeResult>();
 
-        // Garde-fou : rien à faire si le traitement est désactivé, ou si les deux
-        // fenêtres sont neutralisées.
-        if (!_options.Enabled || (_options.VisitRetentionDays <= 0 && _options.JournalRetentionDays <= 0))
+        if (!_options.Enabled)
         {
-            _logger.LogInformation(
-                "Rétention désactivée (Enabled={Enabled}, VisitRetentionDays={Visit}, JournalRetentionDays={Journal}).",
-                _options.Enabled, _options.VisitRetentionDays, _options.JournalRetentionDays);
-            return results;
+            _logger.LogInformation("Rétention désactivée (Retention:Enabled=false).");
+            return new RetentionPurgeResult(results, 0, 0);
         }
 
         var now = _clock.UtcNow;
 
-        foreach (var siteId in await _sites.GetSiteIdsAsync(ct))
+        if (_options.VisitRetentionDays > 0 || _options.JournalRetentionDays > 0)
         {
-            try
+            foreach (var siteId in await _sites.GetSiteIdsAsync(ct))
             {
-                results.Add(await PurgeSiteAsync(siteId, now, ct));
-            }
-            catch (Exception ex)
-            {
-                // Un site en erreur ne doit pas empêcher le traitement des autres.
-                _logger.LogWarning(ex, "Rétention : échec pour le site {SiteId}.", siteId);
+                try
+                {
+                    results.Add(await PurgeSiteAsync(siteId, now, ct));
+                }
+                catch (Exception ex)
+                {
+                    // Un site en erreur ne doit pas empêcher le traitement des autres.
+                    _logger.LogWarning(ex, "Rétention : échec pour le site {SiteId}.", siteId);
+                }
             }
         }
 
-        return results;
+        // Tables du schéma PARTAGÉ : hors tenant, traitées une seule fois par
+        // passe. Isolées dans leur propre try : un échec ici ne doit pas
+        // invalider le travail déjà fait sur les sites.
+        var auditPurged = 0;
+        var sessionsPurged = 0;
+        try
+        {
+            (auditPurged, sessionsPurged) = await PurgeSharedTablesAsync(now, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Rétention : échec sur les tables transverses (journal global, sessions).");
+        }
+
+        return new RetentionPurgeResult(results, auditPurged, sessionsPurged);
+    }
+
+    /// <summary>
+    /// Purge du schéma partagé « identity ». Contrairement aux journaux métier
+    /// par site, ces deux tables sont TECHNIQUES : le journal global tracerait
+    /// sinon indéfiniment chaque sonde de supervision, et les sessions de
+    /// rafraîchissement révoquées n'ont plus aucune valeur d'authentification.
+    /// </summary>
+    private async Task<(int AuditPurged, int SessionsPurged)> PurgeSharedTablesAsync(
+        DateTimeOffset now, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var identityDb = scope.ServiceProvider.GetRequiredService<NovAccesIdentityDbContext>();
+
+        var auditPurged = 0;
+        if (_options.ApplicationAuditRetentionDays > 0)
+        {
+            var cutoff = now.AddDays(-_options.ApplicationAuditRetentionDays);
+            auditPurged = await identityDb.ApplicationAudit
+                .Where(e => e.Timestamp < cutoff)
+                .ExecuteDeleteAsync(ct);
+
+            if (auditPurged > 0)
+                _logger.LogInformation(
+                    "Rétention : {Count} ligne(s) du journal global supprimée(s) (antérieures au {Cutoff:yyyy-MM-dd}).",
+                    auditPurged, cutoff);
+        }
+
+        var sessionsPurged = 0;
+        if (_options.RefreshSessionRetentionDays > 0)
+        {
+            var cutoff = now.AddDays(-_options.RefreshSessionRetentionDays);
+
+            // Uniquement les sessions DÉJÀ mortes (expirées ou révoquées) et
+            // dont la mort remonte à plus que la fenêtre : jamais une session
+            // encore utilisable, quelle que soit son ancienneté.
+            sessionsPurged = await identityDb.RefreshSessions
+                .Where(s => (s.ExpiresAt < cutoff) || (s.RevokedAt != null && s.RevokedAt < cutoff))
+                .ExecuteDeleteAsync(ct);
+
+            if (sessionsPurged > 0)
+                _logger.LogInformation(
+                    "Rétention : {Count} session(s) de rafraîchissement expirée(s)/révoquée(s) supprimée(s).",
+                    sessionsPurged);
+        }
+
+        return (auditPurged, sessionsPurged);
     }
 
     private async Task<SitePurgeResult> PurgeSiteAsync(string siteId, DateTimeOffset now, CancellationToken ct)

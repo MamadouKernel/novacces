@@ -20,7 +20,8 @@ public sealed record ScanQrResult(
     bool IsSecurityEvent,
     string VerdictCode,   // "GRANTED" | "CHECKED_OUT" | "DENIED_xxx" | "INVALID_SIGNATURE"
     string? VisitorName,
-    int? OverstayMinutes
+    int? OverstayMinutes,
+    int? PresenceMinutes = null   // durée de présence à la sortie (§1.6)
 );
 
 /// <summary>
@@ -38,6 +39,9 @@ public sealed class ScanQrHandler
     private readonly IScanLogRepository _logs;
     private readonly IDateTimeProvider _clock;
     private readonly IScanEventBroadcaster _broadcaster;
+    private readonly IExclusionListService _exclusionList;
+    private readonly IHostDirectory _hosts;
+    private readonly INotificationService _notifications;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ScanQrHandler> _logger;
 
@@ -47,6 +51,9 @@ public sealed class ScanQrHandler
         IScanLogRepository logs,
         IDateTimeProvider clock,
         IScanEventBroadcaster broadcaster,
+        IExclusionListService exclusionList,
+        IHostDirectory hosts,
+        INotificationService notifications,
         IUnitOfWork unitOfWork,
         ILogger<ScanQrHandler> logger)
     {
@@ -55,6 +62,9 @@ public sealed class ScanQrHandler
         _logs = logs;
         _clock = clock;
         _broadcaster = broadcaster;
+        _exclusionList = exclusionList;
+        _hosts = hosts;
+        _notifications = notifications;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
@@ -82,13 +92,15 @@ public sealed class ScanQrHandler
             return new ScanQrResult(false, false, true, "INVALID_SIGNATURE", null, null);
         }
 
-        // 2-4. Section critique de l'anti-rejeu (REQ-SEC-03) enveloppée dans UNE
+        // 2-5. Section critique de l'anti-rejeu (REQ-SEC-03) enveloppée dans UNE
         //    transaction : le verrou pessimiste posé par GetForUpdateAsync
         //    (SELECT … FOR UPDATE) doit être tenu jusqu'à la sauvegarde incluse,
         //    sinon deux scans simultanés du même QR pourraient passer tous les
         //    deux. La diffusion temps réel se fait APRÈS le commit (voir plus bas)
         //    pour ne jamais annoncer un scan qui aurait été annulé (rollback).
         ScanBroadcastEvent? broadcast = null;
+        (string HostUserId, HostEventKind Kind, Guid VisitId, string VisitorName,
+            int PresenceMinutes, int OverstayMinutes)? hostEvent = null;
 
         var result = await _unitOfWork.ExecuteInTransactionAsync(async token =>
         {
@@ -100,10 +112,17 @@ public sealed class ScanQrHandler
                 return new ScanQrResult(false, false, true, "INVALID_SIGNATURE", null, null);
             }
 
-            // 3. Application de la règle métier (Domain) — jamais dupliquée ici.
-            var outcome = visit.Scan(command.Direction, command.IsBusinessDayOverride, now);
+            // 3. Liste d'exclusion RELUE MAINTENANT, dans la transaction (REQ-F-11).
+            //    Le booléen figé sur la visite ne reflète que l'état à sa
+            //    création : une personne écartée après l'émission de son QR doit
+            //    être refusée au poste, sans qu'on ait à révoquer sa demande
+            //    à la main.
+            var isOnExclusionList = await _exclusionList.IsExcludedAsync(visit.VisitorName, token);
 
-            // 4. Journalisation inaltérable, y compris pour les refus. Le dépôt de
+            // 4. Application de la règle métier (Domain) — jamais dupliquée ici.
+            var outcome = visit.Scan(command.Direction, command.IsBusinessDayOverride, now, isOnExclusionList);
+
+            // 5. Journalisation inaltérable, y compris pour les refus. Le dépôt de
             //    scans partage le même DbContext : un seul SaveChanges persiste
             //    atomiquement la mutation de la visite ET l'entrée de journal.
             var logEntry = ScanLogEntry.Create(
@@ -125,10 +144,25 @@ public sealed class ScanQrHandler
                 outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
                 command.AgentId, now);
 
+            // Événement à remonter à l'HÔTE (§1.3, §1.6, §2). Capturé DANS la
+            // transaction (on a l'entité sous la main) mais envoyé APRÈS le
+            // commit : on ne prévient jamais d'une arrivée qui pourrait encore
+            // être annulée par un rollback.
+            hostEvent = outcome switch
+            {
+                { IsCheckOut: true } => (visit.HostUserId, HostEventKind.Departure, visit.Id, visit.VisitorName,
+                    outcome.PresenceMinutesAtCheckOut, outcome.OverstayMinutesAtCheckOut),
+                { IsGranted: true } => (visit.HostUserId, HostEventKind.Arrival, visit.Id, visit.VisitorName, 0, 0),
+                { DenialReason: ScanDenialReason.SuspectedDuplicate } => (visit.HostUserId,
+                    HostEventKind.SuspectedDuplicate, visit.Id, visit.VisitorName, 0, 0),
+                _ => null,
+            };
+
             return new ScanQrResult(
                 outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
                 verdictCode, visit.VisitorName,
-                outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null);
+                outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null,
+                outcome.IsCheckOut ? outcome.PresenceMinutesAtCheckOut : null);
         }, ct);
 
         // REQ-F-06 : diffusion temps réel (dashboard sûreté / portail hôte), une
@@ -147,7 +181,35 @@ public sealed class ScanQrHandler
             }
         }
 
+        // §1.3 / §1.6 / §2 : l'hôte est prévenu de l'arrivée, du départ, ou
+        // d'une présentation anormale de SON visiteur. Comme la diffusion :
+        // après commit, best-effort, jamais bloquant pour le poste de contrôle.
+        if (hostEvent is { } evt)
+            await NotifyHostAsync(evt, ct);
+
         return result;
+    }
+
+    private async Task NotifyHostAsync(
+        (string HostUserId, HostEventKind Kind, Guid VisitId, string VisitorName,
+            int PresenceMinutes, int OverstayMinutes) evt,
+        CancellationToken ct)
+    {
+        try
+        {
+            var host = await _hosts.FindAsync(evt.HostUserId, ct);
+            if (host is null) return; // hôte introuvable ou désactivé : rien à faire
+
+            await _notifications.NotifyHostAsync(new HostEventNotification(
+                evt.Kind, evt.VisitId, evt.VisitorName, host, _clock.UtcNow,
+                PresenceMinutes: evt.Kind == HostEventKind.Departure ? evt.PresenceMinutes : null,
+                OverstayMinutes: evt.Kind == HostEventKind.Departure ? evt.OverstayMinutes : null), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Échec de la notification de l'hôte pour la visite {VisitId}.", evt.VisitId);
+        }
     }
 
     private async Task LogInvalidSignatureAsync(ScanQrCommand command, DateTimeOffset now, CancellationToken ct)

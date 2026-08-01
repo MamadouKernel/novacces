@@ -65,6 +65,16 @@ public static class NovAccesPolicies
     public const string RevokeVisit = "RevokeVisit";
     public const string Dashboard = "Dashboard";
     public const string DashboardApi = "DashboardApi";
+
+    /// <summary>
+    /// Lecture du journal des scans du site et de ses agrégats (dashboard
+    /// sûreté, export CSV). RÉSERVÉE à la Sûreté et l'Admin : le journal
+    /// contient les allées et venues de TOUS les visiteurs du site, y compris
+    /// ceux invités par d'autres hôtes. Un hôte n'a à connaître que ses propres
+    /// demandes (moindre privilège, §8.5) — il consulte celles-ci via
+    /// /api/visits/mine et /api/visits/{id}/history, qui filtrent sur lui.
+    /// </summary>
+    public const string SecurityJournal = "SecurityJournal";
     public const string AgentEvents = "AgentEvents";
     public const string ManageExclusions = "ManageExclusions";
     public const string AgentTerminal = "AgentTerminal";

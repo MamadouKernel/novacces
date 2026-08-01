@@ -155,13 +155,67 @@ public sealed class DashboardTests
         Assert.DoesNotContain(";" + name, csv);  // jamais laissé brut en tête de cellule
     }
 
+    [SkippableFact]
+    public async Task ManualCheckOut_RemovesVisitorFromSite_AndIsRestrictedToSecurity()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // §7 : le visiteur repart sans scanner. Sans sortie manuelle, il
+        // resterait « présent » et en dépassement pour toujours.
+        var visitorName = $"SansScan-{Guid.NewGuid():N}";
+        var visitId = await CreateVisitAndCheckInAsync(visitorName);
+
+        // Un Hôte n'a pas à clore le cycle d'un visiteur : réservé à la sûreté.
+        var hote = await LoginNewUserAsync("Hote");
+        var refused = await hote.PostAsync($"/api/dashboard/on-site/{visitId}/check-out", null);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var resp = await surete.PostAsync($"/api/dashboard/on-site/{visitId}/check-out", null);
+        resp.EnsureSuccessStatusCode();
+        var result = await resp.Content.ReadFromJsonAsync<ManualCheckOutResponseDto>(Json);
+        Assert.Equal(visitorName, result!.VisitorName);
+
+        // Il ne figure plus parmi les présents.
+        var onSite = await surete.GetFromJsonAsync<List<OnSiteVisitorDto>>("/api/dashboard/on-site", Json);
+        Assert.DoesNotContain(onSite!, v => v.VisitorName == visitorName);
+
+        // La sortie est bien journalisée, et attribuée à la sûreté.
+        var journal = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?limit=200&q={visitorName}", Json);
+        Assert.Contains(journal!, e => e.WasCheckOut && e.Detail.Contains("manuellement"));
+
+        // Deuxième appel : il n'est plus présent, donc conflit.
+        var again = await surete.PostAsync($"/api/dashboard/on-site/{visitId}/check-out", null);
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Journal_SearchesByCompanyAndMotif()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // §9 : la recherche doit porter aussi sur l'entreprise et le motif,
+        // qui vivent dans « visits » et non dans le journal (minimisation).
+        var visitorName = $"Recherche-{Guid.NewGuid():N}";
+        var company = $"Entreprise{Guid.NewGuid():N}"[..20];
+        await CreateVisitAndCheckInAsync(visitorName, company);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var byCompany = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?limit=200&q={company}", Json);
+
+        Assert.Contains(byCompany!, e => e.VisitorName == visitorName);
+    }
+
     // ---- Aides ----
 
-    private async Task CreateVisitAndCheckInAsync(string visitorName)
+    private async Task<Guid> CreateVisitAndCheckInAsync(
+        string visitorName, string company = "ACME")
     {
         var hote = await LoginNewUserAsync("Hote");
         var createResp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
-            visitorName, "ACME", "Test dashboard", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+            visitorName, company, "Test dashboard", "Unique", DateTimeOffset.UtcNow, 60, null, null));
         createResp.EnsureSuccessStatusCode();
         var created = await createResp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
 
@@ -170,6 +224,8 @@ public sealed class DashboardTests
         var scan = await agent.PostAsJsonAsync("/api/scan",
             new ScanRequestDto(created!.SignedQrPayload, "Entry", "ignore"));
         scan.EnsureSuccessStatusCode();
+
+        return created.VisitId;
     }
 
     private async Task<HttpClient> LoginNewUserAsync(string role)

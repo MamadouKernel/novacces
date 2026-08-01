@@ -159,9 +159,22 @@ public sealed class ScanLogRepository : IScanLogRepository
         if (!string.IsNullOrWhiteSpace(query))
         {
             var term = query.Trim().ToLower();
+
+            // §9 : recherche par nom, ENTREPRISE, agent ou MOTIF. Entreprise et
+            // motif ne sont volontairement pas recopiés dans le journal
+            // (minimisation : celui-ci ne conserve que ce qui prouve un
+            // contrôle d'accès). On les rejoint donc depuis « visits », ce qui
+            // donne le comportement démontré sans dupliquer de données
+            // personnelles dans une table inaltérable.
+            var matchingVisits = _db.Visits
+                .Where(v => v.VisitorCompany.ToLower().Contains(term)
+                         || v.Motif.ToLower().Contains(term))
+                .Select(v => v.Id);
+
             q = q.Where(e => e.VisitorName.ToLower().Contains(term)
                           || e.AgentId.ToLower().Contains(term)
-                          || e.Detail.ToLower().Contains(term));
+                          || e.Detail.ToLower().Contains(term)
+                          || matchingVisits.Contains(e.VisitId));
         }
 
         return await q.OrderByDescending(e => e.Timestamp).Take(limit).ToListAsync(ct);

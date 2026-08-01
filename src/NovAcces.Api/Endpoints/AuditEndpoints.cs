@@ -14,6 +14,15 @@ namespace NovAcces.Api.Endpoints;
 /// </summary>
 public static class AuditEndpoints
 {
+    // Le journal global prend une ligne par requête API : il se compte vite en
+    // millions. Une absence de limite chargeait TOUTE la table en mémoire (le
+    // Take n'était appliqué que si « limit » était fourni) — un simple GET sans
+    // paramètre suffisait à faire tomber l'API. On borne donc par défaut, et le
+    // plafond reste franc : au-delà, c'est une extraction base, pas un endpoint.
+    private const int DefaultAuditPageSize = 200;
+    private const int MaxAuditPageSize = 5_000;
+    private const int MaxAuditCsvRows = 100_000;
+
     public static RouteGroupBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/audit").WithTags("Audit")
@@ -30,8 +39,7 @@ public static class AuditEndpoints
         {
             IQueryable<ApplicationAuditEntry> query = FilterApplicationAudit(db.ApplicationAudit.AsNoTracking(), from, to, siteId, actor);
             query = query.OrderByDescending(e => e.Timestamp);
-            if (limit is { } requested)
-                query = query.Take(Math.Clamp(requested, 1, 100_000));
+            query = query.Take(Math.Clamp(limit ?? DefaultAuditPageSize, 1, MaxAuditPageSize));
 
             var entries = await query
                 .Select(e => new ApplicationAuditDto(
@@ -44,7 +52,12 @@ public static class AuditEndpoints
         .WithName("ListApplicationAuditEntries")
         .WithSummary("Journal global de toutes les requêtes API (SuperAdmin uniquement).");
 
-        group.MapGet("/application.csv", async (
+        // Export STREAMÉ : les lignes sont écrites au fur et à mesure dans la
+        // réponse, jamais accumulées dans une liste puis dans un StringBuilder
+        // puis dans un tableau d'octets (l'ancienne version matérialisait trois
+        // fois le même contenu, avec un plafond à un million de lignes).
+        group.MapGet("/application.csv", (
+            HttpResponse response,
             NovAccesIdentityDbContext db,
             DateTimeOffset? from,
             DateTimeOffset? to,
@@ -55,32 +68,28 @@ public static class AuditEndpoints
         {
             IQueryable<ApplicationAuditEntry> query = FilterApplicationAudit(db.ApplicationAudit.AsNoTracking(), from, to, siteId, actor);
             query = query.OrderByDescending(e => e.Timestamp);
-            if (limit is { } requested)
-                query = query.Take(Math.Clamp(requested, 1, 1_000_000));
+            query = query.Take(Math.Clamp(limit ?? MaxAuditCsvRows, 1, MaxAuditCsvRows));
 
-            var entries = await query.ToListAsync(ct);
-            var csv = new StringBuilder();
-            csv.AppendLine("Id;Timestamp;Actor;Method;Path;StatusCode;SiteId;IpAddress");
-            foreach (var entry in entries)
+            response.ContentType = "text/csv; charset=utf-8";
+            response.Headers.ContentDisposition = "attachment; filename=\"novacces-audit.csv\"";
+
+            return Results.Stream(async stream =>
             {
-                csv.Append(Csv(entry.Id.ToString("D"))).Append(';')
-                    .Append(Csv(entry.Timestamp.ToString("O"))).Append(';')
-                    .Append(Csv(entry.Actor)).Append(';')
-                    .Append(Csv(entry.Method)).Append(';')
-                    .Append(Csv(entry.Path)).Append(';')
-                    .Append(entry.StatusCode).Append(';')
-                    .Append(Csv(entry.SiteId)).Append(';')
-                    .Append(Csv(entry.IpAddress)).AppendLine();
-            }
+                await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                await writer.WriteLineAsync("Id;Timestamp;Actor;Method;Path;StatusCode;SiteId;IpAddress");
 
-            var bytes = Encoding.UTF8.GetPreamble()
-                .Concat(Encoding.UTF8.GetBytes(csv.ToString()))
-                .ToArray();
-            return Results.File(bytes, "text/csv; charset=utf-8", "novacces-audit.csv");
+                await foreach (var entry in query.AsAsyncEnumerable().WithCancellation(ct))
+                {
+                    await writer.WriteLineAsync(
+                        $"{Csv(entry.Id.ToString("D"))};{Csv(entry.Timestamp.ToString("O"))};"
+                        + $"{Csv(entry.Actor)};{Csv(entry.Method)};{Csv(entry.Path)};"
+                        + $"{entry.StatusCode};{Csv(entry.SiteId)};{Csv(entry.IpAddress)}");
+                }
+            }, "text/csv; charset=utf-8");
         })
         .RequireAuthorization(NovAccesRoles.SuperAdmin)
         .WithName("ExportApplicationAuditCsv")
-        .WithSummary("Exporte toute la traçabilité API en CSV (SuperAdmin uniquement).");
+        .WithSummary("Exporte la traçabilité API en CSV, en flux (SuperAdmin uniquement).");
 
         group.MapGet("/", async (IAdminAuditLog audit, int? limit, CancellationToken ct) =>
         {

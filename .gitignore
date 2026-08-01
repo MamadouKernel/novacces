@@ -28,3 +28,9 @@ node_modules/
 # Instructions locales de développement — ne jamais publier
 CLAUDE.md
 **/CLAUDE.md
+
+# Sorties de build hors bin/obj (artefacts de vérification locale)
+artifacts/
+
+# Configuration locale de l'outillage Claude Code — jamais publier
+.claude/

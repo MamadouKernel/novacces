@@ -19,6 +19,9 @@ public enum AdminAuditAction
     /// <summary>Création d'un agent (matricule + PIN) pour la prise de poste.</summary>
     AgentCreated,
 
+    /// <summary>Désactivation d'un agent sur un site (départ, réaffectation vers un autre site).</summary>
+    AgentDeactivated,
+
     /// <summary>Enrôlement d'un terminal (clé API générée pour un ou plusieurs sites).</summary>
     TerminalCreated,
 
@@ -35,5 +38,12 @@ public enum AdminAuditAction
     AccountSelfDeleted,
 
     /// <summary>Désactivation logique d'un compte par un Admin/SuperAdmin.</summary>
-    AccountDeactivated
+    AccountDeactivated,
+
+    /// <summary>
+    /// Sortie d'un visiteur enregistrée manuellement par la sûreté, sans scan
+    /// au poste (§7). Action privilégiée : elle clôt un cycle et éteint les
+    /// alertes de dépassement, elle doit donc être traçable nominativement.
+    /// </summary>
+    ManualCheckOut
 }

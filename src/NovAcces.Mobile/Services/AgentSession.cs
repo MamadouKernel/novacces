@@ -13,14 +13,14 @@ public sealed class AgentSession
 {
     private readonly AgentApiClient _api;
     private readonly OfflineScanStore _store;
-    private readonly string _publicKeyPem;
+    private readonly IReadOnlyList<OfflineVerificationKey> _verificationKeys;
     private OfflineQrVerifier? _verifier;
 
     public AgentSession(AgentApiClient api, AgentConfig config, OfflineScanStore store)
     {
         _api = api;
         _store = store;
-        _publicKeyPem = config.PublicKeyPem;
+        _verificationKeys = config.VerificationKeys;
     }
 
     /// <summary>Sens du poste. Bascule Entrée ⇄ Sortie toujours visible (§11).</summary>
@@ -31,6 +31,28 @@ public sealed class AgentSession
     public string? AgentMatricule { get; private set; }
     public string? AgentDisplayName { get; private set; }
     public bool IsShiftActive => !string.IsNullOrWhiteSpace(ShiftToken);
+
+    /// <summary>
+    /// Site choisi par l'agent (terminal partagé entre plusieurs sites
+    /// uniquement — null pour un terminal à site unique, qui n'a pas besoin de
+    /// choix). Revalidé côté serveur à chaque requête contre la liste des
+    /// sites autorisés de ce terminal.
+    /// </summary>
+    public string? SelectedSiteId { get; private set; }
+
+    /// <summary>Sites que ce terminal est autorisé à servir (§ prise de poste).</summary>
+    public Task<IReadOnlyList<string>> GetAllowedSitesAsync(CancellationToken ct = default)
+        => _api.GetAllowedSitesAsync(ct);
+
+    /// <summary>
+    /// Fixe le site pour la suite de la session (terminal multi-sites). À
+    /// appeler AVANT StartShiftAsync si le terminal sert plusieurs sites.
+    /// </summary>
+    public void SetSite(string siteId)
+    {
+        SelectedSiteId = siteId;
+        _api.SetSite(siteId);
+    }
 
     /// <summary>Prise de poste : vérifie matricule + PIN côté serveur et ouvre le poste.</summary>
     public async Task<bool> StartShiftAsync(string matricule, string pin, CancellationToken ct = default)
@@ -43,12 +65,18 @@ public sealed class AgentSession
         return true;
     }
 
-    /// <summary>Fin de poste : l'agent quitte, le prochain devra reprendre le poste.</summary>
+    /// <summary>
+    /// Fin de poste : l'agent quitte, le prochain devra reprendre le poste (et
+    /// re-choisir son site si le terminal en sert plusieurs — jamais de choix
+    /// qui traîne d'un agent à l'autre).
+    /// </summary>
     public void EndShift()
     {
         ShiftToken = null;
         AgentMatricule = null;
         AgentDisplayName = null;
+        SelectedSiteId = null;
+        _api.SetSite(null);
     }
 
     /// <summary>
@@ -56,9 +84,9 @@ public sealed class AgentSession
     /// hors-ligne : un terminal non enrôlé (clé publique absente) ne plante donc
     /// pas au démarrage, mais échoue explicitement s'il tente une vérification.
     /// </summary>
-    public OfflineQrVerifier Verifier => _verifier ??= string.IsNullOrWhiteSpace(_publicKeyPem)
+    public OfflineQrVerifier Verifier => _verifier ??= _verificationKeys.Count == 0
         ? throw new InvalidOperationException("Terminal non enrôlé : clé publique de vérification absente.")
-        : new OfflineQrVerifier(_publicKeyPem);
+        : new OfflineQrVerifier(_verificationKeys);
 
     /// <summary>Dernière liste hors-ligne vérifiée (null si jamais chargée).</summary>
     public OfflineListResult? OfflineList { get; private set; }

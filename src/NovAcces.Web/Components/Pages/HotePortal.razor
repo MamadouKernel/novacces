@@ -4,7 +4,6 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 @inject ToastService Toasts
-@inject IJSRuntime JS
 
 <PageTitle>NovAcces — Portail hôte</PageTitle>
 
@@ -15,11 +14,16 @@
 else if (Auth.IsInRole(NovAccesRoles.Hote))
 {
 <div class="portal">
+    @* Organisation reprise de la maquette validée : la vue principale de
+       l'hôte est la LISTE de ses demandes ; la création passe par une
+       surcouche ouverte au bouton. Le formulaire en pleine page reléguait
+       l'information utile (« où en sont mes visiteurs ? ») sous un long
+       formulaire vide à chaque visite du portail. *@
     <header class="portal-header">
         <div>
-            <h1>Nouvelle demande de visite</h1>
-            <p class="muted">Site : <strong>@(Auth.SiteId ?? "—")</strong> · Connecté : @Auth.DisplayName</p>
-            <p class="hint">Renseignez le visiteur puis générez son QR : il le reçoit automatiquement par WhatsApp (repli email). Pour plusieurs personnes, utilisez <strong>Inviter un groupe</strong>.</p>
+            <div class="eyebrow">Site @((Auth.SiteId ?? "—").ToUpperInvariant())</div>
+            <h1>Mes demandes de visite</h1>
+            <p class="muted">Connecté : <strong>@Auth.DisplayName</strong> · Hôte</p>
             @if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
             {
                 <div class="nav-links"><a href="/surete">→ Dashboard sûreté</a></div>
@@ -30,19 +34,37 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
                 Inviter un groupe
             </button>
+            <button class="btn-primary" style="max-width:230px" @onclick="OpenForm">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Nouvelle demande
+            </button>
         </div>
     </header>
 
-    @if (_myVisits.Count > 0)
-    {
-        <div class="tiles">
-            <div class="tile"><span class="tile-n">@_myVisits.Count</span><span class="tile-l">Demandes</span></div>
-            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status == "Valid")</span><span class="tile-l">Valides</span></div>
-            <div class="tile tile-in"><span class="tile-n">@_myVisits.Count(v => v.IsOnSite)</span><span class="tile-l">Sur site</span></div>
-            <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status is "Revoked" or "Expired")</span><span class="tile-l">Closes</span></div>
-        </div>
-    }
+    @* Tuiles de la maquette : à venir / sur site / terminées. Toujours
+       affichées, y compris à zéro — un portail vide doit se lire comme
+       « aucune visite », pas comme un écran incomplet. *@
+    <div class="tiles">
+        <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status == "Valid" && !v.IsOnSite)</span><span class="tile-l">À venir</span></div>
+        <div class="tile tile-in"><span class="tile-n">@_myVisits.Count(v => v.IsOnSite)</span><span class="tile-l">Sur site</span></div>
+        <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status is "Revoked" or "Expired" or "Consumed" && !v.IsOnSite)</span><span class="tile-l">Terminées</span></div>
+    </div>
 
+    @* Création d'une demande : en surcouche, comme dans la maquette. Le QR
+       généré s'affiche dans la même surcouche, à côté du formulaire — l'hôte
+       ne doit pas avoir à chercher où est passé le badge de son visiteur. *@
+    @if (_showForm)
+    {
+    <div class="overlay" @onclick="CloseFormIfBackdrop">
+    <div class="modal modal-wide" @onclick:stopPropagation="true">
+        <div class="modal-h">
+            <div>
+                <h2>Nouvelle demande de visite</h2>
+                <div class="sub">Le QR est envoyé automatiquement au visiteur (WhatsApp, repli email).</div>
+            </div>
+            <button @onclick="CloseForm" aria-label="Fermer">✕</button>
+        </div>
+        <div class="modal-b">
     <div class="cards">
         <section class="card">
             <h2>Visiteur</h2>
@@ -98,27 +120,17 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
             else
             {
-                <div class="badge-doc" id="visitor-badge">
-                    <div class="badge-head">NOV<span>ACCÈS</span></div>
-                    <div class="badge-site">@((Auth.SiteId ?? "").ToUpperInvariant())</div>
-                    <img class="qr" src="@QrImage.ToDataUri(_result.SignedQrPayload)" alt="QR visiteur" />
-                    <div class="badge-name">@_lastVisitorName</div>
-                    <div class="badge-company">@_lastVisitorCompany</div>
-                    <div class="badge-valid">Valide jusqu'au @_result.ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
-                    <div class="badge-foot">Présentez ce badge au poste de contrôle · Sigasécurité</div>
-                </div>
-
-                <p class="muted" style="margin-top:.6rem">Visite <code>@_result.VisitId</code></p>
-                <button class="btn-primary" style="max-width:220px" @onclick="PrintBadgeAsync">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-                    Imprimer le badge
-                </button>
-                <p class="hint">Le QR est aussi envoyé automatiquement au visiteur (WhatsApp, repli email).</p>
+                <VisitBadge SiteId="@Auth.SiteId" VisitorName="@_lastVisitorName" VisitorCompany="@_lastVisitorCompany"
+                            SignedQrPayload="@_result.SignedQrPayload" ExpiresAt="@_result.ExpiresAt" VisitId="@_result.VisitId" />
             }
         </section>
     </div>
+        </div>
+    </div>
+    </div>
+    }
 
-    <section class="card" style="margin-top:1.2rem;">
+    <section class="card">
         <h2>Mes demandes</h2>
         @if (_myVisits.Count == 0)
         {
@@ -183,6 +195,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                         <button class="btn-ghost" @onclick="() => _historyVisitId = v.VisitId">Historique</button>
                                         @if (v.Status == "Valid")
                                         {
+                                            <button class="btn-ghost" @onclick="() => ViewQrAsync(v)" disabled="@(_viewingQrFor == v.VisitId)">
+                                                @(_viewingQrFor == v.VisitId ? "Chargement…" : "Voir QR")
+                                            </button>
                                             <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
                                         }
                                         else
@@ -204,6 +219,24 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     @if (_showGroup)
     {
         <GroupInvite OnClose="() => _showGroup = false" OnCompleted="OnGroupCompleted" />
+    }
+
+    @* Réémission du QR d'une demande existante — visiteur ayant perdu son
+       message WhatsApp/email. Même badge que la création, données différentes. *@
+    @if (_viewedQr is { } qr)
+    {
+        <div class="overlay" @onclick="() => _viewedQr = null">
+            <div class="modal" style="max-width:26rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div><h2>QR de @_viewedQrVisitorName</h2></div>
+                    <button @onclick="() => _viewedQr = null" aria-label="Fermer">✕</button>
+                </div>
+                <div class="modal-b">
+                    <VisitBadge SiteId="@Auth.SiteId" VisitorName="@_viewedQrVisitorName" VisitorCompany="@_viewedQrCompany"
+                                SignedQrPayload="@qr.SignedQrPayload" ExpiresAt="@qr.ExpiresAt" VisitId="@qr.VisitId" />
+                </div>
+            </div>
+        </div>
     }
 
     @if (_pendingRevoke is not null)
@@ -236,8 +269,75 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
 
 @code {
     private bool _showGroup;
+    private bool _showForm;
     private HostVisitDto? _pendingRevoke;
     private Guid? _historyVisitId;
+
+    private Guid? _viewingQrFor;
+    private CreateVisitResponseDto? _viewedQr;
+    private string _viewedQrVisitorName = "";
+    private string _viewedQrCompany = "";
+
+    private async Task ViewQrAsync(HostVisitDto v)
+    {
+        _viewingQrFor = v.VisitId;
+        try
+        {
+            var outcome = await Api.ReissueVisitQrAsync(v.VisitId);
+            if (!outcome.Success)
+            {
+                Toasts.Error(outcome.Error ?? "Impossible de récupérer ce QR.");
+                // Le statut affiché peut être périmé (révoqué entre-temps
+                // depuis un autre onglet, ou par la sûreté) : on rafraîchit
+                // la liste pour que le bouton reflète l'état réel.
+                await RefreshMyVisitsAsync();
+                return;
+            }
+
+            _viewedQrVisitorName = v.VisitorName;
+            _viewedQrCompany = v.VisitorCompany;
+            _viewedQr = outcome.Data;
+        }
+        catch
+        {
+            // Panne réseau/API en amont de la réponse HTTP (ReissueVisitQrAsync
+            // ne catch que les échecs déjà reçus) : ne JAMAIS laisser une
+            // exception non rattrapée remonter jusqu'à Blazor, elle y est
+            // fatale — elle déconnecterait tout le portail de l'hôte, pas
+            // seulement cette action.
+            Toasts.Error("Service indisponible, réessayez.");
+        }
+        finally
+        {
+            _viewingQrFor = null;
+        }
+    }
+
+    private void OpenForm()
+    {
+        // Repart d'un formulaire vierge : rouvrir après une génération ne doit
+        // pas réafficher le QR du visiteur précédent.
+        _result = null;
+        _error = null;
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _result = null;
+        _error = null;
+    }
+
+    /// <summary>
+    /// Ferme au clic sur le fond, jamais sur le contenu. On ne ferme PAS tant
+    /// qu'un QR vient d'être généré et n'a pas été imprimé : un clic à côté
+    /// ferait perdre le badge de vue sans que l'hôte l'ait récupéré.
+    /// </summary>
+    private void CloseFormIfBackdrop()
+    {
+        if (_result is null) CloseForm();
+    }
 
     private async Task OnGroupCompleted()
     {
@@ -245,20 +345,21 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         StateHasChanged();
     }
 
-    // Impression du badge : la feuille de style @media print n'imprime que
-    // l'élément #visitor-badge (le reste de la page est masqué).
-    private async Task PrintBadgeAsync()
-    {
-        try { await JS.InvokeVoidAsync("print"); } catch { /* best-effort */ }
-    }
-
     private async Task ConfirmRevokeAsync()
     {
         if (_pendingRevoke is null) return;
         var target = _pendingRevoke;
-        await RevokeAsync(target.VisitId);
+        var ok = await RevokeAsync(target.VisitId);
         _pendingRevoke = null;
-        Toasts.Success($"QR de « {target.VisitorName} » révoqué.");
+
+        // La révocation est une action de sûreté (REQ-F-09) : annoncer un
+        // succès qui n'a pas eu lieu laisserait croire à l'hôte qu'un QR
+        // toujours actif est invalidé. Le résultat réel de l'appel doit
+        // déterminer le message, jamais une supposition optimiste.
+        if (ok)
+            Toasts.Success($"QR de « {target.VisitorName} » révoqué.");
+        else
+            Toasts.Error($"La révocation de « {target.VisitorName} » a échoué — réessayez.");
     }
 
     private bool _loaded;
@@ -416,14 +517,22 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         _error = null;
     }
 
-    private async Task RevokeAsync(Guid visitId)
+    private async Task<bool> RevokeAsync(Guid visitId)
     {
-        if (_revoking) return;
+        if (_revoking) return false;
         _revoking = true;
         try
         {
-            await Api.RevokeVisitAsync(visitId);
+            var ok = await Api.RevokeVisitAsync(visitId);
             await RefreshMyVisitsAsync();
+            return ok;
+        }
+        catch
+        {
+            // Panne réseau/API : ne jamais laisser l'exception atteindre
+            // Blazor (fatale pour le circuit) ; ConfirmRevokeAsync affichera
+            // l'échec au lieu d'un faux succès.
+            return false;
         }
         finally { _revoking = false; }
     }

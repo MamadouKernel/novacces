@@ -236,6 +236,63 @@ public sealed class WhatsAppNotificationService : INotificationService
         await client.SendMailAsync(message);
     }
 
+    /// <summary>
+    /// Notification de l'HÔTE (§1.3, §1.6, §2, §7). Canal : EMAIL uniquement.
+    ///
+    /// Choix assumé : l'hôte est un utilisateur interne, son email est
+    /// obligatoire et unique dans le magasin d'identité — c'est donc un canal
+    /// toujours disponible. WhatsApp exigerait un SECOND template Meta approuvé
+    /// (un message hors fenêtre de 24 h ne peut pas être libre), démarche qui
+    /// n'a pas été engagée avec le client et qui ne conditionne pas la
+    /// fonctionnalité. Le jour où ce template existera, il s'ajoutera ici.
+    ///
+    /// Best-effort de bout en bout : aucune exception ne remonte. Un scan est
+    /// déjà journalisé et validé quand cette méthode est appelée ; une panne
+    /// SMTP ne doit surtout pas le remettre en cause.
+    /// </summary>
+    public async Task NotifyHostAsync(HostEventNotification notification, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(notification.Host.Email))
+        {
+            _logger.LogDebug(
+                "Notification hôte ignorée pour la visite {VisitId} : aucune adresse email connue.",
+                notification.VisitId);
+            return;
+        }
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_smtp.FromAddress, _smtp.FromDisplayName),
+                Subject = HostEventMessage.Subject(notification, _branding),
+                Body = HostEventMessage.PlainText(notification, _branding),
+                IsBodyHtml = false,
+            };
+            message.To.Add(notification.Host.Email!);
+
+            using var client = new SmtpClient(_smtp.Host, _smtp.Port)
+            {
+                EnableSsl = _smtp.EnableSsl,
+                Credentials = new NetworkCredential(_smtp.Username, _smtp.Password)
+            };
+
+            ct.ThrowIfCancellationRequested();
+            await client.SendMailAsync(message);
+
+            _logger.LogInformation(
+                "Hôte notifié ({Kind}) pour la visite {VisitId}.", notification.Kind, notification.VisitId);
+        }
+        catch (Exception ex)
+        {
+            // Minimisation : on journalise l'identifiant opaque de la visite,
+            // jamais le nom du visiteur ni l'adresse de l'hôte.
+            _logger.LogWarning(ex,
+                "Échec de la notification de l'hôte ({Kind}) pour la visite {VisitId}.",
+                notification.Kind, notification.VisitId);
+        }
+    }
+
     private static string FormatSchedule(DateTimeOffset? scheduledAt) =>
         scheduledAt is { } s ? s.ToString("dd/MM/yyyy HH:mm") : "accès valable 30 jours ouvrés";
 

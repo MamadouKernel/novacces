@@ -27,10 +27,22 @@ public static class DependencyInjection
         // Provisionnement d'un site (schéma + modèle + journal append-only).
         // Opération d'administration hors requête ; construit ses propres
         // connexions brutes, d'où l'injection directe de la chaîne de connexion.
+        // DDL : connexion PROPRIÉTAIRE si elle est configurée, sinon celle du
+        // runtime. C'est cette séparation qui rend les REVOKE sur les journaux
+        // effectifs (un propriétaire garde des droits implicites sur ses tables).
+        // Le repli teste la chaîne VIDE autant que null : le gabarit
+        // appsettings.json déclare "PostgresOwner": "" pour se documenter, et
+        // une chaîne vide n'est pas une chaîne de connexion utilisable.
         services.AddScoped<ITenantProvisioningService>(sp =>
-            new TenantProvisioningService(
-                configuration.GetConnectionString("Postgres")
-                    ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.")));
+        {
+            var ownerConnection = configuration.GetConnectionString("PostgresOwner");
+            if (string.IsNullOrWhiteSpace(ownerConnection))
+                ownerConnection = configuration.GetConnectionString("Postgres");
+            if (string.IsNullOrWhiteSpace(ownerConnection))
+                throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.");
+
+            return new TenantProvisioningService(ownerConnection, configuration["Database:ApplicationRole"]);
+        });
 
         // Intercepteur qui positionne le search_path sur le schéma du tenant à
         // chaque ouverture de connexion (cloisonnement multi-tenant robuste au
@@ -52,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminAuditLog, AdminAuditLog>();
         services.Configure<AgentSecurityOptions>(configuration.GetSection("AgentSecurity"));
         services.AddScoped<IAgentDirectory, AgentDirectory>();
+        services.AddScoped<IHostDirectory, Identity.HostDirectory>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // --- Horloge & signature cryptographique ---

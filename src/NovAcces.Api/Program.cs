@@ -1,5 +1,7 @@
 using NovAcces.Shared.Auth;
+using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using NovAcces.Api;
@@ -11,6 +13,7 @@ using NovAcces.Api.Middleware;
 using NovAcces.Application.Abstractions;
 using NovAcces.Infrastructure;
 using NovAcces.Infrastructure.Identity;
+using NovAcces.Infrastructure.Persistence.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +34,53 @@ builder.Services.AddNovAccesAuthorization();
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// --- En-têtes de proxy inverse (nginx/Caddy devant l'API sur le VPS) ---
+// SANS cette configuration, RemoteIpAddress vaut l'adresse du proxy pour TOUTES
+// les requêtes. Deux conséquences graves en production :
+//   1. les partitions du rate limiting s'effondrent en un seul seau : la limite
+//      « 30 scans/min » s'appliquerait à l'ENSEMBLE du parc de terminaux, et
+//      « 10 connexions/min » à tous les utilisateurs réunis — déni de service
+//      auto-infligé, et fin de la protection anti-brute-force par IP ;
+//   2. le journal global (ApplicationAuditMiddleware) enregistrerait l'IP du
+//      proxy sur chaque ligne, ce qui lui retire toute valeur d'enquête.
+//
+// On n'accepte l'en-tête QUE de proxys explicitement déclarés : X-Forwarded-For
+// est trivialement falsifiable par le client, le faire confiance sans liste
+// blanche permettrait à n'importe qui de se forger une IP et de contourner le
+// rate limiting comme la traçabilité.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Par défaut ASP.NET Core fait confiance à la loopback ; on repart d'une
+    // liste vide pour la reconstituer explicitement depuis la configuration.
+    options.KnownProxies.Clear();
+    options.KnownNetworks.Clear();
+
+    var configuredProxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>()
+        ?? Array.Empty<string>();
+    foreach (var proxy in configuredProxies)
+    {
+        if (IPAddress.TryParse(proxy, out var address))
+            options.KnownProxies.Add(address);
+        else
+            throw new InvalidOperationException(
+                $"ForwardedHeaders:KnownProxies contient une adresse IP invalide : « {proxy} ».");
+    }
+
+    // Déploiement usuel : proxy sur la même machine que l'API (Contabo).
+    if (options.KnownProxies.Count == 0)
+    {
+        options.KnownProxies.Add(IPAddress.Loopback);
+        options.KnownProxies.Add(IPAddress.IPv6Loopback);
+    }
+
+    // Nombre de sauts de proxy à dépouiller. Un seul par défaut : au-delà, un
+    // client pourrait pré-remplir X-Forwarded-For et faire remonter une IP de
+    // son choix jusqu'à RemoteIpAddress.
+    options.ForwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
+});
 
 // Diffusion temps réel des scans (REQ-F-06) — le Hub dépend d'ASP.NET Core,
 // il vit donc dans Api et non dans Infrastructure (Clean Architecture).
@@ -101,6 +151,36 @@ if (args.Length >= 1 && args[0] == "provision-site")
     return 0;
 }
 
+// --- Commande d'administration hors-ligne : habilitation du rôle applicatif ---
+//   dotnet run -- grant-app-role
+// (Ré)applique les privilèges de Database:ApplicationRole sur le schéma partagé
+// et sur tous les sites déjà provisionnés. À rejouer après une migration qui
+// ajoute des tables, et lors du passage à deux rôles sur une base en service.
+if (args.Length >= 1 && args[0] == "grant-app-role")
+{
+    using var scope = app.Services.CreateScope();
+    var provisioner = scope.ServiceProvider.GetRequiredService<ITenantProvisioningService>();
+    if (provisioner is not TenantProvisioningService concrete)
+    {
+        Console.Error.WriteLine("Service de provisionnement indisponible.");
+        return 1;
+    }
+
+    try
+    {
+        await concrete.ApplyApplicationRoleGrantsEverywhereAsync();
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine("Voir tools/provisionner-roles-postgres.sql pour créer le rôle applicatif.");
+        return 1;
+    }
+
+    Console.WriteLine("Privilèges du rôle applicatif appliqués (schéma partagé + tous les sites).");
+    return 0;
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -117,6 +197,11 @@ if (app.Environment.IsDevelopment())
     // d'exploitation explicites, pas un effet de bord du démarrage.
     await app.EnsureIdentityReadyAsync();
 }
+
+// DOIT être le tout premier middleware : le rate limiting, le journal global et
+// la redirection HTTPS lisent tous l'IP et le schéma de la requête. S'il était
+// placé plus bas, ils travailleraient sur l'adresse du proxy.
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler();

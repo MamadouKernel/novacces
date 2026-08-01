@@ -44,8 +44,12 @@
   /* ---- Barre de navigation (console : navy + liseré ambre) ---- */
   .navbar { @apply sticky top-0 z-40 border-b-[3px] border-amber-500 bg-brand-700 text-white; }
   .navbar-in { @apply mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2.5 sm:px-6; }
-  .navbar-brand { @apply font-display text-xl font-bold tracking-wide text-white no-underline; }
-  .navbar-brand span { @apply text-amber-500; }
+  /* Marque : nom + sous-titre d'exploitation, comme dans la maquette. */
+  .navbar-brand { @apply flex flex-col leading-tight text-white no-underline; }
+  .navbar-brand-name { @apply font-display text-xl font-bold tracking-wide; }
+  .navbar-brand-name span { @apply text-amber-500; }
+  /* Masqué sur très petit écran : la marque prime sur le sous-titre. */
+  .navbar-brand-sub { @apply hidden text-[0.7rem] font-medium text-white/60 sm:block; }
   .navbar-user { @apply relative; }
   .navbar-userbtn { @apply flex items-center gap-2.5 rounded-lg px-2 py-1 transition hover:bg-white/10; }
   .avatar { @apply grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-500 text-sm font-bold text-brand-700; }
@@ -106,10 +110,15 @@
   .field > label {
     @apply mb-1.5 font-mono text-[0.65rem] font-medium uppercase tracking-[0.1em] text-muted;
   }
-  .field input, .field select, .field textarea {
+  .field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
     @apply w-full rounded-md border-line bg-white text-sm text-ink
            shadow-sm transition placeholder:text-muted/70
            focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
+  }
+
+  /* Cases à cocher : taille native, ne doivent jamais hériter du style "champ texte" ci-dessus. */
+  .field input[type="checkbox"], .field input[type="radio"] {
+    @apply h-4 w-4 shrink-0 accent-brand-700;
   }
 
   /* ---- Boutons ---- */
@@ -277,6 +286,8 @@
   .modal {
     @apply my-auto w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-pop animate-fade-in-up;
   }
+  /* Surcouche large : formulaire de demande + badge généré côte à côte. */
+  .modal-wide { @apply max-w-5xl; }
   .modal-h {
     @apply flex items-center justify-between border-b-[3px] border-amber-500 bg-brand-700 px-5 py-4 text-white sm:px-6;
   }

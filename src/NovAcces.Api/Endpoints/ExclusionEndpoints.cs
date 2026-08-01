@@ -62,12 +62,20 @@ public static class ExclusionEndpoints
             CancellationToken ct) =>
         {
             var removed = await exclusions.RemoveAsync(id, ct);
-            if (!removed)
+            if (removed is null)
                 return Results.NotFound();
 
+            // Contrairement à l'AJOUT (où le nom reste consultable dans
+            // exclusion_entries et n'a donc pas à être recopié), le RETRAIT fait
+            // disparaître la ligne : sans le nom ici, le journal d'audit ne
+            // garderait qu'un identifiant orphelin et on ne pourrait plus
+            // reconstituer qui a été réautorisé, ni par qui. La levée d'une
+            // exclusion est une décision de sûreté : elle doit rester traçable
+            // (§8.5). Le journal est déjà réservé à la Sûreté et l'Admin.
             await audit.RecordAsync(
                 AdminAuditAction.ExclusionRemoved, user.HostIdentifier(), id.ToString(),
-                $"Retrait de la liste d'exclusion (entrée {id}).", ct);
+                $"Retrait de « {removed.DisplayName} » de la liste d'exclusion "
+                + $"(inscrit le {removed.CreatedAt:yyyy-MM-dd} par {removed.AddedBy}, motif : {removed.Reason}).", ct);
 
             return Results.Ok(new { message = "Retiré." });
         })

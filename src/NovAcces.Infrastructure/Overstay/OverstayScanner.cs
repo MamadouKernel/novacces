@@ -76,6 +76,8 @@ public sealed class OverstayScanner : IOverstayScanner
         sp.GetRequiredService<CurrentTenant>().Resolve(siteId);
         var db = sp.GetRequiredService<NovAccesDbContext>();
         var broadcaster = sp.GetRequiredService<IScanEventBroadcaster>();
+        var hosts = sp.GetRequiredService<IHostDirectory>();
+        var notifications = sp.GetRequiredService<INotificationService>();
 
         var onSite = await db.Visits.Where(v => v.IsOnSite).ToListAsync(ct);
 
@@ -92,6 +94,26 @@ public sealed class OverstayScanner : IOverstayScanner
 
             await broadcaster.BroadcastOverstayAsync(
                 new OverstayBroadcastEvent(visit.Id, visit.VisitorName, overstayMinutes, level, isSecurityEvent, now), ct);
+
+            // §7 : l'alerte part vers la sûreté (diffusion ci-dessus) ET vers
+            // l'hôte, à chaque niveau. Best-effort : une panne d'envoi ne doit
+            // ni interrompre le balayage des autres visiteurs, ni empêcher
+            // l'enregistrement du niveau atteint.
+            try
+            {
+                var host = await hosts.FindAsync(visit.HostUserId, ct);
+                if (host is not null)
+                {
+                    await notifications.NotifyHostAsync(new HostEventNotification(
+                        HostEventKind.Overstay, visit.Id, visit.VisitorName, host, now,
+                        OverstayMinutes: overstayMinutes, OverstayLevel: level), ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Dépassement : échec de la notification de l'hôte pour la visite {VisitId}.", visit.Id);
+            }
 
             // Minimisation des données : identifiant opaque de la visite, pas le
             // nom (PII) — le nom reste dans le journal et le dashboard (accès contrôlé).

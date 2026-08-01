@@ -31,7 +31,7 @@ public partial class App : Application
 		try { await config.LoadFromSecureStorageAsync(); }
 		catch { /* stockage indisponible : on partira sur l'enrôlement */ }
 
-		// Terminal non enrôlé → enrôlement. Sinon, l'agent doit PRENDRE SON POSTE
+		// Terminal non enrôlé → scan du QR d'invitation. Sinon, l'agent doit PRENDRE SON POSTE
 		// (matricule + PIN) avant d'accéder au scan — traçabilité individuelle.
 		Page root = config.IsEnrolled
 			? _services.GetRequiredService<ShiftPage>()

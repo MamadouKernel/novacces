@@ -49,9 +49,12 @@ public partial class ScanPage : ContentPage
         _connectivity.ConnectivityChanged += OnConnectivityChanged;
         UpdateConnectivityLabel();
 
-        // Agent en poste (matricule) affiché en pied — traçabilité visible.
+        // Agent en poste (matricule) affiché en pied — traçabilité visible. Le
+        // site n'est montré que pour un terminal multi-sites (sinon implicite).
         AgentLabel.Text = _session.IsShiftActive
-            ? $"Agent : {_session.AgentMatricule}"
+            ? _session.SelectedSiteId is { } site
+                ? $"Agent : {_session.AgentMatricule} · Site : {site}"
+                : $"Agent : {_session.AgentMatricule}"
             : "Poste de contrôle";
 
         // Précharge la liste hors-ligne signée pour préparer une éventuelle coupure.

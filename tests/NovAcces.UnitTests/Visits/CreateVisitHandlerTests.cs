@@ -45,10 +45,13 @@ file sealed class FakeExclusionListService : IExclusionListService
 {
     public bool IsExcluded { get; set; }
     public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct) => Task.FromResult(IsExcluded);
+    public Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
     public Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
         => Task.FromResult<IReadOnlyList<ExclusionEntryView>>(Array.Empty<ExclusionEntryView>());
     public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
-    public Task<bool> RemoveAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
+    public Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct)
+        => Task.FromResult<ExclusionEntryView?>(null);
 }
 
 file sealed class FakeNotificationService : INotificationService
@@ -62,6 +65,9 @@ file sealed class FakeNotificationService : INotificationService
         LastNotification = notification;
         return Task.CompletedTask;
     }
+
+    public Task NotifyHostAsync(HostEventNotification notification, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 public class CreateVisitHandlerTests

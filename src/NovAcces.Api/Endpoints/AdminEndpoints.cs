@@ -28,7 +28,9 @@ public static class AdminEndpoints
         group.MapGet("/overview", async (ISiteOverviewService overview, CancellationToken ct) =>
         {
             var sites = await overview.GetAsync(ct);
-            var dto = sites.Select(s => new AdminSiteOverviewDto(s.SiteId, s.OnSite, s.ScansToday)).ToList();
+            var dto = sites.Select(s => new AdminSiteOverviewDto(
+                s.SiteId, s.OnSite, s.ScansToday,
+                s.TerminalsEnrolled, s.TerminalsActive, s.DegradedScansToday)).ToList();
             return Results.Ok(dto);
         })
         .WithName("AdminOverview")
@@ -150,6 +152,7 @@ public static class AdminEndpoints
         group.MapPost("/sites", async (
             ProvisionSiteRequestDto request,
             ITenantProvisioningService provisioning,
+            ISiteCatalog sites,
             CancellationToken ct) =>
         {
             var siteId = request.SiteId?.Trim().ToLowerInvariant();
@@ -157,6 +160,12 @@ public static class AdminEndpoints
                 return Results.BadRequest(new { error = "Identifiant de site invalide (a-z, 0-9, _ ; max 40)." });
 
             await provisioning.ProvisionAsync(siteId!, ct);
+
+            // Le catalogue met l'existence des sites en cache pour ne pas
+            // interroger la base à chaque requête : sans invalidation, le site
+            // qu'on vient de créer resterait « inconnu » le temps du TTL.
+            sites.Invalidate();
+
             return Results.Ok(new { message = $"Site '{siteId}' provisionné." });
         })
         .WithName("AdminProvisionSite")
@@ -180,9 +189,11 @@ public static class AdminEndpoints
         {
             var results = await retention.PurgeOnceAsync(ct);
             var dto = new RetentionRunResultDto(
-                results.Sum(r => r.VisitsPurged),
-                results.Sum(r => r.ScanLogsAnonymized),
-                results.Select(r => new SitePurgeDto(r.SiteId, r.VisitsPurged, r.ScanLogsAnonymized)).ToList());
+                results.Sites.Sum(r => r.VisitsPurged),
+                results.Sites.Sum(r => r.ScanLogsAnonymized),
+                results.Sites.Select(r => new SitePurgeDto(r.SiteId, r.VisitsPurged, r.ScanLogsAnonymized)).ToList(),
+                results.ApplicationAuditPurged,
+                results.RefreshSessionsPurged);
             return Results.Ok(dto);
         })
         .WithName("AdminRetentionRun")
@@ -244,10 +255,39 @@ public static class AdminEndpoints
             var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
 
             var list = await agents.ListAsync(ct);
-            return Results.Ok(list.Select(a => new AgentSummaryDto(a.Matricule, a.DisplayName)).ToList());
+            return Results.Ok(list.Select(a => new AgentSummaryDto(a.Matricule, a.DisplayName, a.IsActive)).ToList());
         })
         .WithName("AdminListAgents")
         .WithSummary("Liste les agents (matricule + nom) d'un site.");
+
+        // Désactivation : un agent réaffecté sur un autre site (ou parti) ne
+        // doit pas garder un PIN valide indéfiniment sur ce site-ci.
+        group.MapPost("/agents/{siteId}/{matricule}/deactivate", async (
+            string siteId,
+            string matricule,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+            var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+
+            var deactivated = await agents.DeactivateAsync(matricule, ct);
+            if (!deactivated)
+                return Results.NotFound(new { error = $"Agent {matricule} introuvable sur le site {siteId}." });
+
+            await audit.RecordAsync(AdminAuditAction.AgentDeactivated, user.HostIdentifier(), matricule,
+                $"Désactivation de l'agent {matricule} sur le site {siteId}.", ct);
+
+            return Results.Ok(new { message = $"Agent {matricule} désactivé sur le site {siteId}." });
+        })
+        .WithName("AdminDeactivateAgent")
+        .WithSummary("Désactive un agent sur un site (départ ou réaffectation vers un autre site).");
 
         // --- Terminaux (enrôlement) ---
         // Contrairement aux agents, un terminal ne vit dans le schéma d'AUCUN

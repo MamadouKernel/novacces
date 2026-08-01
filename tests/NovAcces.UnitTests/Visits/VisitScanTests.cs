@@ -18,12 +18,37 @@ public class VisitScanTests
             visitorPhone: null, visitorEmail: null, isExcluded: excluded, now: now);
 
     [Fact]
+    public void ComputeQrExpiry_UniqueMode_IsFifteenMinutesAfterRendezVous()
+    {
+        // La réémission d'un QR (GET /api/visits/{id}/qr) doit produire
+        // rigoureusement la même expiration que la génération initiale
+        // (CreateVisitHandler) : c'est la même formule, portée par le
+        // domaine, qui garantit l'absence de divergence entre les deux.
+        var now = DateTimeOffset.UtcNow;
+        var rendezVous = now.AddHours(2);
+        var visit = CreateUniqueVisit(scheduledAt: rendezVous, now: now);
+
+        Assert.Equal(rendezVous.AddMinutes(15), visit.ComputeQrExpiry());
+    }
+
+    [Fact]
+    public void ComputeQrExpiry_ThirtyDaysMode_IsThirtyDaysAfterCreation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var visit = Visit.Create("Fatou Bamba", "Bureau Veritas", "Inspection", "host-1",
+            AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
+            visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
+
+        Assert.Equal(now.AddDays(30), visit.ComputeQrExpiry());
+    }
+
+    [Fact]
     public void Scan_WithinWindow_AtEntry_IsGranted()
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.True(outcome.IsGranted);
         Assert.True(visit.IsOnSite);
@@ -36,7 +61,7 @@ public class VisitScanTests
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now.AddMinutes(130), now: now);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
@@ -49,7 +74,7 @@ public class VisitScanTests
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now.AddHours(-19), now: now.AddHours(-19));
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
@@ -64,9 +89,9 @@ public class VisitScanTests
         // quelqu'un d'autre.
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now); // le "voleur" entre
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false); // le "voleur" entre
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddMinutes(2));
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddMinutes(2), isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
@@ -78,9 +103,9 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
-        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(30));
+        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(30), isOnExclusionList: false);
 
         Assert.True(outcome.IsGranted);
         Assert.True(outcome.IsCheckOut);
@@ -95,7 +120,7 @@ public class VisitScanTests
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
 
-        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.False(outcome.IsSecurityEvent); // erreur opérationnelle, pas une fraude
@@ -109,10 +134,10 @@ public class VisitScanTests
         // scan brut (raffinement demandé lors de la démonstration).
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
-        visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(30));
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
+        visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(30), isOnExclusionList: false);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddMinutes(45));
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddMinutes(45), isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
@@ -126,7 +151,7 @@ public class VisitScanTests
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
         visit.Revoke("surete-01", now);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.Equal(ScanDenialReason.Revoked, outcome.DenialReason);
@@ -152,10 +177,10 @@ public class VisitScanTests
         // Principe de sûreté : on ne bloque jamais une sortie, même révoquée.
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
         visit.Revoke("surete-01", now);
 
-        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(10));
+        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(10), isOnExclusionList: false);
 
         Assert.True(outcome.IsGranted);
         Assert.True(outcome.IsCheckOut);
@@ -168,11 +193,45 @@ public class VisitScanTests
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now, excluded: true);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
         Assert.Equal(ScanDenialReason.Excluded, outcome.DenialReason);
+    }
+
+    [Fact]
+    public void Scan_VisitorAddedToExclusionListAfterQrIssued_IsDeniedAtEntry()
+    {
+        // Cas d'usage central de REQ-F-11 : la personne était clean à l'émission
+        // du QR, la sûreté l'écarte ensuite. Le QR déjà distribué NE DOIT PLUS
+        // ouvrir la porte, sans qu'on ait à révoquer sa demande à la main.
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now, excluded: false);
+
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: true);
+
+        Assert.False(outcome.IsGranted);
+        Assert.True(outcome.IsSecurityEvent);
+        Assert.Equal(ScanDenialReason.Excluded, outcome.DenialReason);
+        Assert.False(visit.IsOnSite);
+    }
+
+    [Fact]
+    public void Scan_VisitorAddedToExclusionListWhileOnSite_CanStillExit()
+    {
+        // On ne retient jamais physiquement quelqu'un : même écarté pendant sa
+        // visite, il doit pouvoir sortir (et la sortie reste journalisée).
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now, excluded: false);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
+
+        var outcome = visit.Scan(
+            CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(20), isOnExclusionList: true);
+
+        Assert.True(outcome.IsGranted);
+        Assert.True(outcome.IsCheckOut);
+        Assert.False(visit.IsOnSite);
     }
 
     [Fact]
@@ -183,7 +242,7 @@ public class VisitScanTests
             AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
             visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: false, now);
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: false, now, isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.Equal(ScanDenialReason.NonBusinessDay, outcome.DenialReason);
@@ -197,9 +256,9 @@ public class VisitScanTests
             AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
             visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
 
-        var in1 = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
-        var out1 = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddHours(2));
-        var in2 = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddDays(1));
+        var in1 = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
+        var out1 = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddHours(2), isOnExclusionList: false);
+        var in2 = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddDays(1), isOnExclusionList: false);
 
         Assert.True(in1.IsGranted);
         Assert.True(out1.IsCheckOut);
@@ -216,7 +275,7 @@ public class VisitScanTests
             AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
             visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
 
-        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddDays(31));
+        var outcome = visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now.AddDays(31), isOnExclusionList: false);
 
         Assert.False(outcome.IsGranted);
         Assert.True(outcome.IsSecurityEvent);
@@ -228,7 +287,7 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now); // durée prévue : 60 min
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false); // durée prévue : 60 min
 
         var level = visit.EvaluateOverstayAlertLevel(now.AddMinutes(75), TimeSpan.FromMinutes(15));
 
@@ -240,7 +299,7 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
         visit.EvaluateOverstayAlertLevel(now.AddMinutes(75), TimeSpan.FromMinutes(15)); // niveau 1
 
         var levelTooSoon = visit.EvaluateOverstayAlertLevel(now.AddMinutes(80), TimeSpan.FromMinutes(15));
@@ -253,7 +312,7 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now);
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
         visit.EvaluateOverstayAlertLevel(now.AddMinutes(75), TimeSpan.FromMinutes(15)); // niveau 1
 
         var level2 = visit.EvaluateOverstayAlertLevel(now.AddMinutes(91), TimeSpan.FromMinutes(15));
@@ -266,9 +325,9 @@ public class VisitScanTests
     {
         var now = DateTimeOffset.UtcNow;
         var visit = CreateUniqueVisit(scheduledAt: now, now: now); // durée prévue : 60 min
-        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
 
-        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(94));
+        var outcome = visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(94), isOnExclusionList: false);
 
         Assert.True(outcome.IsCheckOut);
         Assert.Equal(34, outcome.OverstayMinutesAtCheckOut);

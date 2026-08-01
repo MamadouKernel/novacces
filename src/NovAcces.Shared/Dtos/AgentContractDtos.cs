@@ -13,5 +13,15 @@ public sealed record SiteParametersDto(
     int FenetreApresMin,
     int TtlListeLocaleHeures);
 
-/// <summary>Clé publique ES256 utilisable avant toute authentification.</summary>
-public sealed record PublicKeyDto(string Kid, string PublicKeyPem);
+/// <summary>
+/// Clé publique ES256 utilisable avant toute authentification. Pendant une
+/// rotation, <see cref="RetiredKeys"/> porte les anciennes clés encore acceptées
+/// en vérification : le terminal doit les conserver pour pouvoir valider hors
+/// ligne les QR longue durée émis avant la bascule.
+/// </summary>
+public sealed record PublicKeyDto(
+    string Kid,
+    string PublicKeyPem,
+    IReadOnlyList<PublicKeyEntryDto>? RetiredKeys = null);
+
+public sealed record PublicKeyEntryDto(string Kid, string PublicKeyPem);

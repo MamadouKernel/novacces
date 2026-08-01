@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using NovAcces.Application.Abstractions;
+using NovAcces.Application.Visits;
 using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
 using NovAcces.Shared.Auth;
@@ -15,6 +16,15 @@ namespace NovAcces.Api.Endpoints;
 /// </summary>
 public static class AgentEndpoints
 {
+    /// <summary>
+    /// Plafond du lot de resynchronisation. Chaque élément déclenche une
+    /// transaction et une écriture INEFFAÇABLE au journal : un lot non borné
+    /// est à la fois un déni de service et un moyen de noyer le journal.
+    /// Dimensionné très au-dessus d'une coupure réaliste (quelques dizaines de
+    /// scans) ; un terminal qui en aurait davantage enverra plusieurs lots.
+    /// </summary>
+    internal const int MaxResyncBatchSize = 200;
+
     public static RouteGroupBuilder MapAgentEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/agent").WithTags("Agent")
@@ -76,7 +86,7 @@ public static class AgentEndpoints
             var today = await visits.GetTodayActiveVisitsAsync(now, ct);
 
             var dto = today.Select(v => new ExpectedVisitorDto(
-                v.VisitorName, StatusLabel(v), WindowStart(v), WindowEnd(v))).ToList();
+                v.VisitorName, StatusLabel(v, now), WindowStart(v), WindowEnd(v))).ToList();
 
             return Results.Ok(dto);
         })
@@ -85,14 +95,21 @@ public static class AgentEndpoints
 
         // §6 — Liste hors-ligne signée (TTL 4h).
         group.MapGet("/offline-list", async (
-            IVisitRepository visits, IQrSigningService signing, IDateTimeProvider clock, CancellationToken ct) =>
+            IVisitRepository visits, IQrSigningService signing, IExclusionListService exclusions,
+            IDateTimeProvider clock, CancellationToken ct) =>
         {
             var issuedAt = clock.UtcNow;
             var expiresAt = issuedAt.AddHours(4);
             var today = await visits.GetTodayActiveVisitsAsync(issuedAt, ct);
 
+            // Exclusion évaluée à l'ÉMISSION de la liste, pas figée à la création
+            // de la visite : une personne écartée entre-temps doit être refusée
+            // aussi en mode dégradé (REQ-F-11).
+            var excluded = await exclusions.GetExcludedNormalizedNamesAsync(ct);
+
             var entries = today
-                .Select(v => new OfflineListEntry(v.Id, v.VisitToken, v.ScheduledAt, v.IsExcluded, v.IsOnSite))
+                .Select(v => new OfflineListEntry(
+                    v.Id, v.VisitToken, v.ScheduledAt, IsExcluded(v, excluded), v.IsOnSite))
                 .ToList();
 
             var signed = signing.SignDailyOfflineList(entries, issuedAt, expiresAt);
@@ -102,87 +119,117 @@ public static class AgentEndpoints
         .WithSummary("Liste des QR valides du jour, signée, pour le mode dégradé.");
 
         // §6.5 — Resynchronisation : confronte les scans hors-ligne au registre.
+        //
+        // Le verdict remonté par le terminal n'est JAMAIS pris pour argent
+        // comptant : chaque scan est rejoué par ScanQrHandler, qui revérifie la
+        // signature ES256 du QR et réapplique toute la règle métier (exclusion,
+        // fenêtre, anti-rejeu, révocation). Le registre central est l'autorité,
+        // le terminal n'est qu'un rapporteur. Sans cela, une clé de terminal
+        // volée permettrait d'inscrire des « accès accordé » arbitraires dans un
+        // journal que les triggers append-only rendent ineffaçable.
+        //
+        // Le champ WasGranted du terminal ne sert plus qu'à UNE chose : détecter
+        // un écart entre ce qui a été décidé au poste pendant la coupure et ce
+        // que le serveur aurait décidé — c'est précisément la définition d'un
+        // conflit (§6.5), remonté à la sûreté.
         group.MapPost("/resync", async (
             ResyncRequestDto request,
             ClaimsPrincipal user,
-            IVisitRepository visits,
-            IScanLogRepository logs,
+            ICurrentTenant tenant,
+            IJwtTokenService jwt,
+            HttpRequest http,
+            IQrSigningService signing,
+            ScanQrHandler handler,
             IScanEventBroadcaster broadcaster,
+            IBusinessDayService businessDays,
             IDateTimeProvider clock,
             CancellationToken ct) =>
         {
-            var agentId = user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
+            if (request.Scans is null || request.Scans.Count == 0)
+                return Results.BadRequest(new { error = "Le lot de resynchronisation ne peut pas être vide." });
+
+            if (request.Scans.Count > MaxResyncBatchSize)
+                return Results.BadRequest(new
+                {
+                    error = $"Lot trop volumineux ({MaxResyncBatchSize} scans maximum par envoi)."
+                });
+
+            // Traçabilité individuelle (§8.5) : matricule du jeton de poste si
+            // présent, sinon le terminal.
+            var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsed)
+                ? parsed : (Guid?)null;
+            var shift = jwt.ValidateShiftToken(http.Headers["X-Shift-Token"].ToString(), tenant.SiteId, terminalId);
+            var agentId = shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
+
+            var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
             var conflicts = new List<ResyncConflictDto>();
 
             foreach (var scan in request.Scans)
             {
-                var visit = await visits.GetByTokenAsync(scan.VisitToken, ct);
-                var visitorName = visit?.VisitorName ?? "QR inconnu";
                 var direction = Enum.TryParse<CheckpointDirection>(scan.Direction, true, out var d)
                     ? d : CheckpointDirection.Entry;
 
-                // Conflit : un accès accordé hors ligne pour un QR entre-temps
-                // révoqué (ou inconnu) = événement de sécurité à remonter.
-                var isConflict = scan.WasGranted && (visit is null || visit.Status == VisitStatus.Revoked);
+                // Le jeton de visite fiable vient de la SIGNATURE, jamais du
+                // champ VisitToken fourni par le terminal.
+                var verification = signing.VerifySignedToken(scan.SignedQrPayload ?? string.Empty);
 
-                // §6.2 / REQ-F-07 : CHAQUE scan hors-ligne est journalisé au registre
-                // central, marqué mode dégradé — accordé, refusé, ou conflit —, et
-                // pas seulement les conflits.
-                ScanOutcome outcome;
-                string detail;
-                if (isConflict)
-                {
-                    var reason = visit is null
-                        ? "QR inconnu confronté à la resynchronisation"
-                        : "Accès accordé hors ligne à un QR révoqué pendant la coupure";
-                    outcome = ScanOutcome.Denied(ScanDenialReason.Revoked, isSecurityEvent: true);
-                    detail = $"Conflit de resynchronisation : {reason}";
-                    conflicts.Add(new ResyncConflictDto(scan.VisitToken, visitorName, reason, scan.OccurredAt));
-                }
-                else if (scan.WasGranted)
-                {
-                    outcome = direction == CheckpointDirection.Exit
-                        ? ScanOutcome.CheckedOut(0)
-                        : ScanOutcome.Granted();
-                    detail = "Scan hors ligne confronté (accès accordé).";
-                }
-                else
-                {
-                    // Refus hors-ligne (fenêtre, exclusion, expiration, signature…).
-                    // Le motif local est repris tel quel ; « Expired » n'ayant pas de
-                    // ScanDenialReason dédié est assimilé à TooLate (comme le domaine).
-                    var reason = Enum.TryParse<ScanDenialReason>(scan.VerdictCode, out var r)
-                        ? r : ScanDenialReason.TooLate;
-                    outcome = ScanOutcome.Denied(reason, scan.WasSecurityEvent);
-                    detail = $"Scan hors ligne confronté (refus : {scan.VerdictCode ?? "inconnu"}).";
-                }
+                // Rejoue le scan : journalisation en mode dégradé incluse (§6.2 /
+                // REQ-F-07 — chaque tentative hors ligne est inscrite au registre,
+                // accordée comme refusée).
+                var result = await handler.HandleAsync(new ScanQrCommand(
+                    scan.SignedQrPayload ?? string.Empty, direction, agentId,
+                    IsDegradedMode: true, isBusinessDay), ct);
 
-                await logs.AddAsync(ScanLogEntry.Create(
-                    visit?.Id ?? Guid.Empty, visitorName, agentId, direction,
-                    outcome, degradedMode: true, detail, clock.UtcNow), ct);
+                // Conflit : le poste a laissé passer hors ligne ce que le serveur
+                // refuse. C'est un événement de sécurité à remonter à la sûreté.
+                if (scan.WasGranted && !result.IsGranted)
+                {
+                    var reason = result.VerdictCode == "INVALID_SIGNATURE"
+                        ? "Accès accordé hors ligne à un QR que le serveur ne reconnaît pas"
+                        : $"Accès accordé hors ligne, refusé par le registre ({result.VerdictCode})";
+
+                    conflicts.Add(new ResyncConflictDto(
+                        verification.VisitToken ?? Guid.Empty,
+                        result.VisitorName ?? "QR inconnu",
+                        reason,
+                        scan.OccurredAt));
+                }
             }
 
-            if (request.Scans.Count > 0)
-                await logs.SaveChangesAsync(ct);
-
-            // Les conflits (événements de sécurité) sont diffusés au dashboard sûreté.
             foreach (var c in conflicts)
                 await broadcaster.BroadcastAsync(new ScanBroadcastEvent(
                     Guid.Empty, c.VisitorName, "RESYNC_CONFLICT", false, false, true, agentId, c.OccurredAt), ct);
 
             return Results.Ok(new ResyncResultDto(request.Scans.Count, conflicts));
         })
+        .RequireRateLimiting("sensitive")
         .WithName("Resync")
-        .WithSummary("Confronte les scans hors-ligne au registre et remonte les conflits.");
+        .WithSummary("Rejoue les scans hors-ligne contre le registre central et remonte les écarts.");
 
         return group;
     }
 
-    private static string StatusLabel(Visit v) => v switch
+    /// <summary>
+    /// Exclusion effective d'une visite : instantané figé à la création OU
+    /// présence courante sur la liste du site. Même règle que Visit.Scan côté
+    /// domaine — les deux doivent rester alignées.
+    /// </summary>
+    internal static bool IsExcluded(Visit v, IReadOnlySet<string> excludedNormalizedNames) =>
+        v.IsExcluded || excludedNormalizedNames.Contains(ExclusionEntry.Normalize(v.VisitorName));
+
+    /// <summary>
+    /// Statut affiché à l'agent (§11) : attendu / sur site / sorti / révoqué /
+    /// non venu. « Non venu » = la fenêtre de validité est passée et la
+    /// personne n'est jamais entrée — c'est ce qui permet à l'agent de
+    /// distinguer un visiteur encore attendu d'un rendez-vous manqué.
+    /// </summary>
+    private static string StatusLabel(Visit v, DateTimeOffset now) => v switch
     {
         { Status: VisitStatus.Revoked } => "révoqué",
         { IsOnSite: true } => "sur site",
         { HasCompletedCycle: true } => "sorti",
+        { CheckedOutAt: not null } => "sorti",
+        _ when WindowEnd(v) is { } end && now > end && v.CheckedInAt is null => "non venu",
         _ => "attendu",
     };
 

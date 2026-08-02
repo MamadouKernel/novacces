@@ -1,6 +1,6 @@
 namespace NovAcces.Infrastructure.Notifications;
 
-/// <summary>Paramètres du canal email utilisé en complément de WhatsApp.</summary>
+/// <summary>Paramètres du canal email, seul canal de notification (REQ-F-03).</summary>
 public sealed class SmtpNotificationOptions
 {
     public string Host { get; set; } = default!;

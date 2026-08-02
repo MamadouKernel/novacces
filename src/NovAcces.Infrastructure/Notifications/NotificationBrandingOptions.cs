@@ -2,8 +2,8 @@ namespace NovAcces.Infrastructure.Notifications;
 
 /// <summary>
 /// Éléments de marque et de courtoisie repris dans les messages d'invitation
-/// (email et WhatsApp). Configurables par déploiement (section "Notifications")
-/// pour que Sigasécurité puisse personnaliser la signature par client/site.
+/// (email). Configurables par déploiement (section "Notifications") pour que
+/// Sigasécurité puisse personnaliser la signature par client/site.
 /// </summary>
 public sealed class NotificationBrandingOptions
 {

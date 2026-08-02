@@ -77,7 +77,7 @@ public sealed class CreateVisitHandler
         {
             await _notifications.SendVisitInvitationAsync(
                 new VisitInvitationNotification(
-                    visit.Id, visit.VisitorName, visit.VisitorPhone, visit.VisitorEmail,
+                    visit.Id, visit.VisitorName, visit.VisitorEmail,
                     signedPayload, visit.ScheduledAt, expiresAt),
                 ct);
         }

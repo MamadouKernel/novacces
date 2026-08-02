@@ -109,9 +109,13 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
 
             <div class="row">
                 <div class="field"><label>Téléphone (optionnel)</label>
-                    <input @bind="_form.VisitorPhone" placeholder="+225…" /></div>
+                    <input @bind="_form.VisitorPhone" placeholder="+225…" />
+                    <p class="hint">Contact pour la sûreté — le QR n'est pas envoyé par ce canal.</p>
+                </div>
                 <div class="field"><label>Email</label>
-                    <input type="email" @bind="_form.VisitorEmail" /></div>
+                    <input type="email" @bind="_form.VisitorEmail" />
+                    <p class="hint">Le QR d'accès est envoyé à cette adresse.</p>
+                </div>
             </div>
 
             <button class="btn-primary" @onclick="CreateAsync" disabled="@_busy">

@@ -20,9 +20,6 @@ public static class ProductionConfigurationValidator
             || !string.IsNullOrEmpty(uri.Fragment))
             throw new InvalidOperationException("Api:PublicBaseUrl doit être une URL HTTPS absolue sans query ni fragment en production.");
 
-        Require(configuration["WhatsApp:PhoneNumberId"], "WhatsApp:PhoneNumberId");
-        Require(configuration["WhatsApp:AccessToken"], "WhatsApp:AccessToken");
-        Require(configuration["WhatsApp:TemplateName"], "WhatsApp:TemplateName");
         Require(configuration["Smtp:Host"], "Smtp:Host");
         Require(configuration["Smtp:Username"], "Smtp:Username");
         Require(configuration["Smtp:Password"], "Smtp:Password");

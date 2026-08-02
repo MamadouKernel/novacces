@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -94,20 +93,11 @@ public static class DependencyInjection
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
 
-        // --- Notifications (REQ-F-03) : WhatsApp Cloud API, repli email ---
-        services.Configure<WhatsAppCloudApiOptions>(configuration.GetSection("WhatsApp"));
+        // --- Notifications (REQ-F-03) : email uniquement (WhatsApp abandonné,
+        // décision M. Kodjo du 01/08/2026 — voir docs/accord-commercial.md) ---
         services.Configure<SmtpNotificationOptions>(configuration.GetSection("Smtp"));
         services.Configure<NotificationBrandingOptions>(configuration.GetSection("Notifications"));
-
-        services.AddHttpClient<INotificationService, WhatsAppNotificationService>(client =>
-        {
-            var baseUrl = configuration["WhatsApp:ApiBaseUrl"] ?? "https://graph.facebook.com/v20.0";
-            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-
-            var accessToken = configuration["WhatsApp:AccessToken"];
-            if (!string.IsNullOrWhiteSpace(accessToken))
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        });
+        services.AddScoped<INotificationService, EmailNotificationService>();
 
         // --- Cas d'usage (Application) ---
         services.AddScoped<ScanQrHandler>();

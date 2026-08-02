@@ -4,9 +4,9 @@ using NovAcces.Application.Abstractions;
 namespace NovAcces.Infrastructure.Notifications;
 
 /// <summary>
-/// Rédige les messages d'invitation (email et WhatsApp) dans un ton
-/// professionnel, poli et courtois. Copie centralisée ici pour rester
-/// cohérente entre les canaux et facile à faire évoluer.
+/// Rédige le message d'invitation (email) dans un ton professionnel, poli
+/// et courtois. Copie centralisée ici pour rester cohérente et facile à
+/// faire évoluer.
 ///
 /// Abidjan/San Pedro sont en UTC+0 (pas d'heure d'été) : les horodatages
 /// UTC des visites correspondent à l'heure locale, aucune conversion requise.
@@ -16,7 +16,7 @@ internal static class InvitationMessage
     public static string Subject(VisitInvitationNotification n) =>
         $"Votre QR Code d'accès visiteur — présentez-le au poste de contrôle";
 
-    /// <summary>Version texte (email en repli + base commune, sans HTML).</summary>
+    /// <summary>Version texte (base commune de l'email, sans HTML).</summary>
     public static string PlainText(VisitInvitationNotification n, NotificationBrandingOptions b)
     {
         var lines = new List<string>
@@ -44,23 +44,6 @@ internal static class InvitationMessage
         lines.Add($"— Message automatique envoyé via {b.ProductName}. Merci de ne pas répondre à cet email.");
 
         return string.Join("\n", lines);
-    }
-
-    /// <summary>Légende WhatsApp (accompagne l'image du QR dans la conversation).</summary>
-    public static string WhatsAppCaption(VisitInvitationNotification n, NotificationBrandingOptions b)
-    {
-        var caption =
-            $"Bonjour {n.VisitorName} 👋\n\n" +
-            $"{IntroSentence(n)}\n\n" +
-            "Présentez ce QR Code au poste de contrôle à votre arrivée et à votre départ. " +
-            $"Il est personnel et valable jusqu'au *{Format(n.ExpiresAt)}*.\n\n" +
-            "Pensez à votre pièce d'identité. Excellente visite ! 🙏\n\n" +
-            $"{b.OrganizationName}";
-
-        if (!string.IsNullOrWhiteSpace(b.SupportContact))
-            caption += $"\nUne question ? {b.SupportContact}";
-
-        return caption;
     }
 
     /// <summary>Email HTML soigné (QR intégré via cid:qr), aux couleurs de la marque.</summary>

@@ -212,7 +212,7 @@ public static class VisitEndpoints
         .WithSummary("Chronologie des statuts d'une demande de visite.");
 
         // Réémission du QR d'une demande existante : le visiteur a perdu le
-        // message WhatsApp/email, ou son téléphone a changé — sans cette
+        // message email, ou son adresse a changé — sans cette
         // route, la seule issue pour l'hôte était de révoquer et recréer la
         // demande. Resigne le MÊME jeton de visite (VisitToken inchangé) avec
         // la MÊME expiration que celle calculée à la création

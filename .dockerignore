@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.vs/
+**/.vscode/
+.git/
+.gitignore
+**/*.user
+docs/
+tests/
+src/NovAcces.Mobile/
+*.md
+.env

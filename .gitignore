@@ -16,6 +16,9 @@ obj/
 appsettings.*.Local.json
 appsettings.Development.json
 secrets.json
+.env
+.env.*
+!.env.example
 
 ## Documents commerciaux bruts (hors dépôt — équivalents texte dans docs/*.md)
 /*.docx

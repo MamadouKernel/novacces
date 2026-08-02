@@ -1,0 +1,99 @@
+name: novacces
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: novacces
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Jamais de "ports:" ici : Postgres ne doit être joignable que par les
+    # autres conteneurs du réseau interne, jamais depuis l'extérieur du VPS
+    # (voir docs/deploiement.md §2).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d novacces"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: src/NovAcces.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=novacces;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Api__PublicBaseUrl: ${API_PUBLIC_BASE_URL}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      QrSigning__PrivateKeyPem: ${QR_SIGNING_PRIVATE_KEY_PEM}
+      QrSigning__PublicKeyPem: ${QR_SIGNING_PUBLIC_KEY_PEM}
+      Smtp__Host: ${SMTP_HOST}
+      Smtp__Port: ${SMTP_PORT}
+      Smtp__EnableSsl: "true"
+      Smtp__Username: ${SMTP_USERNAME}
+      Smtp__Password: ${SMTP_PASSWORD}
+      Smtp__FromAddress: ${SMTP_FROM_ADDRESS}
+      Smtp__FromDisplayName: ${SMTP_FROM_DISPLAY_NAME:-NovAcces — Contrôle des accès}
+      SeedAdmin__Email: ${SEED_ADMIN_EMAIL}
+      SeedAdmin__Password: ${SEED_ADMIN_PASSWORD}
+      SeedAdmin__DisplayName: ${SEED_ADMIN_DISPLAY_NAME}
+    # Pas de "ports:" publiés directement : Caddy reverse-proxy vers ce
+    # service par son nom DNS interne ("api"). L'app agent mobile (terminaux)
+    # passe aussi par Caddy, jamais directement sur ce conteneur.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: src/NovAcces.Web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Nom DNS interne du service "api" : le Blazor Server (NovAcces.Web)
+      # exécute TOUT son C# côté serveur, y compris la connexion SignalR vers
+      # l'API (voir AdminOverview.razor) — le navigateur du visiteur ne parle
+      # jamais directement à l'API, seulement à ce conteneur Web.
+      Api__BaseUrl: http://api:8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

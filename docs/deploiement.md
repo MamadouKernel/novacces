@@ -7,6 +7,23 @@ l'hébergement, la base, les secrets, la génération des clés, le provisionnem
 des sites, les sauvegardes, le PRA et la supervision. À adapter au fournisseur
 retenu ; les valeurs marquées « à confirmer » restent à figer avec Sigasécurité.
 
+## 0. Déploiement conteneurisé (Docker) — ajouté le 02/08/2026
+
+Un `docker-compose.yml` (racine du dépôt) packages les 4 services : `postgres`,
+`api`, `web`, et `caddy` (reverse proxy + TLS Let's Encrypt automatique).
+Dockerfiles : `src/NovAcces.Api/Dockerfile`, `src/NovAcces.Web/Dockerfile`.
+
+```bash
+cp .env.example .env        # puis renseigner les valeurs réelles (voir le fichier)
+docker compose up -d --build
+docker compose exec api dotnet NovAcces.Api.dll migrate   # 1re fois, puis après chaque migration EF
+```
+
+Le reste de ce document (durcissement, secrets, sauvegardes…) s'applique
+identiquement — Docker ne change que le mécanisme de packaging/exécution, pas
+les exigences de sécurité. L'option **systemd + `dotnet publish`** du §5
+reste valide si vous préférez ne pas passer par Docker.
+
 ## 1. Hébergement cible
 
 - **VPS Contabo (Union européenne)**, ~8-15 €/mois (décision actée, voir
@@ -43,10 +60,11 @@ jamais dans `appsettings.json`. Sections attendues :
 | Clé | Rôle |
 |---|---|
 | `ConnectionStrings:Postgres` | Chaîne de connexion (rôle applicatif dédié) |
+| `Api:PublicBaseUrl` | URL HTTPS absolue de l'API (terminaux, enrôlement) |
 | `QrSigning:PrivateKeyPem` / `PublicKeyPem` | Clés ES256 (voir §4.1) |
-| `Jwt:SigningKey` (≥ 32 car.), `Jwt:Issuer`, `Jwt:Audience` | Jetons web |
-| `ApiKeys:Terminals` | Clés API des terminaux agents enrôlés |
-| `WhatsApp:*`, `Smtp:*` | Notifications (WhatsApp Cloud API + repli email) |
+| `Jwt:SigningKey` (≥ 32 car.) | Jetons web |
+| `Smtp:*` | Notifications — **email uniquement** depuis le 01/08/2026 (WhatsApp abandonné, voir `accord-commercial.md` ; `EmailNotificationService`) |
+| `SeedAdmin:Email` / `Password` / `DisplayName` | Amorçage du compte Admin initial (`dotnet NovAcces.Api.dll migrate`) |
 | `Retention:VisitRetentionDays=365`, `Retention:JournalRetentionDays=1095` | Rétention (validées client) |
 | `BusinessDays:Holidays` | Jours fériés ivoiriens par site |
 
@@ -73,8 +91,10 @@ aux terminaux via l'enrôlement (SecureStorage — voir `audit-mobile.md`).
    - via l'API : `POST /api/admin/sites` (authentifié, rôle Admin), ou
    - en CLI d'exploitation : `dotnet run -- provision-site sicopa` (à confirmer
      selon le point d'entrée retenu).
-5. Amorçage du compte Admin initial via `SeedAdmin:Email` / `SeedAdmin:Password`
-   (à changer à la première connexion).
+5. Appliquer les migrations et amorcer le compte Admin initial :
+   `dotnet NovAcces.Api.dll migrate` (lit `SeedAdmin:Email` / `SeedAdmin:Password` /
+   `SeedAdmin:DisplayName` — mot de passe à changer dès la première connexion).
+   Idempotent : à rejouer après chaque déploiement qui ajoute une migration EF.
 
 ## 6. Environnements séparés (REQ-FIAB-07)
 

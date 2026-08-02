@@ -1,0 +1,13 @@
+# Reverse proxy — portail Web (hôtes/sûreté/admin) + navigateurs.
+# Caddy obtient et renouvelle automatiquement le certificat Let's Encrypt
+# pour {$DOMAIN} dès que le DNS pointe vers ce serveur (rien à faire de plus).
+{$DOMAIN} {
+	reverse_proxy web:8080
+}
+
+# Reverse proxy — API : appelée par le portail agent mobile (terminaux) et,
+# en interne, par le conteneur Web. Sous-domaine séparé pour ne jamais mêler
+# les journaux/erreurs de l'un et de l'autre.
+{$API_DOMAIN} {
+	reverse_proxy api:8080
+}

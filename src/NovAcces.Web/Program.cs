@@ -55,6 +55,10 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+// Sonde de disponibilité (Docker HEALTHCHECK, supervision) — ne renseigne
+// aucune donnée d'exploitation, juste que le processus répond.
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

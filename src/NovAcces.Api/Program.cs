@@ -181,6 +181,20 @@ if (args.Length >= 1 && args[0] == "grant-app-role")
     return 0;
 }
 
+// --- Commande d'administration hors-ligne : migrations + amorçage initial ---
+//   dotnet NovAcces.Api.dll migrate
+// Applique les migrations EF (idempotentes) et amorce rôles + compte Admin
+// initial (SeedAdmin:Email/Password) si absent. Automatique en développement
+// (voir plus bas) ; en production c'est un geste d'exploitation EXPLICITE,
+// à rejouer après chaque déploiement qui ajoute une migration, et lors de la
+// toute première mise en service pour créer le compte Admin initial.
+if (args.Length >= 1 && args[0] == "migrate")
+{
+    await app.EnsureIdentityReadyAsync();
+    Console.WriteLine("Migrations appliquées, rôles et compte Admin initial vérifiés.");
+    return 0;
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

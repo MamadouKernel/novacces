@@ -8,9 +8,12 @@ namespace NovAcces.Api.Auth;
 public static class IdentityStartup
 {
     /// <summary>
-    /// Développement uniquement : applique le schéma Identity et amorce les
-    /// rôles + un compte Admin de dev, afin que la connexion soit testable sans
-    /// étape manuelle. Idempotent.
+    /// Applique le schéma Identity et amorce les rôles + le compte
+    /// SuperAdmin/Admin initial (SeedAdmin:Email/Password). Idempotent —
+    /// peut être rejoué sans risque. Appelé automatiquement au démarrage en
+    /// développement ; en production, c'est un geste d'exploitation explicite
+    /// (voir la commande CLI <c>dotnet NovAcces.Api.dll migrate</c> dans
+    /// Program.cs), pas un effet de bord du démarrage du service.
     /// </summary>
     public static async Task EnsureIdentityReadyAsync(this WebApplication app)
     {

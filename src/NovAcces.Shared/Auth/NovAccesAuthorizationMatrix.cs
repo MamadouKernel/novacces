@@ -29,11 +29,12 @@ public static class NovAccesAuthorizationMatrix
         IsSuperAdmin(user);
 
     /// <summary>
-    /// Vérifie la hiérarchie de désactivation : un Admin peut désactiver les
-    /// comptes ordinaires ; seuls les SuperAdmin peuvent toucher aux comptes
-    /// Admin ou SuperAdmin.
+    /// Vérifie la hiérarchie de gestion d'un compte (désactivation, édition,
+    /// réinitialisation de mot de passe) : un Admin peut gérer les comptes
+    /// ordinaires ; seul un SuperAdmin peut toucher un compte Admin ou
+    /// SuperAdmin.
     /// </summary>
-    public static bool CanDeactivateAccount(
+    public static bool CanManageAccount(
         ClaimsPrincipal caller, IEnumerable<string> targetRoles)
     {
         if (!IsGlobalOperator(caller))

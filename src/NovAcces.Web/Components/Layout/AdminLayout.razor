@@ -1,0 +1,58 @@
+@* Mise en page de la console Administration : navbar/footer partagés + sidebar
+   de navigation entre les sections. Le contrôle d'accès (rôle Admin) vit ici,
+   une seule fois, plutôt que dupliqué dans chacune des 5 pages routées. *@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<AuthPersistence />
+<IdleTimeout />
+<AppNavbar />
+
+<main class="app-shell">
+    @if (!Auth.Initialized)
+    {
+        <p class="muted" style="padding:2rem">Chargement…</p>
+    }
+    else if (Auth.IsInRole(NovAccesRoles.Admin))
+    {
+        <div class="admin-shell">
+            <nav class="admin-nav">
+                <NavLink class="admin-navlink" href="/admin" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink class="admin-navlink" href="/admin/comptes">Comptes</NavLink>
+                <NavLink class="admin-navlink" href="/admin/sites">Sites</NavLink>
+                <NavLink class="admin-navlink" href="/admin/agents">Agents</NavLink>
+                <NavLink class="admin-navlink" href="/admin/terminaux">Terminaux</NavLink>
+                <NavLink class="admin-navlink" href="/admin/audit">Audit</NavLink>
+                <NavLink class="admin-navlink" href="/admin/retention">Rétention</NavLink>
+            </nav>
+            <div class="admin-content">
+                @Body
+            </div>
+        </div>
+    }
+</main>
+
+<AppFooter />
+<ToastHost />
+
+<div id="blazor-error-ui">
+    Une erreur inattendue s'est produite.
+    <a href="" class="reload">Recharger</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (Auth.Initialized && !Auth.IsInRole(NovAccesRoles.Admin))
+            Nav.NavigateTo("/login");
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+}

@@ -1,0 +1,136 @@
+@page "/admin/audit"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration · Audit</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Audit</h1>
+        <p class="muted">Journal des actions privilégiées (§8.5) — qui a fait quoi, jamais modifiable.</p>
+    </div>
+</header>
+
+<section class="card">
+    <h2>Journal d'un site</h2>
+    <div class="field" style="max-width:22rem"><label>Site</label>
+        <select @bind="_auditSite" @bind:after="RefreshSiteAuditAsync">
+            <option value="">— choisir un site —</option>
+            @foreach (var s in _overview)
+            {
+                <option value="@s.SiteId">@s.SiteId</option>
+            }
+        </select>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_auditSite))
+    {
+        @if (_siteAudit.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucune action enregistrée pour ce site.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Horodatage</th><th>Auteur</th><th>Action</th><th>Cible</th><th>Détail</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _siteAudit)
+                    {
+                        <tr>
+                            <td class="mono">@e.Timestamp.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td class="muted">@e.Actor</td>
+                            <td><span class="badge badge-onsite">@e.Action</span></td>
+                            <td class="muted">@(e.TargetId ?? "—")</td>
+                            <td>@e.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <p class="hint">@_siteAudit.Count entrée(s) — les 100 plus récentes.</p>
+        }
+    }
+</section>
+
+@if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+{
+    <section class="card">
+        <h2>Journal technique global</h2>
+        <p class="muted">Une ligne par requête API, tous sites confondus — réservé au SuperAdmin.</p>
+        <button class="btn-ghost" @onclick="ExportCsvAsync" disabled="@_busy">⬇ Exporter (CSV)</button>
+
+        @if (_appAudit.Count == 0)
+        {
+            <div class="empty" style="margin-top:1rem">@EmptyIcon()<p>Aucune entrée.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap" style="margin-top:1rem">
+            <table class="visits">
+                <thead><tr><th>Horodatage</th><th>Acteur</th><th>Méthode</th><th>Chemin</th><th>Statut</th><th>Site</th><th>IP</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _appAudit)
+                    {
+                        <tr>
+                            <td class="mono">@e.Timestamp.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td class="muted">@e.Actor</td>
+                            <td class="mono">@e.Method</td>
+                            <td class="mono">@e.Path</td>
+                            <td>@e.StatusCode</td>
+                            <td class="muted">@(e.SiteId ?? "—")</td>
+                            <td class="mono muted">@(e.IpAddress ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <p class="hint">@_appAudit.Count entrée(s) — les 200 plus récentes. Export CSV pour une extraction plus large.</p>
+        }
+    </section>
+}
+
+@code {
+    private bool _busy;
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+
+    private string _auditSite = "";
+    private IReadOnlyList<AdminAuditDto> _siteAudit = Array.Empty<AdminAuditDto>();
+    private IReadOnlyList<ApplicationAuditDto> _appAudit = Array.Empty<ApplicationAuditDto>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+        {
+            try { _appAudit = await Api.GetApplicationAuditAsync(); } catch { /* best-effort */ }
+        }
+    }
+
+    private async Task RefreshSiteAuditAsync()
+    {
+        _siteAudit = Array.Empty<AdminAuditDto>();
+        if (string.IsNullOrEmpty(_auditSite)) return;
+        try { _siteAudit = await Api.GetAdminAuditAsync(_auditSite); }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        _busy = true;
+        try
+        {
+            var csv = await Api.GetApplicationAuditCsvAsync();
+            await JS.InvokeVoidAsync("novaccesDownload", $"audit-{DateTime.Now:yyyyMMdd-HHmm}.csv", csv);
+        }
+        catch { Toasts.Error("Export refusé."); }
+        finally { _busy = false; }
+    }
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+}

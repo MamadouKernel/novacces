@@ -1,0 +1,112 @@
+@page "/admin/sites"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration · Sites</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Sites</h1>
+        <p class="muted">Provisionnement des sites clients de Sigasécurité.</p>
+    </div>
+</header>
+
+<section class="card">
+    <h2>Provisionner un site</h2>
+    <p class="muted">Crée le schéma, le modèle de données et le journal append-only.</p>
+    <div class="field"><label>Nom du site</label>
+        <input @bind="_siteInput" @bind:event="oninput"
+               placeholder="ex. Côte d'Ivoire Terminal" /></div>
+    @if (!string.IsNullOrWhiteSpace(_siteInput))
+    {
+        <p class="hint" style="margin-top:-.6rem">
+            Identifiant technique : <code>@SiteSlugValue</code>
+            <span class="muted"> — minuscules, sans espaces ni accents (a-z, 0-9, _).</span>
+        </p>
+    }
+    else
+    {
+        <p class="hint" style="margin-top:-.6rem">
+            Tapez le nom du client — l'identifiant technique est généré automatiquement.
+        </p>
+    }
+    <button class="btn-primary" @onclick="ProvisionAsync"
+            disabled="@(_busy || string.IsNullOrEmpty(SiteSlugValue))">
+        @(string.IsNullOrEmpty(SiteSlugValue) ? "Provisionner" : $"Provisionner « {SiteSlugValue} »")
+    </button>
+    @if (_siteMsg is not null) { <p class="@(_siteOk ? "info" : "error")">@_siteMsg</p> }
+</section>
+
+<section class="card">
+    <h2>Sites provisionnés (@_overview.Count)</h2>
+    @if (_overview.Count == 0)
+    {
+        <div class="empty">@EmptyIcon()<p>Aucun site provisionné pour l'instant.</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="visits">
+            <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
+            <tbody>
+                @foreach (var s in _overview)
+                {
+                    <tr>
+                        <td><strong>@s.SiteId</strong></td>
+                        <td>@s.OnSite</td>
+                        <td>@s.ScansToday</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+        <p class="hint">Détail par poste et affluence : voir « Dashboard ».</p>
+    }
+</section>
+
+@code {
+    private bool _busy;
+    private string _siteInput = "";
+    private string SiteSlugValue => SiteSlug.From(_siteInput);
+    private string? _siteMsg; private bool _siteOk;
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+    }
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+
+    private async Task ProvisionAsync()
+    {
+        var slug = SiteSlugValue;
+        if (string.IsNullOrEmpty(slug))
+        {
+            _siteOk = false; _siteMsg = "Saisissez un nom de site.";
+            return;
+        }
+
+        _busy = true; _siteMsg = null;
+        try
+        {
+            var (ok, error) = await Api.ProvisionSiteAsync(slug);
+            _siteOk = ok;
+            _siteMsg = ok ? $"Site « {slug} » provisionné." : error;
+            if (ok)
+            {
+                Toasts.Success($"Site « {slug} » provisionné.");
+                _siteInput = "";
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Provisionnement refusé."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+}

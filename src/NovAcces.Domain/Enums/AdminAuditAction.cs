@@ -40,6 +40,15 @@ public enum AdminAuditAction
     /// <summary>Désactivation logique d'un compte par un Admin/SuperAdmin.</summary>
     AccountDeactivated,
 
+    /// <summary>Réactivation d'un compte désactivé (SuperAdmin uniquement).</summary>
+    AccountReactivated,
+
+    /// <summary>Édition du nom, du rôle ou du site de rattachement d'un compte.</summary>
+    AccountUpdated,
+
+    /// <summary>Réinitialisation forcée du mot de passe d'un compte par un administrateur.</summary>
+    AccountPasswordReset,
+
     /// <summary>
     /// Sortie d'un visiteur enregistrée manuellement par la sûreté, sans scan
     /// au poste (§7). Action privilégiée : elle clôt un cycle et éteint les

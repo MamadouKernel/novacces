@@ -254,6 +254,74 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Désactivation logique d'un compte (motif obligatoire, 5 à 500 caractères).</summary>
+    public async Task<(bool Success, string? Error)> DeactivateUserAsync(Guid id, string reason)
+    {
+        var response = await CreateClient(true)
+            .PostAsJsonAsync($"/api/admin/users/{id}/deactivate", new DeactivateUserRequestDto(reason));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Réactive un compte désactivé (réservé SuperAdmin côté API).</summary>
+    public async Task<(bool Success, string? Error)> ReactivateUserAsync(Guid id)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/admin/users/{id}/reactivate", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Modifie le nom, le rôle et le site d'un compte.</summary>
+    public async Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, string displayName, string role, string? siteId)
+    {
+        var response = await CreateClient(true)
+            .PutAsJsonAsync($"/api/admin/users/{id}", new UpdateUserRequestDto(displayName, role, siteId));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Réinitialise le mot de passe d'un compte.</summary>
+    public async Task<(bool Success, string? Error)> ResetUserPasswordAsync(Guid id, string newPassword)
+    {
+        var response = await CreateClient(true)
+            .PostAsJsonAsync($"/api/admin/users/{id}/reset-password", new AdminResetPasswordRequestDto(newPassword));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>État de la politique de rétention en vigueur.</summary>
+    public async Task<RetentionStatusDto?> GetRetentionStatusAsync()
+        => await CreateClient(true).GetFromJsonAsync<RetentionStatusDto>("/api/admin/retention");
+
+    /// <summary>Déclenche une passe immédiate de rétention (purge + anonymisation).</summary>
+    public async Task<RetentionRunResultDto?> RunRetentionAsync()
+    {
+        var response = await CreateClient(true).PostAsync("/api/admin/retention/run", null);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<RetentionRunResultDto>()
+            : null;
+    }
+
+    /// <summary>
+    /// Journal d'audit des actions privilégiées d'UN site (§8.5) — endpoint
+    /// tenant-résolu par en-tête, l'Admin global n'a pas de site dans son jeton.
+    /// </summary>
+    public async Task<IReadOnlyList<AdminAuditDto>> GetAdminAuditAsync(string siteId, int limit = 100)
+    {
+        var client = CreateClient(true);
+        client.DefaultRequestHeaders.Remove("X-Site-Id");
+        client.DefaultRequestHeaders.Add("X-Site-Id", siteId);
+        var result = await client.GetFromJsonAsync<List<AdminAuditDto>>($"/api/audit?limit={limit}");
+        return result ?? new List<AdminAuditDto>();
+    }
+
+    /// <summary>Journal technique global de toutes les requêtes API (SuperAdmin uniquement).</summary>
+    public async Task<IReadOnlyList<ApplicationAuditDto>> GetApplicationAuditAsync(int limit = 200)
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<ApplicationAuditDto>>($"/api/audit/application?limit={limit}");
+        return result ?? new List<ApplicationAuditDto>();
+    }
+
+    /// <summary>Contenu CSV du journal technique global (SuperAdmin uniquement).</summary>
+    public async Task<string> GetApplicationAuditCsvAsync()
+        => await CreateClient(true).GetStringAsync("/api/audit/application.csv");
+
     /// <summary>Modifie le nom affiché de l'utilisateur connecté.</summary>
     public async Task<(bool Success, string? Error)> UpdateDisplayNameAsync(string displayName)
     {

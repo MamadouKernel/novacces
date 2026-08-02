@@ -1,0 +1,216 @@
+@page "/admin/agents"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration · Agents</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Agents</h1>
+        <p class="muted">Matricule + PIN pour l'identification de l'agent sur le terminal. Le PIN sert au « prendre le poste » et n'est jamais affiché après création.</p>
+    </div>
+</header>
+
+<section class="card">
+    <div class="field" style="max-width:22rem"><label>Site</label>
+        <select @bind="_agentSite" @bind:after="RefreshAgentsAsync">
+            <option value="">— choisir un site —</option>
+            @foreach (var s in _overview)
+            {
+                <option value="@s.SiteId">@s.SiteId</option>
+            }
+        </select>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_agentSite))
+    {
+        <div class="row">
+            <div class="field"><label>Matricule</label>
+                <input @bind="_newAgent.Matricule" placeholder="ex. SG-0417" /></div>
+            <div class="field"><label>Nom</label>
+                <input @bind="_newAgent.DisplayName" placeholder="ex. A. Traoré" /></div>
+            <div class="field"><label>Code PIN</label>
+                <input type="password" inputmode="numeric" @bind="_newAgent.Pin" placeholder="4 à 8 chiffres" /></div>
+        </div>
+        <button class="btn-primary" @onclick="CreateAgentAsync" disabled="@_busy">Créer l'agent</button>
+        @if (_agentMsg is not null) { <p class="@(_agentOk ? "info" : "error")">@_agentMsg</p> }
+
+        <div class="table-wrap" style="margin-top:1rem">
+        <table class="visits">
+            <thead><tr><th>Matricule</th><th>Nom</th><th>Statut</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in _agents)
+                {
+                    <tr>
+                        <td><strong>@a.Matricule</strong></td>
+                        <td class="muted">@a.DisplayName</td>
+                        <td>@(a.IsActive ? "Actif" : "Désactivé")</td>
+                        <td style="white-space:nowrap">
+                            @if (a.IsActive)
+                            {
+                                <button class="btn-ghost" @onclick="() => StartReassign(a.Matricule, a.DisplayName)" disabled="@_busy">Réaffecter</button>
+                                <button class="btn-danger" @onclick="() => DeactivateAgentAsync(a.Matricule)" disabled="@_busy">Désactiver</button>
+                            }
+                        </td>
+                    </tr>
+                    @if (_reassignMatricule == a.Matricule)
+                    {
+                        <tr>
+                            <td colspan="4">
+                                <div class="row" style="align-items:flex-end">
+                                    <div class="field"><label>Réaffecter « @a.Matricule » vers</label>
+                                        <select @bind="_reassignTargetSite">
+                                            <option value="">— choisir un site —</option>
+                                            @foreach (var s in _overview.Where(s => s.SiteId != _agentSite))
+                                            {
+                                                <option value="@s.SiteId">@s.SiteId</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="field"><label>Nouveau PIN sur ce site</label>
+                                        <input type="password" inputmode="numeric" @bind="_reassignPin" placeholder="4 à 8 chiffres" /></div>
+                                    <button class="btn-primary" @onclick="ConfirmReassignAsync" disabled="@_busy">Confirmer</button>
+                                    <button class="btn-ghost" @onclick="CancelReassign">Annuler</button>
+                                </div>
+                                <p class="hint">Crée l'agent sur le site cible avec ce PIN, puis désactive « @a.Matricule » sur « @_agentSite ».</p>
+                                @if (_reassignMsg is not null) { <p class="error">@_reassignMsg</p> }
+                            </td>
+                        </tr>
+                    }
+                }
+                @if (_agents.Count == 0)
+                {
+                    <tr><td colspan="4" class="muted">Aucun agent pour ce site.</td></tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private bool _busy;
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+
+    private sealed class NewAgent { public string Matricule = ""; public string DisplayName = ""; public string Pin = ""; }
+    private readonly NewAgent _newAgent = new();
+    private string _agentSite = "";
+    private IReadOnlyList<AgentSummaryDto> _agents = Array.Empty<AgentSummaryDto>();
+    private string? _agentMsg; private bool _agentOk;
+
+    private string? _reassignMatricule;
+    private string _reassignDisplayName = "";
+    private string _reassignTargetSite = "";
+    private string _reassignPin = "";
+    private string? _reassignMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task RefreshAgentsAsync()
+    {
+        _agents = Array.Empty<AgentSummaryDto>();
+        if (string.IsNullOrEmpty(_agentSite)) return;
+        try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        if (string.IsNullOrEmpty(_agentSite))
+        {
+            _agentOk = false; _agentMsg = "Choisissez un site.";
+            return;
+        }
+
+        _busy = true; _agentMsg = null;
+        try
+        {
+            var (ok, error) = await Api.CreateAgentAsync(
+                _agentSite, _newAgent.Matricule.Trim(), _newAgent.DisplayName.Trim(), _newAgent.Pin.Trim());
+
+            _agentOk = ok;
+            _agentMsg = ok ? "Agent créé." : error;
+            if (ok)
+            {
+                Toasts.Success($"Agent « {_newAgent.Matricule.Trim()} » créé.");
+                _newAgent.Matricule = _newAgent.DisplayName = _newAgent.Pin = "";
+                await RefreshAgentsAsync();
+            }
+            else { Toasts.Error(error ?? "Création refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private void StartReassign(string matricule, string displayName)
+    {
+        _reassignMatricule = matricule;
+        _reassignDisplayName = displayName;
+        _reassignTargetSite = "";
+        _reassignPin = "";
+        _reassignMsg = null;
+    }
+
+    private void CancelReassign() => _reassignMatricule = null;
+
+    private async Task ConfirmReassignAsync()
+    {
+        if (_reassignMatricule is null) return;
+        _reassignMsg = null;
+
+        if (string.IsNullOrEmpty(_reassignTargetSite))
+        { _reassignMsg = "Choisissez le site cible."; return; }
+        if (string.IsNullOrWhiteSpace(_reassignPin) || _reassignPin.Length is < 4 or > 8 || !_reassignPin.All(char.IsDigit))
+        { _reassignMsg = "PIN numérique de 4 à 8 chiffres requis."; return; }
+
+        _busy = true;
+        try
+        {
+            var (createOk, createErr) = await Api.CreateAgentAsync(
+                _reassignTargetSite, _reassignMatricule, _reassignDisplayName, _reassignPin);
+            if (!createOk)
+            {
+                _reassignMsg = createErr ?? "Création refusée sur le site cible.";
+                return;
+            }
+
+            var (deactivateOk, deactivateErr) = await Api.DeactivateAgentAsync(_agentSite, _reassignMatricule);
+            if (!deactivateOk)
+            {
+                // L'agent existe déjà sur le nouveau site — on le signale mais on ne bloque pas :
+                // l'admin peut désactiver l'ancien manuellement si ce second appel a échoué.
+                Toasts.Error($"Créé sur « {_reassignTargetSite} », mais la désactivation sur « {_agentSite} » a échoué : {deactivateErr}");
+                _reassignMatricule = null;
+                await RefreshAgentsAsync();
+                return;
+            }
+
+            Toasts.Success($"Agent « {_reassignMatricule} » réaffecté de « {_agentSite} » vers « {_reassignTargetSite} ».");
+            _reassignMatricule = null;
+            await RefreshAgentsAsync();
+        }
+        catch { _reassignMsg = "Service indisponible, réessayez."; }
+        finally { _busy = false; }
+    }
+
+    private async Task DeactivateAgentAsync(string matricule)
+    {
+        if (string.IsNullOrEmpty(_agentSite)) return;
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeactivateAgentAsync(_agentSite, matricule);
+            if (ok)
+            {
+                Toasts.Success($"Agent « {matricule} » désactivé.");
+                await RefreshAgentsAsync();
+            }
+            else { Toasts.Error(error ?? "Désactivation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+}

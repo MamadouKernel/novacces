@@ -94,7 +94,7 @@ public static class AdminEndpoints
                 return Results.Conflict(new { error = "Ce compte est déjà désactivé." });
 
             var targetRoles = await users.GetRolesAsync(target);
-            if (!NovAccesAuthorizationMatrix.CanDeactivateAccount(caller, targetRoles))
+            if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, targetRoles))
                 return Results.Json(
                     new { error = "Votre rôle ne permet pas de désactiver ce compte." },
                     statusCode: StatusCodes.Status403Forbidden);
@@ -145,6 +145,197 @@ public static class AdminEndpoints
         })
         .WithName("AdminDeactivateUser")
         .WithSummary("Désactive logiquement un compte et révoque ses sessions.");
+
+        // Réactivation : réservée au SuperAdmin (pas la même hiérarchie que la
+        // désactivation/édition — un Admin ne peut réactiver personne, même un
+        // compte qu'il aurait lui-même désactivé).
+        group.MapPost("/users/{id:guid}/reactivate", async (
+            Guid id,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
+        {
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var target = await users.FindByIdAsync(id.ToString());
+            if (target is null)
+                return Results.NotFound(new { error = "Compte introuvable." });
+
+            if (!target.IsDeactivated)
+                return Results.Conflict(new { error = "Ce compte n'est pas désactivé." });
+
+            target.Reactivate();
+            var updated = await users.UpdateAsync(target);
+            if (!updated.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Réactivation refusée.",
+                    details = updated.Errors.Select(e => e.Description)
+                });
+
+            if (!string.IsNullOrWhiteSpace(target.SiteId) && CurrentTenant.IsValidSiteId(target.SiteId))
+            {
+                tenant.Resolve(target.SiteId);
+                await audit.RecordAsync(AdminAuditAction.AccountReactivated, actor.Id.ToString(),
+                    target.Id.ToString(), "Compte réactivé.", ct);
+            }
+
+            return Results.Ok(new { message = "Compte réactivé.", userId = target.Id });
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminReactivateUser")
+        .WithSummary("Réactive un compte désactivé (SuperAdmin uniquement).");
+
+        // Édition : nom affiché, rôle, site de rattachement. Même hiérarchie que
+        // la désactivation (CanManageAccount) ; promouvoir vers Admin/SuperAdmin
+        // exige en plus CanCreateElevatedAccount (SuperAdmin), symétrique de la
+        // création de compte (§ /register).
+        group.MapPut("/users/{id:guid}", async (
+            Guid id,
+            UpdateUserRequestDto request,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            ISiteCatalog sites,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
+        {
+            var role = request.Role?.Trim();
+            if (string.IsNullOrWhiteSpace(role) || !NovAccesRoles.All.Contains(role, StringComparer.Ordinal))
+                return Results.BadRequest(new { error = $"Rôle invalide. Attendus : {string.Join(", ", NovAccesRoles.All)}." });
+
+            var displayName = request.DisplayName?.Trim();
+            if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 160)
+                return Results.BadRequest(new { error = "Nom affiché invalide." });
+
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var target = await users.FindByIdAsync(id.ToString());
+            if (target is null)
+                return Results.NotFound(new { error = "Compte introuvable." });
+
+            var currentRoles = await users.GetRolesAsync(target);
+            if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, currentRoles))
+                return Results.Json(
+                    new { error = "Votre rôle ne permet pas de modifier ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            var isElevatedRole = role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
+            if (isElevatedRole && !NovAccesAuthorizationMatrix.CanCreateElevatedAccount(caller))
+                return Results.Json(
+                    new { error = "Seul le SuperAdmin peut attribuer le rôle Admin ou SuperAdmin." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            // Dernier SuperAdmin actif : ne pas le rétrograder, même par un autre SuperAdmin.
+            if (currentRoles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal) && role != NovAccesRoles.SuperAdmin)
+            {
+                var activeSuperAdmins = (await users.GetUsersInRoleAsync(NovAccesRoles.SuperAdmin))
+                    .Count(u => !u.IsDeactivated);
+                if (activeSuperAdmins <= 1)
+                    return Results.Conflict(new { error = "Le dernier SuperAdmin actif ne peut pas perdre ce rôle." });
+            }
+
+            string? siteId = null;
+            if (!isElevatedRole)
+            {
+                siteId = request.SiteId?.Trim().ToLowerInvariant();
+                if (!CurrentTenant.IsValidSiteId(siteId))
+                    return Results.BadRequest(new { error = "SiteId requis pour un rôle rattaché à un site." });
+
+                var provisionedSites = await sites.GetSiteIdsAsync(ct);
+                if (!provisionedSites.Contains(siteId!, StringComparer.OrdinalIgnoreCase))
+                    return Results.BadRequest(new { error = "Le site demandé n'est pas provisionné." });
+            }
+
+            target.DisplayName = displayName;
+            target.SiteId = siteId;
+
+            var rolesToRemove = currentRoles.Where(r => r != role && r != NovAccesRoles.Admin).ToList();
+            // Admin est retiré séparément : un SuperAdmin en cours de rétrogradation
+            // vers Admin doit le CONSERVER, pas juste le perdre puis le regagner.
+            if (role != NovAccesRoles.Admin && role != NovAccesRoles.SuperAdmin && currentRoles.Contains(NovAccesRoles.Admin, StringComparer.Ordinal))
+                rolesToRemove.Add(NovAccesRoles.Admin);
+
+            if (rolesToRemove.Count > 0)
+                await users.RemoveFromRolesAsync(target, rolesToRemove);
+            if (!await users.IsInRoleAsync(target, role))
+                await users.AddToRoleAsync(target, role);
+            if (role == NovAccesRoles.SuperAdmin && !await users.IsInRoleAsync(target, NovAccesRoles.Admin))
+                await users.AddToRoleAsync(target, NovAccesRoles.Admin);
+
+            var updated = await users.UpdateAsync(target);
+            if (!updated.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Modification refusée.",
+                    details = updated.Errors.Select(e => e.Description)
+                });
+
+            if (!string.IsNullOrWhiteSpace(target.SiteId) && CurrentTenant.IsValidSiteId(target.SiteId))
+            {
+                tenant.Resolve(target.SiteId);
+                await audit.RecordAsync(AdminAuditAction.AccountUpdated, actor.Id.ToString(),
+                    target.Id.ToString(), $"Compte modifié : nom « {displayName} », rôle « {role} », site « {siteId ?? "—"} ».", ct);
+            }
+
+            return Results.Ok(new { userId = target.Id, target.DisplayName, Role = role, target.SiteId });
+        })
+        .WithName("AdminUpdateUser")
+        .WithSummary("Modifie le nom, le rôle et le site d'un compte.");
+
+        // Réinitialisation forcée : révoque les sessions, comme une désactivation.
+        group.MapPost("/users/{id:guid}/reset-password", async (
+            Guid id,
+            AdminResetPasswordRequestDto request,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            IRefreshTokenService refresh,
+            IAdminAuditLog audit,
+            CurrentTenant tenant,
+            CancellationToken ct) =>
+        {
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var target = await users.FindByIdAsync(id.ToString());
+            if (target is null)
+                return Results.NotFound(new { error = "Compte introuvable." });
+
+            var targetRoles = await users.GetRolesAsync(target);
+            if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, targetRoles))
+                return Results.Json(
+                    new { error = "Votre rôle ne permet pas de réinitialiser le mot de passe de ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            var resetToken = await users.GeneratePasswordResetTokenAsync(target);
+            var result = await users.ResetPasswordAsync(target, resetToken, request.NewPassword);
+            if (!result.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Mot de passe refusé.",
+                    details = result.Errors.Select(e => e.Description)
+                });
+
+            await refresh.RevokeAllForSubjectAsync("user", target.Id.ToString(), ct);
+
+            if (!string.IsNullOrWhiteSpace(target.SiteId) && CurrentTenant.IsValidSiteId(target.SiteId))
+            {
+                tenant.Resolve(target.SiteId);
+                await audit.RecordAsync(AdminAuditAction.AccountPasswordReset, actor.Id.ToString(),
+                    target.Id.ToString(), "Mot de passe réinitialisé par un administrateur.", ct);
+            }
+
+            return Results.Ok(new { message = "Mot de passe réinitialisé.", userId = target.Id });
+        })
+        .WithName("AdminResetUserPassword")
+        .WithSummary("Réinitialise le mot de passe d'un compte (Admin/SuperAdmin selon hiérarchie).");
 
         // Provisionnement d'un site depuis la console : désormais possible en HTTP
         // car protégé par le rôle Admin (auth en place). Le service reste aussi

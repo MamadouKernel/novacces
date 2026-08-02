@@ -90,6 +90,18 @@
 
   .card { @apply rounded-lg border border-line bg-white p-5 sm:p-6 animate-fade-in-up; }
 
+  /* ---- Console à sections routées (ex. Administration) : sidebar + contenu ---- */
+  .admin-shell { @apply mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:flex-row lg:py-8; }
+  .admin-nav {
+    @apply flex gap-1 overflow-x-auto pb-1 lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-visible lg:pb-0;
+  }
+  .admin-navlink {
+    @apply whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-ink2 no-underline
+           transition hover:bg-paper hover:text-ink;
+  }
+  .admin-navlink.active { @apply bg-brand-700 text-white hover:bg-brand-700 hover:text-white; }
+  .admin-content { @apply min-w-0 flex-1 space-y-5; }
+
   /* ---- Pied de page (marque / agrément) ---- */
   .app-footer {
     @apply mx-auto w-full max-w-6xl px-4 pb-8 pt-2 text-center font-mono text-[0.68rem]

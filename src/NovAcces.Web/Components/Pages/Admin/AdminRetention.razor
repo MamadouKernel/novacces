@@ -1,0 +1,107 @@
+@page "/admin/retention"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration · Rétention</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Rétention</h1>
+        <p class="muted">Conservation et anonymisation des données personnelles (§7.3).</p>
+    </div>
+</header>
+
+<section class="card">
+    <h2>Politique en vigueur</h2>
+    @if (_status is null)
+    {
+        <p class="muted">Chargement…</p>
+    }
+    else
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@(_status.Enabled ? "Oui" : "Non")</span><span class="tile-l">Active</span></div>
+            <div class="tile"><span class="tile-n">@_status.VisitRetentionDays</span><span class="tile-l">Jours — visites</span></div>
+            <div class="tile"><span class="tile-n">@_status.JournalRetentionDays</span><span class="tile-l">Jours — journal des scans</span></div>
+            <div class="tile"><span class="tile-n">@_status.RunIntervalHours</span><span class="tile-l">Heures — intervalle auto</span></div>
+        </div>
+        <p class="hint">La passe automatique tourne en tâche de fond selon cet intervalle. Le déclenchement manuel ci-dessous ne fait qu'avancer la prochaine échéance — il ne change pas la politique.</p>
+    }
+</section>
+
+<section class="card">
+    <h2>Déclencher une passe immédiate</h2>
+    <p class="muted">Purge les visites et anonymise le journal des scans au-delà de la fenêtre de conservation, sur tous les sites. Action irréversible.</p>
+
+    @if (!_confirming)
+    {
+        <button class="btn-danger" @onclick="() => _confirming = true" disabled="@_busy">Déclencher une passe de rétention</button>
+    }
+    else
+    {
+        <p class="error" style="margin-top:0">Confirmer le déclenchement immédiat sur tous les sites ?</p>
+        <div style="display:flex;gap:.5rem">
+            <button class="btn-danger" @onclick="RunAsync" disabled="@_busy">Confirmer</button>
+            <button class="btn-ghost" @onclick="() => _confirming = false" disabled="@_busy">Annuler</button>
+        </div>
+    }
+
+    @if (_lastRun is not null)
+    {
+        <div class="synthese" style="margin-top:1rem">
+            <strong>@_lastRun.TotalPurged</strong> visite(s) purgée(s),
+            <strong>@_lastRun.TotalAnonymized</strong> scan(s) anonymisé(s),
+            <strong>@_lastRun.ApplicationAuditPurged</strong> entrée(s) d'audit technique purgée(s),
+            <strong>@_lastRun.RefreshSessionsPurged</strong> session(s) expirée(s) purgée(s).
+        </div>
+
+        @if (_lastRun.Sites.Count > 0)
+        {
+            <div class="table-wrap" style="margin-top:1rem">
+            <table class="visits">
+                <thead><tr><th>Site</th><th>Visites purgées</th><th>Scans anonymisés</th></tr></thead>
+                <tbody>
+                    @foreach (var s in _lastRun.Sites)
+                    {
+                        <tr>
+                            <td><strong>@s.SiteId</strong></td>
+                            <td>@s.VisitsPurged</td>
+                            <td>@s.ScanLogsAnonymized</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    }
+</section>
+
+@code {
+    private bool _busy;
+    private bool _confirming;
+    private RetentionStatusDto? _status;
+    private RetentionRunResultDto? _lastRun;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _status = await Api.GetRetentionStatusAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task RunAsync()
+    {
+        _busy = true; _confirming = false;
+        try
+        {
+            var result = await Api.RunRetentionAsync();
+            if (result is not null)
+            {
+                _lastRun = result;
+                Toasts.Success("Passe de rétention exécutée.");
+            }
+            else { Toasts.Error("Passe de rétention refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+}

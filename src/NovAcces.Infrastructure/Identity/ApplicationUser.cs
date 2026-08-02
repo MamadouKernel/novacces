@@ -36,4 +36,12 @@ public sealed class ApplicationUser : IdentityUser<Guid>
         LockoutEnd = now.AddYears(100);
         SecurityStamp = Guid.NewGuid().ToString("N");
     }
+
+    /// <summary>Réservée au SuperAdmin côté API (voir AdminEndpoints).</summary>
+    public void Reactivate()
+    {
+        IsDeactivated = false;
+        DeactivatedAt = null;
+        LockoutEnd = null;
+    }
 }

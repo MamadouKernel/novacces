@@ -1,0 +1,64 @@
+@* Déconnexion automatique après 30 minutes sans interaction (souris, clavier,
+   scroll, tactile) — présent sur toutes les pages authentifiées via
+   MainLayout et AdminLayout. Ne rend rien : pur composant de logique. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@code {
+    private const int TimeoutMinutes = 30;
+
+    private DotNetObjectReference<IdleTimeout>? _ref;
+    private bool _timerActive;
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    private void OnAuthChanged() => _ = InvokeAsync(SyncTimerAsync);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await SyncTimerAsync();
+    }
+
+    private async Task SyncTimerAsync()
+    {
+        if (Auth.IsAuthenticated && !_timerActive)
+        {
+            _ref ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("novaccesIdleTimer.start", _ref, TimeoutMinutes * 60_000);
+            _timerActive = true;
+        }
+        else if (!Auth.IsAuthenticated && _timerActive)
+        {
+            await StopTimerAsync();
+        }
+    }
+
+    private async Task StopTimerAsync()
+    {
+        try { await JS.InvokeVoidAsync("novaccesIdleTimer.stop"); } catch { /* circuit déjà fermé */ }
+        _timerActive = false;
+    }
+
+    [JSInvokable]
+    public Task OnIdleTimeout()
+    {
+        // Empêche SyncTimerAsync (déclenché par Auth.Changed juste après) de
+        // relancer un second appel JS pendant qu'on navigue déjà — c'est ce
+        // qui faisait planter le circuit.
+        _timerActive = false;
+        Auth.SignOut();
+        Nav.NavigateTo("/login", forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.Changed -= OnAuthChanged;
+        if (_timerActive)
+            await StopTimerAsync();
+        _ref?.Dispose();
+    }
+}

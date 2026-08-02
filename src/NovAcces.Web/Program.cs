@@ -5,7 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Composants Blazor Server (interactifs).
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment());
 
 // État d'authentification (par circuit) + client de l'API NovAcces.
 builder.Services.AddScoped<AuthState>();

@@ -19,13 +19,20 @@ public static class AssetVersion
     /// <summary>Empreinte de wwwroot/app.css, calculée une seule fois au démarrage.</summary>
     public static string Css { get; private set; } = "0";
 
+    /// <summary>Empreinte de wwwroot/js/app.js, calculée une seule fois au démarrage.</summary>
+    public static string Js { get; private set; } = "0";
+
     /// <summary>
     /// À appeler au démarrage avec <c>app.Environment.WebRootPath</c>. On ne
     /// peut pas dériver le chemin de <c>AppContext.BaseDirectory</c> : celui-ci
     /// désigne <c>bin/</c>, où wwwroot n'est pas copié — les ressources
     /// statiques sont servies depuis le projet via le manifeste d'assets.
     /// </summary>
-    public static void Initialize(string? webRootPath) => Css = Compute(webRootPath, "app.css");
+    public static void Initialize(string? webRootPath)
+    {
+        Css = Compute(webRootPath, "app.css");
+        Js = Compute(webRootPath, Path.Combine("js", "app.js"));
+    }
 
     private static string Compute(string? webRootPath, string relativePath)
     {

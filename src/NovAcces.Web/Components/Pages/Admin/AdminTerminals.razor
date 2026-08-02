@@ -1,0 +1,188 @@
+@page "/admin/terminaux"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject ToastService Toasts
+
+<PageTitle>NovAcces — Administration · Terminaux</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Terminaux</h1>
+        <p class="muted">Chaque terminal est activé avec un QR temporaire à usage unique. La clé API est remise automatiquement au téléphone et n'est jamais affichée dans cette console.</p>
+    </div>
+</header>
+
+<section class="card">
+    @if (_lastEnrollmentTicket is not null)
+    {
+        <div class="field" style="background:#fff8e6;border:1px solid var(--brand-amber, #F5A300);border-radius:8px;padding:1rem;margin-bottom:1rem;text-align:center;">
+            <p style="margin:0 0 .4rem;font-weight:600;">QR d'enrôlement — « @_lastEnrollmentTicket.Label »</p>
+            <img class="qr" style="width:220px;height:220px;margin:.7rem auto;background:#fff;padding:.5rem;" src="@QrImage.ToDataUri(_lastEnrollmentTicket.QrPayload)" alt="QR d'enrôlement du terminal" />
+            <p class="hint" style="margin:.5rem 0 0;">Scannez ce QR depuis l'application mobile. Il expire le @_lastEnrollmentTicket.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy à HH:mm:ss") et ne peut être utilisé qu'une seule fois.</p>
+            <p class="hint" style="margin:.5rem 0 0;">Code de secours : <code>@_lastEnrollmentTicket.Ticket</code></p>
+            <button class="btn-ghost" style="margin-top:.7rem" @onclick="() => _lastEnrollmentTicket = null">Fermer</button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="field"><label>Libellé</label>
+            <input @bind="_newTerminal.Label" placeholder="ex. Poste Entrée A" /></div>
+    </div>
+    <div class="field">
+        <label>Sites autorisés</label>
+        @if (_overview.Count == 0)
+        {
+            <p class="hint">Aucun site provisionné — voir la section « Sites ».</p>
+        }
+        else
+        {
+            <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.3rem;">
+                @foreach (var s in _overview)
+                {
+                    <label style="display:flex;align-items:center;gap:.35rem;font-weight:400;">
+                        <input type="checkbox" checked="@_newTerminal.SiteIds.Contains(s.SiteId)"
+                               @onchange="e => ToggleTerminalSite(s.SiteId, e.Value is bool b && b)" />
+                        @s.SiteId
+                    </label>
+                }
+            </div>
+            <p class="hint">Un seul site coché : le terminal ne servira que celui-ci, sans sélecteur côté agent. Plusieurs : l'agent choisit le site à la prise de poste.</p>
+        }
+    </div>
+    <button class="btn-primary" @onclick="CreateTerminalAsync" disabled="@_busy">Enrôler le terminal</button>
+    @if (_terminalMsg is not null) { <p class="@(_terminalOk ? "info" : "error")">@_terminalMsg</p> }
+
+    <div class="table-wrap" style="margin-top:1rem">
+    <table class="visits">
+        <thead><tr><th>Libellé</th><th>Sites</th><th>Statut</th><th>Créé le</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var t in _terminals)
+            {
+                <tr>
+                    <td><strong>@t.Label</strong></td>
+                    <td class="muted">@string.Join(", ", t.SiteIds)</td>
+                    <td><span class="badge @(t.IsActive ? (t.IsEnrolled ? "badge-valid" : "badge-pending") : "badge-revoked")">@(t.IsActive ? (t.IsEnrolled ? "Actif" : "En attente") : "Révoqué")</span></td>
+                    <td class="muted">@t.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy")</td>
+                    <td>
+                        @if (t.IsActive)
+                        {
+                            <button class="btn-danger" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
+                            <button class="btn-ghost" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">Nouveau QR</button>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_terminals.Count == 0)
+            {
+                <tr><td colspan="5" class="muted">Aucun terminal enrôlé.</td></tr>
+            }
+        </tbody>
+    </table>
+    </div>
+</section>
+
+@code {
+    private bool _busy;
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+
+    private sealed class NewTerminal { public string Label = ""; public HashSet<string> SiteIds = new(); }
+    private readonly NewTerminal _newTerminal = new();
+    private IReadOnlyList<TerminalSummaryDto> _terminals = Array.Empty<TerminalSummaryDto>();
+    private string? _terminalMsg; private bool _terminalOk;
+    private EnrollmentTicketResponseDto? _lastEnrollmentTicket;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
+    }
+
+    private void ToggleTerminalSite(string siteId, bool isChecked)
+    {
+        if (isChecked) _newTerminal.SiteIds.Add(siteId);
+        else _newTerminal.SiteIds.Remove(siteId);
+    }
+
+    private async Task CreateTerminalAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newTerminal.Label))
+        {
+            _terminalOk = false; _terminalMsg = "Renseignez un libellé.";
+            return;
+        }
+        if (_newTerminal.SiteIds.Count == 0)
+        {
+            _terminalOk = false; _terminalMsg = "Cochez au moins un site.";
+            return;
+        }
+
+        _busy = true; _terminalMsg = null;
+        try
+        {
+            var (ok, result, error) = await Api.CreateTerminalAsync(
+                _newTerminal.Label.Trim(), _newTerminal.SiteIds.ToList());
+
+            _terminalOk = ok;
+            _terminalMsg = ok ? null : error;
+            if (ok && result is not null)
+            {
+                var ticket = await Api.CreateEnrollmentTicketAsync(result.Id);
+                if (!ticket.Success || ticket.Result is null)
+                {
+                    _terminalOk = false;
+                    _terminalMsg = ticket.Error ?? "Impossible de générer le QR d'enrôlement.";
+                    Toasts.Error(_terminalMsg);
+                }
+                else
+                {
+                    _lastEnrollmentTicket = ticket.Result;
+                    Toasts.Success($"Terminal « {_newTerminal.Label.Trim()} » créé : scannez le QR pour l'activer.");
+                    _terminalMsg = null;
+                }
+                _newTerminal.Label = "";
+                _newTerminal.SiteIds.Clear();
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Enrôlement refusé."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task CreateEnrollmentTicketForTerminalAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var ticket = await Api.CreateEnrollmentTicketAsync(id);
+            if (ticket.Success && ticket.Result is not null)
+            {
+                _lastEnrollmentTicket = ticket.Result;
+                Toasts.Success("Nouveau QR temporaire généré.");
+            }
+            else
+                Toasts.Error(ticket.Error ?? "Génération du QR refusée.");
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task RevokeTerminalAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.RevokeTerminalAsync(id);
+            if (ok)
+            {
+                Toasts.Success("Terminal révoqué.");
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Révocation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+}

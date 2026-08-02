@@ -81,8 +81,11 @@
         : Auth.IsInRole(NovAccesRoles.Surete) && !Auth.IsInRole(NovAccesRoles.Hote) ? "/surete"
         : "/hote";
 
+    // SuperAdmin hérite toujours du rôle Admin (voir IdentityStartup) : testé
+    // en premier, sinon un SuperAdmin s'afficherait comme simple Admin.
     private string RoleLabel() =>
-        Auth.IsInRole(NovAccesRoles.Admin) ? "Admin"
+        Auth.IsInRole(NovAccesRoles.SuperAdmin) ? "SuperAdmin"
+        : Auth.IsInRole(NovAccesRoles.Admin) ? "Admin"
         : Auth.IsInRole(NovAccesRoles.Surete) ? "Sûreté"
         : Auth.IsInRole(NovAccesRoles.Hote) ? "Hôte" : "";
 

@@ -50,6 +50,14 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         <div class="tile"><span class="tile-n">@_myVisits.Count(v => v.Status is "Revoked" or "Expired" or "Consumed" && !v.IsOnSite)</span><span class="tile-l">Terminées</span></div>
     </div>
 
+    @if (NextUpcoming is { } next)
+    {
+        <p class="synthese">
+            📅 Prochain rendez-vous : <strong>@next.VisitorName</strong>@(string.IsNullOrWhiteSpace(next.VisitorCompany) ? "" : $" ({next.VisitorCompany})")
+            le @next.ScheduledAt!.Value.LocalDateTime.ToString("dd/MM 'à' HH:mm")
+        </p>
+    }
+
     @* Création d'une demande : en surcouche, comme dans la maquette. Le QR
        généré s'affiche dans la même surcouche, à côté du formulaire — l'hôte
        ne doit pas avoir à chercher où est passé le badge de son visiteur. *@
@@ -60,7 +68,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         <div class="modal-h">
             <div>
                 <h2>Nouvelle demande de visite</h2>
-                <div class="sub">Le QR est envoyé automatiquement au visiteur (WhatsApp, repli email).</div>
+                <div class="sub">Le QR est envoyé automatiquement au visiteur par email.</div>
             </div>
             <button @onclick="CloseForm" aria-label="Fermer">✕</button>
         </div>
@@ -100,9 +108,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
 
             <div class="row">
-                <div class="field"><label>Téléphone (WhatsApp)</label>
+                <div class="field"><label>Téléphone (optionnel)</label>
                     <input @bind="_form.VisitorPhone" placeholder="+225…" /></div>
-                <div class="field"><label>Email (repli)</label>
+                <div class="field"><label>Email</label>
                     <input type="email" @bind="_form.VisitorEmail" /></div>
             </div>
 
@@ -222,7 +230,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     }
 
     @* Réémission du QR d'une demande existante — visiteur ayant perdu son
-       message WhatsApp/email. Même badge que la création, données différentes. *@
+       email. Même badge que la création, données différentes. *@
     @if (_viewedQr is { } qr)
     {
         <div class="overlay" @onclick="() => _viewedQr = null">
@@ -385,6 +393,14 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private bool _busy;
     private bool _revoking;
     private string? _error;
+
+    // Prochain rendez-vous à venir (mode Unique, pas encore sur site) — pour
+    // que la page réponde d'un coup d'œil à « qui attendre aujourd'hui ? ».
+    private HostVisitDto? NextUpcoming =>
+        _myVisits
+            .Where(v => v.Status == "Valid" && !v.IsOnSite && v.Mode == "Unique" && v.ScheduledAt.HasValue)
+            .OrderBy(v => v.ScheduledAt)
+            .FirstOrDefault();
 
     // ── Liste intelligente « Mes demandes » : recherche + filtre + tri ──
     private string _search = "";

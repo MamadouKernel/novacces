@@ -165,15 +165,16 @@
 
     // Un Admin ordinaire ne peut pas gérer un autre Admin/SuperAdmin (seul un
     // SuperAdmin le peut — cohérent avec la règle serveur CanManageAccount),
-    // ni se gérer lui-même via cet écran : rôle/site/désactivation restent
-    // volontairement hors de portée de l'auto-édition (risque d'auto-verrouillage
-    // ou d'auto-rétrogradation accidentelle). Nom, email et mot de passe restent
-    // modifiables via ProfileEditor. Comparaison par email (unique) et non par
-    // nom affiché, qui peut être partagé par deux comptes.
+    // ni se gérer lui-même via cet écran : rôle/site/désactivation restent hors
+    // de portée de l'auto-édition pour un Admin simple. Un SuperAdmin, en
+    // revanche, peut se gérer lui-même : le serveur protège déjà contre
+    // l'auto-verrouillage total (rétrogradation/désactivation du dernier
+    // SuperAdmin actif refusées, voir AdminEndpoints.cs). Comparaison par
+    // email (unique) et non par nom affiché, qui peut être partagé.
     private bool CanManage(AdminUserDto u)
     {
-        if (string.Equals(u.Email, Auth.Email, StringComparison.OrdinalIgnoreCase)) return false;
         if (Auth.IsInRole(NovAccesRoles.SuperAdmin)) return true;
+        if (string.Equals(u.Email, Auth.Email, StringComparison.OrdinalIgnoreCase)) return false;
         return !u.Roles.Contains(NovAccesRoles.Admin) && !u.Roles.Contains(NovAccesRoles.SuperAdmin);
     }
 

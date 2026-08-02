@@ -195,16 +195,21 @@ if (args.Length >= 1 && args[0] == "migrate")
     return 0;
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger : activé en dev par défaut, ou explicitement en production via
+// Api:EnableSwagger (TEMPORAIRE, 02/08/2026, Mamadou — à repasser à false une
+// fois la doc consultée, ne doit pas rester ouvert en continu sur le VPS).
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Api:EnableSwagger"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
-        // Swagger est accessible directement à la racine de l'API : http://localhost:<port>/
-        options.RoutePrefix = string.Empty;
+        options.RoutePrefix = app.Environment.IsDevelopment() ? string.Empty : "swagger";
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "NovAcces.Api v1");
     });
+}
 
+if (app.Environment.IsDevelopment())
+{
     // Applique le schéma Identity (schéma partagé) et amorce rôles + Admin de
     // développement, pour que la connexion soit testable immédiatement. En
     // production, migration et création du premier Admin sont des gestes

@@ -108,10 +108,17 @@ Dans `.env`, collez :
   des deux fichiers `.pem` générés (`cat sigasacces-ec-private.pem`)
 - `SEED_ADMIN_PASSWORD` : un mot de passe fort temporaire (à changer à la
   première connexion)
-- `SMTP_*` : **si vous avez déjà les identifiants Brevo**, renseignez-les
-  maintenant ; sinon laissez les `CHANGE_ME` — la stack démarre quand même,
-  seul l'envoi d'email ne fonctionnera pas tant que ce n'est pas rempli
-  (aucun blocage, best-effort par conception)
+- `SMTP_*` : **obligatoires pour démarrer** — l'API refuse de démarrer en
+  production si l'un de ces champs est vide ou vaut encore `CHANGE_ME`
+  (`ProductionConfigurationValidator`). Le "best-effort" ne s'applique
+  qu'à l'envoi d'un email une fois l'API démarrée (une panne SMTP
+  ponctuelle ne bloque jamais un scan), pas au démarrage lui-même.
+  Créez un compte Brevo gratuit (https://www.brevo.com, jusqu'à 300
+  emails/jour) → **SMTP & API** dans le menu → onglet **SMTP** → notez
+  la "Login" (ressemble à un email `@smtp-brevo.com` ou similaire, c'est
+  `SMTP_USERNAME`) et cliquez **Générer une nouvelle clé SMTP**
+  (c'est `SMTP_PASSWORD`, différent du mot de passe de votre compte
+  Brevo). Collez les deux dans `.env`.
 
 `DOMAIN`, `API_DOMAIN` et `API_PUBLIC_BASE_URL` sont déjà corrects dans
 `.env.example` (sigasacces.com).

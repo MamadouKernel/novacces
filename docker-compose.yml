@@ -44,6 +44,9 @@ services:
       SeedAdmin__Email: ${SEED_ADMIN_EMAIL}
       SeedAdmin__Password: ${SEED_ADMIN_PASSWORD}
       SeedAdmin__DisplayName: ${SEED_ADMIN_DISPLAY_NAME}
+      # Doc Swagger en production : désactivée par défaut, à activer
+      # ponctuellement via API_ENABLE_SWAGGER=true dans .env (voir README).
+      Api__EnableSwagger: ${API_ENABLE_SWAGGER:-false}
     # Pas de "ports:" publiés directement : Caddy reverse-proxy vers ce
     # service par son nom DNS interne ("api"). L'app agent mobile (terminaux)
     # passe aussi par Caddy, jamais directement sur ce conteneur.

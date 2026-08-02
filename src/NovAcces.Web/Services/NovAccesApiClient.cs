@@ -102,6 +102,27 @@ public sealed class NovAccesApiClient
         return StoreToken(login);
     }
 
+    /// <summary>
+    /// Demande un lien de réinitialisation de mot de passe. La réponse est
+    /// toujours "ok" côté serveur (anti-énumération) : on ne peut pas en
+    /// déduire si le compte existe.
+    /// </summary>
+    public async Task<bool> ForgotPasswordAsync(string email)
+    {
+        var response = await CreateClient(false).PostAsJsonAsync(
+            "/api/auth/forgot-password", new ForgotPasswordRequestDto(email));
+        return response.IsSuccessStatusCode;
+    }
+
+    /// <summary>Finalise la réinitialisation avec le jeton reçu par email.</summary>
+    public async Task<(bool Success, string? Error)> ResetPasswordAsync(string email, string token, string newPassword)
+    {
+        var response = await CreateClient(false).PostAsJsonAsync(
+            "/api/auth/reset-password", new ResetPasswordRequestDto(email, token, newPassword));
+
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>Crée une visite. Le site est déduit du jeton côté API (claim).</summary>
     public async Task<CreateVisitResponseDto?> CreateVisitAsync(CreateVisitRequestDto request)
     {

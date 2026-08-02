@@ -145,4 +145,41 @@ public sealed class EmailNotificationService : INotificationService
                 notification.Kind, notification.VisitId);
         }
     }
+
+    /// <summary>
+    /// Best-effort strict : l'appelant (endpoint /forgot-password) renvoie
+    /// toujours le même message générique, que l'envoi réussisse ou non — une
+    /// exception ici ne doit jamais se propager (elle distinguerait, par son
+    /// délai ou son échec, un compte existant d'un compte inexistant).
+    /// </summary>
+    public async Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct)
+    {
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_smtp.FromAddress, _smtp.FromDisplayName),
+                Subject = PasswordResetMessage.Subject(_branding),
+                Body = PasswordResetMessage.PlainText(notification, _branding),
+                IsBodyHtml = false,
+            };
+            message.To.Add(notification.Email);
+
+            using var client = new SmtpClient(_smtp.Host, _smtp.Port)
+            {
+                EnableSsl = _smtp.EnableSsl,
+                Credentials = new NetworkCredential(_smtp.Username, _smtp.Password)
+            };
+
+            ct.ThrowIfCancellationRequested();
+            await client.SendMailAsync(message);
+
+            _logger.LogInformation("Lien de réinitialisation envoyé.");
+        }
+        catch (Exception ex)
+        {
+            // Minimisation : jamais l'email en clair dans les logs.
+            _logger.LogWarning(ex, "Échec de l'envoi du lien de réinitialisation.");
+        }
+    }
 }

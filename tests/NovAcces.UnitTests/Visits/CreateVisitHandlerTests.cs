@@ -68,6 +68,9 @@ file sealed class FakeNotificationService : INotificationService
 
     public Task NotifyHostAsync(HostEventNotification notification, CancellationToken ct)
         => Task.CompletedTask;
+
+    public Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 public class CreateVisitHandlerTests

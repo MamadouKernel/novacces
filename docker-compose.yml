@@ -31,6 +31,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=novacces;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Api__PublicBaseUrl: ${API_PUBLIC_BASE_URL}
+      Web__PublicBaseUrl: https://${DOMAIN}
+      Auth__PasswordResetEnabled: ${PASSWORD_RESET_ENABLED:-false}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       QrSigning__PrivateKeyPem: ${QR_SIGNING_PRIVATE_KEY_PEM}
       QrSigning__PublicKeyPem: ${QR_SIGNING_PUBLIC_KEY_PEM}

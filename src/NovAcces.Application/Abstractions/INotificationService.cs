@@ -17,6 +17,13 @@ public interface INotificationService
     /// indisponible ne doit jamais invalider un scan déjà journalisé.
     /// </summary>
     Task NotifyHostAsync(HostEventNotification notification, CancellationToken ct);
+
+    /// <summary>
+    /// Envoie le lien de réinitialisation de mot de passe (self-service).
+    /// Best-effort : un échec d'envoi ne doit jamais faire fuiter, via une
+    /// exception ou un délai différent, l'existence du compte à l'appelant.
+    /// </summary>
+    Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct);
 }
 
 /// <summary>Nature de l'événement remonté à l'hôte — détermine le message envoyé.</summary>
@@ -56,3 +63,5 @@ public sealed record VisitInvitationNotification(
     string SignedQrPayload,
     DateTimeOffset? ScheduledAt,
     DateTimeOffset ExpiresAt);
+
+public sealed record PasswordResetNotification(string Email, string DisplayName, string ResetLink);

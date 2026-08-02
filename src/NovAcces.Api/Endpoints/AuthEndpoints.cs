@@ -495,6 +495,75 @@ public static class AuthEndpoints
         .WithName("TwoFactorDisable")
         .WithSummary("Désactive le 2FA (mot de passe requis).");
 
+        // --- Mot de passe oublié : étape 1, demande du lien (anti-énumération) ---
+        group.MapPost("/forgot-password", async (
+            ForgotPasswordRequestDto request,
+            UserManager<ApplicationUser> users,
+            INotificationService notifications,
+            IOptions<AuthenticationSecurityOptions> security,
+            IConfiguration configuration,
+            HttpRequest http,
+            CancellationToken ct) =>
+        {
+            // Réponse IDENTIQUE dans tous les cas (compte inexistant, désactivé,
+            // envoi désactivé ou en échec) : ne jamais laisser un appelant
+            // déduire de la réponse si un email correspond à un compte réel.
+            const string genericMessage = "Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé.";
+
+            if (security.Value.PasswordResetEnabled)
+            {
+                var email = request.Email?.Trim();
+                var user = string.IsNullOrWhiteSpace(email) ? null : await users.FindByEmailAsync(email);
+                if (user is not null && !user.IsDeactivated)
+                {
+                    var configuredBaseUrl = configuration["Web:PublicBaseUrl"]?.Trim();
+                    var webBaseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
+                        ? $"{http.Scheme}://{http.Host}"
+                        : configuredBaseUrl.TrimEnd('/');
+
+                    var token = await users.GeneratePasswordResetTokenAsync(user);
+                    var link = $"{webBaseUrl}/reinitialiser-mot-de-passe"
+                        + $"?email={Uri.EscapeDataString(user.Email!)}&token={Uri.EscapeDataString(token)}";
+
+                    await notifications.SendPasswordResetAsync(
+                        new PasswordResetNotification(user.Email!, user.DisplayName, link), ct);
+                }
+            }
+
+            return Results.Ok(new { message = genericMessage });
+        })
+        .WithName("ForgotPassword")
+        .WithSummary("Demande un lien de réinitialisation de mot de passe (réponse anti-énumération).");
+
+        // --- Mot de passe oublié : étape 2, finalisation avec le jeton reçu ---
+        group.MapPost("/reset-password", async (
+            ResetPasswordRequestDto request,
+            UserManager<ApplicationUser> users,
+            IRefreshTokenService refresh,
+            CancellationToken ct) =>
+        {
+            var email = request.Email?.Trim();
+            var user = string.IsNullOrWhiteSpace(email) ? null : await users.FindByEmailAsync(email);
+            if (user is null || user.IsDeactivated)
+                return Results.BadRequest(new { error = "Lien invalide ou expiré." });
+
+            var result = await users.ResetPasswordAsync(user, request.Token, request.NewPassword);
+            if (!result.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Lien invalide ou expiré.",
+                    details = result.Errors.Select(e => e.Description)
+                });
+
+            // Un mot de passe divulgué au tiers ayant provoqué la réinitialisation
+            // ne doit pas laisser de sessions ouvertes ailleurs.
+            await refresh.RevokeAllForSubjectAsync("user", user.Id.ToString(), ct);
+
+            return Results.Ok(new { message = "Mot de passe modifié." });
+        })
+        .WithName("ResetPassword")
+        .WithSummary("Finalise la réinitialisation de mot de passe avec le jeton reçu par email.");
+
         return group;
     }
 

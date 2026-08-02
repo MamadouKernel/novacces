@@ -139,6 +139,9 @@
                     <button class="btn-primary mt-2" @onclick="SubmitPasswordAsync" disabled="@_busy">
                         @if (_busy) { <span>Connexion…</span> } else { <span>Se connecter</span> }
                     </button>
+                    <a href="/mot-de-passe-oublie" class="mt-3 block text-center text-sm text-brand-700 hover:underline">
+                        Mot de passe oublié ?
+                    </a>
                 }
                 else
                 {

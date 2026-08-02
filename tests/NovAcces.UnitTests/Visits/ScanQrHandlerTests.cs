@@ -105,6 +105,9 @@ file sealed class FakeNotifications : INotificationService
         HostEvents.Add(notification);
         return Task.CompletedTask;
     }
+
+    public Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 /// <summary>

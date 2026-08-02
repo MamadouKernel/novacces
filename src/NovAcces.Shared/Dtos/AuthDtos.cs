@@ -85,6 +85,17 @@ public sealed record TwoFactorStatusDto(bool Enabled);
 /// </summary>
 public sealed record TwoFactorLoginRequestDto(string Email, string Password, string Code);
 
+// ---- Mot de passe oublié (self-service) ----
+
+/// <summary>
+/// Demande de lien de réinitialisation. La réponse est toujours la même,
+/// que le compte existe ou non (anti-énumération) — voir /api/auth/forgot-password.
+/// </summary>
+public sealed record ForgotPasswordRequestDto(string Email);
+
+/// <summary>Finalise la réinitialisation avec le jeton reçu par email.</summary>
+public sealed record ResetPasswordRequestDto(string Email, string Token, string NewPassword);
+
 // ---- Administration ----
 
 /// <summary>Demande de désactivation logique d'un compte par un administrateur.</summary>

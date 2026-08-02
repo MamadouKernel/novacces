@@ -72,6 +72,26 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
   changement cosmétique uniquement, aucun impact fonctionnel ni migration de
   données nécessaire.
 
+## 5. 2FA rendu optionnel pour tous les comptes — ✅ décidé (02/08/2026)
+
+- **CDC §7.2** : « authentification forte + 2FA obligatoire pour comptes à
+  privilèges (admin Sigasécurité, responsables sûreté client) ». L'application
+  imposait donc un enrôlement 2FA forcé à la connexion pour les rôles
+  Admin/SuperAdmin/Sûreté (`Auth:RequireTwoFactorForPrivileged`), avec
+  ré-enrôlement automatique si désactivé entre-temps.
+- **Décision** : Mamadou KONATE (prestataire, également porteur d'un compte
+  SuperAdmin sur ce déploiement) a choisi de rendre le 2FA optionnel pour
+  **tous** les rôles, y compris Admin/SuperAdmin/Sûreté — écart assumé au
+  CDC §7.2, décidé en direct sans consultation écrite préalable de M. Kodjo.
+  **À faire confirmer par écrit auprès de Sigasécurité avant le pilote**,
+  puisque le CDC signé impose explicitement le contraire pour les comptes à
+  privilèges.
+- **Portée** : `Auth:RequireTwoFactorForPrivileged=false` (Api). Le 2FA reste
+  activable/désactivable librement par n'importe quel compte, à tout moment,
+  via son profil (`/api/auth/2fa/setup`, `/2fa/enable`, `/2fa/disable`) — ce
+  self-service existait déjà pour tous les rôles, seul le caractère
+  **obligatoire** pour les comptes à privilèges a été retiré.
+
 ## Synthèse
 
 | # | Évolution | Priorité | Indicatif (j-h) |
@@ -80,6 +100,7 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
 | 2 | Clé de signature par site | Avant phase revente | 3–4 |
 | 3 | Console terminaux + QR d'enrôlement | ✅ Réalisée | 5–8 |
 | 4 | Renommage SigasAcces + domaine | ✅ Décidé/réalisé (02/08/2026) | < 1 |
+| 5 | 2FA optionnel pour tous les comptes | ⚠️ Décidé (02/08/2026), écart CDC §7.2 à confirmer par écrit | < 1 |
 
 **Décision attendue** : confirmer si l'une ou l'autre entre dans le périmètre du
 pilote (auquel cas avenant), ou est planifiée pour la phase de déploiement

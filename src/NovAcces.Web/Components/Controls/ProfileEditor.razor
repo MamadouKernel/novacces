@@ -2,6 +2,7 @@
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject ToastService Toasts
+@inject IJSRuntime JS
 
 <div class="overlay" @onclick="Close">
     <div class="modal" style="max-width:34rem" @onclick:stopPropagation="true">
@@ -117,7 +118,11 @@
                     Chacun de ces codes permet une connexion si vous perdez votre téléphone.
                     Notez-les avant de continuer — ils ne seront plus jamais affichés.
                 </p>
-                <button class="btn-primary" style="max-width:220px" @onclick="@(() => { _twoFaStep = TwoFaStep.Status; _recoveryCodes = Array.Empty<string>(); })">
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                    <button class="btn-ghost" @onclick="CopyRecoveryCodesAsync">Copier</button>
+                    <button class="btn-ghost" @onclick="DownloadRecoveryCodesAsync">Télécharger (.txt)</button>
+                </div>
+                <button class="btn-primary" style="max-width:220px;margin-top:.5rem" @onclick="@(() => { _twoFaStep = TwoFaStep.Status; _recoveryCodes = Array.Empty<string>(); })">
                     J'ai noté ces codes
                 </button>
             }
@@ -171,6 +176,29 @@
         _email = Auth.Email ?? "";
         try { _twoFactorEnabled = await Api.GetTwoFactorStatusAsync(); }
         catch { _twoFactorEnabled = false; }
+    }
+
+    private string FormatRecoveryCodes() =>
+        "SigasAcces — codes de récupération 2FA\n" +
+        $"Compte : {Auth.Email}\n" +
+        $"Générés le : {DateTime.Now:dd/MM/yyyy HH:mm}\n" +
+        "Chaque code ne fonctionne qu'une seule fois.\n\n" +
+        string.Join('\n', _recoveryCodes);
+
+    private async Task CopyRecoveryCodesAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("novaccesCopyToClipboard", FormatRecoveryCodes());
+            Toasts.Info("Codes copiés dans le presse-papiers.");
+        }
+        catch { Toasts.Error("Copie impossible — copiez-les manuellement."); }
+    }
+
+    private async Task DownloadRecoveryCodesAsync()
+    {
+        var filename = $"sigasacces-codes-recuperation-{DateTime.Now:yyyyMMdd-HHmm}.txt";
+        await JS.InvokeVoidAsync("novaccesDownload", filename, FormatRecoveryCodes(), "text/plain;charset=utf-8;");
     }
 
     private async Task SaveNameAsync()

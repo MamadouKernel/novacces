@@ -1,6 +1,8 @@
-// Déclenche le téléchargement d'un contenu texte (ex. export CSV du journal).
-window.novaccesDownload = (filename, text) => {
-    const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+// Déclenche le téléchargement d'un contenu texte (ex. export CSV du journal,
+// codes de récupération 2FA). mimeType est optionnel (défaut : CSV, pour ne
+// pas changer le comportement des appels existants).
+window.novaccesDownload = (filename, text, mimeType) => {
+    const blob = new Blob([text], { type: mimeType || 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -10,6 +12,9 @@ window.novaccesDownload = (filename, text) => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 };
+
+// Copie un texte dans le presse-papiers (ex. codes de récupération 2FA).
+window.novaccesCopyToClipboard = (text) => navigator.clipboard.writeText(text);
 
 // Déconnexion après inactivité : la détection tourne entièrement en JS (pas
 // un round-trip serveur à chaque mouvement de souris) — seul l'écoulement du

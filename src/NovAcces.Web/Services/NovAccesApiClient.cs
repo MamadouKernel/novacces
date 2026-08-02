@@ -248,6 +248,10 @@ public sealed class NovAccesApiClient
         return result ?? new List<AdminSiteOverviewDto>();
     }
 
+    /// <summary>Tendance d'activité multi-sites sur les N derniers jours (dashboard Admin).</summary>
+    public async Task<AdminTrendsDto?> GetTrendsAsync(int days)
+        => await CreateClient(true).GetFromJsonAsync<AdminTrendsDto>($"/api/admin/trends?days={days}");
+
     public async Task<(bool Success, string? Error)> RegisterUserAsync(RegisterUserRequestDto request)
     {
         var response = await CreateClient(true).PostAsJsonAsync("/api/auth/register", request);

@@ -1,14 +1,21 @@
 @page "/admin"
 @layout AdminLayout
+@implements IAsyncDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
 
 <PageTitle>NovAcces — Administration · Dashboard</PageTitle>
 
 <header class="portal-header">
     <div>
         <h1>Dashboard</h1>
-        <p class="muted">Connecté : @Auth.DisplayName (Admin Sigasécurité)</p>
+        <p class="muted">
+            Connecté : @Auth.DisplayName (Admin Sigasécurité) ·
+            <span class="dot @(_connected ? "dot-on" : "dot-off")"></span>
+            @(_connected ? "Temps réel connecté" : "Hors ligne")
+        </p>
     </div>
 </header>
 
@@ -155,6 +162,78 @@
     </section>
 }
 
+<section class="card">
+    <h2>Tendance d'activité</h2>
+    <div class="filters" style="margin-bottom:.9rem">
+        <button class="filter @(_trendDays == 7 ? "on" : "")" @onclick="() => SetTrendDaysAsync(7)">7 jours</button>
+        <button class="filter @(_trendDays == 30 ? "on" : "")" @onclick="() => SetTrendDaysAsync(30)">30 jours</button>
+    </div>
+
+    @if (_trends is null || _trends.Daily.Count == 0 || _trends.Daily.Sum(d => d.ScansTotal) == 0)
+    {
+        <div class="empty">@EmptyIcon()<p>Pas encore assez de données sur cette période.</p></div>
+    }
+    else
+    {
+        var maxScans2 = Math.Max(1, _trends.Daily.Max(d => d.ScansTotal));
+        <p class="eyebrow" style="margin-top:0">Scans par jour</p>
+        <div class="hchart">
+            @foreach (var d in _trends.Daily)
+            {
+                <div class="hbar @(d.ScansTotal == maxScans2 ? "peak" : "")"
+                     style="height:@(Math.Max(2, (int)Math.Round(d.ScansTotal * 100.0 / maxScans2)))%"
+                     title="@d.Date.ToString("dd/MM") — @d.ScansTotal scan(s)"></div>
+            }
+        </div>
+        <div class="hchart-axis">
+            <span>@_trends.Daily.First().Date.ToString("dd/MM")</span>
+            <span>@_trends.Daily.Last().Date.ToString("dd/MM")</span>
+        </div>
+
+        <p class="eyebrow" style="margin-top:1.6rem">Entrées / Sorties / Refus par jour</p>
+        var maxStack = Math.Max(1, _trends.Daily.Max(d => d.EntriesGranted + d.Exits + d.Denied));
+        <div class="stack-chart">
+            @foreach (var d in _trends.Daily)
+            {
+                var total = d.EntriesGranted + d.Exits + d.Denied;
+                <div class="stack-bar" style="height:@(Math.Max(2, (int)Math.Round(total * 100.0 / maxStack)))%"
+                     title="@d.Date.ToString("dd/MM") — @d.EntriesGranted entrée(s), @d.Exits sortie(s), @d.Denied refus">
+                    @if (total > 0)
+                    {
+                        <div class="stack-seg seg-denied" style="height:@(d.Denied * 100.0 / total)%"></div>
+                        <div class="stack-seg seg-exit" style="height:@(d.Exits * 100.0 / total)%"></div>
+                        <div class="stack-seg seg-entry" style="height:@(d.EntriesGranted * 100.0 / total)%"></div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="stack-legend">
+            <span><span class="sw bg-ok"></span>Entrées accordées</span>
+            <span><span class="sw bg-onsite"></span>Sorties</span>
+            <span><span class="sw bg-amber-500"></span>Refus</span>
+        </div>
+    }
+
+    @if (_trends is not null && _trends.BySite.Any(s => s.ScansTotal > 0))
+    {
+        var maxSite = _trends.BySite.Max(s => s.ScansTotal);
+        <p class="eyebrow" style="margin-top:1.6rem">Répartition par site (@_trendDays derniers jours)</p>
+        <div class="chart">
+            @foreach (var s in _trends.BySite)
+            {
+                <div class="chart-row">
+                    <span class="chart-label">@s.SiteId</span>
+                    <div class="chart-track">
+                        <div class="chart-fill @(s.ScansTotal == maxSite ? "peak" : "")"
+                             style="width:@(maxSite > 0 ? (int)Math.Round(s.ScansTotal * 100.0 / maxSite) : 0)%"></div>
+                    </div>
+                    <span class="chart-val">@s.ScansTotal scan(s)</span>
+                </div>
+            }
+        </div>
+    }
+</section>
+
 @code {
     private bool _loaded;
     private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
@@ -164,14 +243,30 @@
     private string _activitySite = "";
     private IReadOnlyList<AdminAuditDto> _recentActivity = Array.Empty<AdminAuditDto>();
 
+    private int _trendDays = 7;
+    private AdminTrendsDto? _trends;
+
+    private HubConnection? _hub;
+    private bool _connected;
+
     private sealed record Alert(string Severity, string Text, string LinkHref, string LinkLabel);
 
     protected override async Task OnInitializedAsync()
     {
         try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        try { _trends = await Api.GetTrendsAsync(_trendDays); } catch { /* best-effort */ }
         _alerts = BuildAlerts();
         _loaded = true;
+
+        await ConnectHubAsync();
+    }
+
+    private async Task SetTrendDaysAsync(int days)
+    {
+        if (_trendDays == days) return;
+        _trendDays = days;
+        try { _trends = await Api.GetTrendsAsync(_trendDays); } catch { /* best-effort */ }
     }
 
     private async Task RefreshActivityAsync()
@@ -179,6 +274,55 @@
         _recentActivity = Array.Empty<AdminAuditDto>();
         if (string.IsNullOrEmpty(_activitySite)) return;
         try { _recentActivity = await Api.GetAdminAuditAsync(_activitySite, 8); } catch { /* best-effort */ }
+    }
+
+    // Canal SignalR « tous sites » (voir ScanEventsHub.GlobalGroup) : un scan
+    // n'importe où déclenche un rafraîchissement de la vue consolidée et des
+    // alertes — pas un flux visiteur par visiteur (moindre privilège, voir
+    // AdminScanActivityDto), juste « ça a bougé, remets les chiffres à jour ».
+    private async Task ConnectHubAsync()
+    {
+        var apiBase = Config["Api:BaseUrl"]!;
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{apiBase}/hubs/scan?global=1", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+
+                if (Env.IsDevelopment())
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler h)
+                            h.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        return handler;
+                    };
+                    options.WebSocketConfiguration = conf =>
+                        conf.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                }
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<AdminScanActivityDto>("AdminActivity", async _ =>
+        {
+            try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+            _alerts = BuildAlerts();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.Reconnected += _ => { _connected = true; return InvokeAsync(StateHasChanged); };
+        _hub.Closed += _ => { _connected = false; return InvokeAsync(StateHasChanged); };
+
+        try
+        {
+            await _hub.StartAsync();
+            _connected = true;
+        }
+        catch
+        {
+            _connected = false;
+        }
     }
 
     // Alertes calculées à partir des données déjà chargées (aucun appel API
@@ -222,4 +366,10 @@
     private static RenderFragment EmptyIcon() => builder =>
         builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
             stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
 }

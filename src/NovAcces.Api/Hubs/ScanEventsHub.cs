@@ -23,9 +23,30 @@ namespace NovAcces.Api.Hubs;
 /// </summary>
 public sealed class ScanEventsHub : Hub
 {
+    /// <summary>
+    /// Groupe « tous sites » : diffuse une version allégée (sans nom de
+    /// visiteur) de chaque scan, pour le dashboard Admin multi-sites. Réservé
+    /// aux Admin/SuperAdmin — aucune notion de site n'a de sens ici.
+    /// </summary>
+    public const string GlobalGroup = "__all_sites__";
+
     public override async Task OnConnectedAsync()
     {
         var http = Context.GetHttpContext();
+
+        if (http?.Request.Query["global"].ToString() == "1")
+        {
+            if (!NovAccesAuthorizationMatrix.IsGlobalOperator(Context.User ?? new ClaimsPrincipal()))
+            {
+                Context.Abort();
+                return;
+            }
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, GlobalGroup);
+            await base.OnConnectedAsync();
+            return;
+        }
+
         var requested = http?.Request.Query["site"].ToString();
         if (string.IsNullOrWhiteSpace(requested))
             requested = http?.Request.Headers["X-Site-Id"].ToString();

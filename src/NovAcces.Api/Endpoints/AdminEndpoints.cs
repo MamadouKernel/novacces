@@ -36,6 +36,18 @@ public static class AdminEndpoints
         .WithName("AdminOverview")
         .WithSummary("Vue consolidée multi-sites : présents et scans du jour par site.");
 
+        group.MapGet("/trends", async (int? days, ISiteTrendsService trends, CancellationToken ct) =>
+        {
+            var result = await trends.GetAsync(days ?? 7, ct);
+            var dto = new AdminTrendsDto(
+                result.Daily.Select(d => new DailyTrendPointDto(
+                    d.Date, d.ScansTotal, d.EntriesGranted, d.Exits, d.Denied, d.SecurityEvents)).ToList(),
+                result.BySite.Select(s => new SiteActivityTotalDto(s.SiteId, s.ScansTotal)).ToList());
+            return Results.Ok(dto);
+        })
+        .WithName("AdminTrends")
+        .WithSummary("Tendance d'activité multi-sites sur N jours (1 à 90, défaut 7).");
+
         group.MapGet("/users", async (
             ClaimsPrincipal caller,
             UserManager<ApplicationUser> users,

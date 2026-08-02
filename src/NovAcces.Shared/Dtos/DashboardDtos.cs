@@ -47,6 +47,20 @@ public sealed record OverstayAlertDto(
     bool IsSecurityEvent,
     DateTimeOffset OccurredAt);
 
+/// <summary>
+/// Événement de scan diffusé au canal global « tous sites » (SignalR, message
+/// « AdminActivity », réservé Admin/SuperAdmin). Volontairement sans nom de
+/// visiteur : le dashboard Admin donne une santé agrégée par site, pas un
+/// suivi individuel — le détail par visiteur reste au dashboard sûreté de
+/// CE site (moindre privilège).
+/// </summary>
+public sealed record AdminScanActivityDto(
+    string SiteId,
+    bool IsGranted,
+    bool IsCheckOut,
+    bool IsSecurityEvent,
+    DateTimeOffset OccurredAt);
+
 /// <summary>Synthèse du jour (dashboard sûreté), avec appréciation et recommandation.</summary>
 public sealed record DashboardSummaryDto(
     int ScansToday,

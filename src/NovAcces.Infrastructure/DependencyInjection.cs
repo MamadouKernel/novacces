@@ -89,6 +89,7 @@ public static class DependencyInjection
 
         // Vue consolidée multi-sites (§10).
         services.AddScoped<ISiteOverviewService, SiteOverviewService>();
+        services.AddScoped<ISiteTrendsService, SiteTrendsService>();
 
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();

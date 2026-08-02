@@ -128,6 +128,17 @@ public sealed record AdminSiteOverviewDto(
     int TerminalsActive = 0,
     int DegradedScansToday = 0);
 
+/// <summary>Point d'une courbe journalière, tous sites confondus (dashboard Admin).</summary>
+public sealed record DailyTrendPointDto(
+    DateOnly Date, int ScansTotal, int EntriesGranted, int Exits, int Denied, int SecurityEvents);
+
+/// <summary>Total d'un site sur la période demandée (dashboard Admin).</summary>
+public sealed record SiteActivityTotalDto(string SiteId, int ScansTotal);
+
+/// <summary>Tendance d'activité multi-sites sur N jours (dashboard Admin).</summary>
+public sealed record AdminTrendsDto(
+    IReadOnlyList<DailyTrendPointDto> Daily, IReadOnlyList<SiteActivityTotalDto> BySite);
+
 /// <summary>Sortie manuelle enregistrée depuis le dashboard sûreté (§7).</summary>
 public sealed record ManualCheckOutResponseDto(
     Guid VisitId, string VisitorName, int PresenceMinutes, int OverstayMinutes);

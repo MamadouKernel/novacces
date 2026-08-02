@@ -24,8 +24,16 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
             scanEvent.VisitId, scanEvent.VisitorName, scanEvent.VerdictCode,
             scanEvent.IsGranted, scanEvent.IsCheckOut, scanEvent.IsSecurityEvent,
             scanEvent.AgentId, scanEvent.OccurredAt);
+        var siteTask = _hub.Clients.Group(_tenant.SiteId).SendAsync("ScanRecorded", dto, ct);
 
-        return _hub.Clients.Group(_tenant.SiteId).SendAsync("ScanRecorded", dto, ct);
+        // Écho allégé (sans nom de visiteur) au canal Admin global — voir
+        // AdminScanActivityDto.
+        var adminDto = new AdminScanActivityDto(
+            _tenant.SiteId, scanEvent.IsGranted, scanEvent.IsCheckOut,
+            scanEvent.IsSecurityEvent, scanEvent.OccurredAt);
+        var globalTask = _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync("AdminActivity", adminDto, ct);
+
+        return Task.WhenAll(siteTask, globalTask);
     }
 
     public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct)

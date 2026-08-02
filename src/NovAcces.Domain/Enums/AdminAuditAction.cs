@@ -54,5 +54,8 @@ public enum AdminAuditAction
     /// au poste (§7). Action privilégiée : elle clôt un cycle et éteint les
     /// alertes de dépassement, elle doit donc être traçable nominativement.
     /// </summary>
-    ManualCheckOut
+    ManualCheckOut,
+
+    /// <summary>Correction des coordonnées d'un visiteur (nom, société, motif, contacts) avant son arrivée.</summary>
+    VisitUpdated
 }

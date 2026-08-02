@@ -102,6 +102,7 @@ public static class DependencyInjection
         // --- Cas d'usage (Application) ---
         services.AddScoped<ScanQrHandler>();
         services.AddScoped<CreateVisitHandler>();
+        services.AddScoped<UpdateVisitHandler>();
         services.AddScoped<RevokeVisitHandler>();
 
         return services;

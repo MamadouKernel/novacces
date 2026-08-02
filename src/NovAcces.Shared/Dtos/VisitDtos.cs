@@ -43,7 +43,20 @@ public sealed record HostVisitDto(
     DateTimeOffset? ScheduledAt,
     int PlannedDurationMinutes,
     bool IsOnSite,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? VisitorPhone = null,
+    string? VisitorEmail = null);
+
+/// <summary>
+/// Correction des coordonnées d'une demande AVANT l'arrivée du visiteur
+/// (erreur de saisie à la création) — voir Visit.UpdateVisitorDetails.
+/// </summary>
+public sealed record UpdateVisitRequestDto(
+    string VisitorName,
+    string VisitorCompany,
+    string Motif,
+    string? VisitorPhone,
+    string? VisitorEmail);
 
 /// <summary>Visiteur connu pour l'autocomplétion (pré-remplissage).</summary>
 public sealed record KnownVisitorDto(

@@ -255,6 +255,28 @@ public class Visit
         RevokedAt = now;
     }
 
+    /// <summary>
+    /// Corrige les coordonnées d'un visiteur avant son arrivée (nom, société,
+    /// motif, contacts) — cas d'usage : erreur de saisie à la création.
+    /// Volontairement restreint à une demande VALID et pas encore arrivée
+    /// (IsOnSite = false) : au-delà, ce serait changer l'identité d'une
+    /// personne en cours de visite, ce qui doit passer par une révocation +
+    /// nouvelle demande, jamais une correction silencieuse. Ne touche ni le
+    /// VisitToken ni les dates : le QR déjà émis reste valable tel quel.
+    /// </summary>
+    public void UpdateVisitorDetails(
+        string visitorName, string visitorCompany, string motif, string? visitorPhone, string? visitorEmail)
+    {
+        if (Status != VisitStatus.Valid || IsOnSite)
+            throw new DomainException("Seule une demande valide et pas encore arrivée peut être modifiée.");
+
+        VisitorName = visitorName;
+        VisitorCompany = visitorCompany;
+        Motif = motif;
+        VisitorPhone = visitorPhone;
+        VisitorEmail = visitorEmail;
+    }
+
     /// <summary>Dépassement de la durée de visite prévue — supervision, jamais bloquant.</summary>
     public int ComputeOverstayMinutes(DateTimeOffset now)
     {

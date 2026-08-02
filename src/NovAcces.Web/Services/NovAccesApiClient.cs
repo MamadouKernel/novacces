@@ -143,6 +143,13 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>Corrige les coordonnées d'une demande avant l'arrivée du visiteur (erreur de saisie).</summary>
+    public async Task<(bool Success, string? Error)> UpdateVisitAsync(Guid visitId, UpdateVisitRequestDto request)
+    {
+        var response = await CreateClient(true).PutAsJsonAsync($"/api/visits/{visitId}", request);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>
     /// Réémet le QR d'une demande existante (visiteur ayant perdu son
     /// message). Le message d'erreur est distingué du cas générique : un 409

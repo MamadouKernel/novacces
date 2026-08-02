@@ -210,6 +210,10 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                             <button class="btn-ghost" @onclick="() => ViewQrAsync(v)" disabled="@(_viewingQrFor == v.VisitId)">
                                                 @(_viewingQrFor == v.VisitId ? "Chargement…" : "Voir QR")
                                             </button>
+                                            @if (!v.IsOnSite)
+                                            {
+                                                <button class="btn-ghost" @onclick="() => OpenEdit(v)">Modifier</button>
+                                            }
                                             <button class="btn-danger" @onclick="() => _pendingRevoke = v" disabled="@_revoking">Révoquer</button>
                                         }
                                         else
@@ -276,6 +280,44 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     {
         <VisitHistory VisitId="hid" OnClose="() => _historyVisitId = null" />
     }
+
+    @* Correction d'une erreur de saisie AVANT l'arrivée du visiteur — le QR déjà
+       émis reste valable ; seul un changement d'email déclenche un renvoi. *@
+    @if (_editing is not null)
+    {
+        <div class="overlay" @onclick="CloseEditIfBackdrop">
+            <div class="modal" style="max-width:30rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div>
+                        <h2>Modifier « @_editing.VisitorName »</h2>
+                        <div class="sub">Le QR déjà émis reste valable — seule une adresse email corrigée déclenche un nouvel envoi.</div>
+                    </div>
+                    <button @onclick="CloseEdit" aria-label="Fermer">✕</button>
+                </div>
+                <div class="modal-b">
+                    <div class="field"><label>Nom du visiteur</label>
+                        <input @bind="_editName" /></div>
+                    <div class="field"><label>Société</label>
+                        <input @bind="_editCompany" /></div>
+                    <div class="field"><label>Motif</label>
+                        <input @bind="_editMotif" /></div>
+                    <div class="row">
+                        <div class="field"><label>Téléphone (optionnel)</label>
+                            <input @bind="_editPhone" placeholder="+225…" /></div>
+                        <div class="field"><label>Email</label>
+                            <input type="email" @bind="_editEmail" /></div>
+                    </div>
+                    @if (_editError is not null) { <p class="error">@_editError</p> }
+                </div>
+                <div class="modal-f">
+                    <button class="btn-ghost" @onclick="CloseEdit">Annuler</button>
+                    <button class="btn-primary" style="max-width:220px" @onclick="SaveEditAsync" disabled="@_editBusy">
+                        @(_editBusy ? "Enregistrement…" : "Enregistrer")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
@@ -284,6 +326,70 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private bool _showForm;
     private HostVisitDto? _pendingRevoke;
     private Guid? _historyVisitId;
+
+    private HostVisitDto? _editing;
+    private string _editName = "";
+    private string _editCompany = "";
+    private string _editMotif = "";
+    private string _editPhone = "";
+    private string _editEmail = "";
+    private bool _editBusy;
+    private string? _editError;
+
+    private void OpenEdit(HostVisitDto v)
+    {
+        _editing = v;
+        _editName = v.VisitorName;
+        _editCompany = v.VisitorCompany;
+        _editMotif = v.Motif;
+        _editPhone = v.VisitorPhone ?? "";
+        _editEmail = v.VisitorEmail ?? "";
+        _editError = null;
+    }
+
+    private void CloseEdit() { _editing = null; _editError = null; }
+    private void CloseEditIfBackdrop() { if (!_editBusy) CloseEdit(); }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing is null || _editBusy) return;
+        _editError = null;
+
+        var name = _editName.Trim();
+        var company = _editCompany.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(company))
+        {
+            _editError = "Nom du visiteur et société sont requis.";
+            return;
+        }
+
+        var visitId = _editing.VisitId;
+        _editBusy = true;
+        try
+        {
+            var request = new UpdateVisitRequestDto(
+                name, company, _editMotif.Trim(),
+                string.IsNullOrWhiteSpace(_editPhone) ? null : _editPhone.Trim(),
+                string.IsNullOrWhiteSpace(_editEmail) ? null : _editEmail.Trim());
+
+            var (ok, error) = await Api.UpdateVisitAsync(visitId, request);
+            if (ok)
+            {
+                await RefreshMyVisitsAsync();
+                Toasts.Success($"Coordonnées de « {name} » mises à jour.");
+                _editing = null;
+            }
+            else
+            {
+                _editError = error ?? "Modification refusée.";
+            }
+        }
+        catch
+        {
+            _editError = "Service indisponible, réessayez.";
+        }
+        finally { _editBusy = false; }
+    }
 
     private Guid? _viewingQrFor;
     private CreateVisitResponseDto? _viewedQr;

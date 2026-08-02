@@ -25,7 +25,8 @@ public static class VisitEndpoints
 
             var dto = mine.Select(v => new HostVisitDto(
                 v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), v.Status.ToString(),
-                v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CreatedAt)).ToList();
+                v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CreatedAt,
+                v.VisitorPhone, v.VisitorEmail)).ToList();
 
             return Results.Ok(dto);
         })
@@ -253,6 +254,36 @@ public static class VisitEndpoints
         .RequireAuthorization(NovAccesPolicies.DashboardApi)
         .WithName("ReissueVisitQr")
         .WithSummary("Réémet le QR signé d'une demande encore valide (visiteur ayant perdu son message).");
+
+        // Correction d'une erreur de saisie (nom, société, motif, contacts)
+        // AVANT l'arrivée du visiteur — réservé à l'hôte propriétaire de la
+        // demande (voir UpdateVisitHandler pour la restriction Valid+!IsOnSite).
+        group.MapPut("/{visitId:guid}", async (
+            Guid visitId,
+            UpdateVisitRequestDto request,
+            ClaimsPrincipal user,
+            UpdateVisitHandler handler,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.VisitorName))
+                return Results.BadRequest(new { error = "Nom du visiteur requis." });
+
+            var result = await handler.HandleAsync(
+                new UpdateVisitCommand(
+                    visitId, request.VisitorName, request.VisitorCompany, request.Motif,
+                    request.VisitorPhone, request.VisitorEmail, user.HostIdentifier()),
+                ct);
+
+            if (result.Forbidden)
+                return Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status403Forbidden);
+
+            return result.Success
+                ? Results.Ok(new { message = "Coordonnées mises à jour.", invitationResent = result.InvitationResent })
+                : Results.BadRequest(new { error = result.Error });
+        })
+        .RequireAuthorization(NovAccesRoles.Hote)
+        .WithName("UpdateVisit")
+        .WithSummary("Corrige les coordonnées d'une demande avant l'arrivée du visiteur.");
 
         // REQ-F-09 : révocation manuelle par l'hôte ou la sûreté, à tout moment.
         group.MapPost("/{visitId:guid}/revoke", async (

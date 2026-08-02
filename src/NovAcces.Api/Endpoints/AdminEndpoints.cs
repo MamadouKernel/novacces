@@ -42,7 +42,9 @@ public static class AdminEndpoints
             var dto = new AdminTrendsDto(
                 result.Daily.Select(d => new DailyTrendPointDto(
                     d.Date, d.ScansTotal, d.EntriesGranted, d.Exits, d.Denied, d.SecurityEvents)).ToList(),
-                result.BySite.Select(s => new SiteActivityTotalDto(s.SiteId, s.ScansTotal)).ToList());
+                result.BySite.Select(s => new SiteActivityTotalDto(s.SiteId, s.ScansTotal)).ToList(),
+                result.RepeatedDenials.Select(r => new RepeatedDenialDto(
+                    r.SiteId, r.VisitorName, r.Count, r.LastAttemptUtc)).ToList());
             return Results.Ok(dto);
         })
         .WithName("AdminTrends")

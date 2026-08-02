@@ -144,9 +144,14 @@ public sealed record DailyTrendPointDto(
 /// <summary>Total d'un site sur la période demandée (dashboard Admin).</summary>
 public sealed record SiteActivityTotalDto(string SiteId, int ScansTotal);
 
+/// <summary>Identité refusée à plusieurs reprises sur les dernières 24h (dashboard Admin).</summary>
+public sealed record RepeatedDenialDto(string SiteId, string VisitorName, int Count, DateTimeOffset LastAttemptUtc);
+
 /// <summary>Tendance d'activité multi-sites sur N jours (dashboard Admin).</summary>
 public sealed record AdminTrendsDto(
-    IReadOnlyList<DailyTrendPointDto> Daily, IReadOnlyList<SiteActivityTotalDto> BySite);
+    IReadOnlyList<DailyTrendPointDto> Daily,
+    IReadOnlyList<SiteActivityTotalDto> BySite,
+    IReadOnlyList<RepeatedDenialDto> RepeatedDenials);
 
 /// <summary>Sortie manuelle enregistrée depuis le dashboard sûreté (§7).</summary>
 public sealed record ManualCheckOutResponseDto(

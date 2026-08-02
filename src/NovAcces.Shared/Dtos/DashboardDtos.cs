@@ -26,14 +26,20 @@ public sealed record ScanJournalEntryDto(
     bool IsSecurityEvent,
     string Detail);
 
-/// <summary>Visiteur actuellement présent sur site (avec état de dépassement).</summary>
+/// <summary>
+/// Visiteur actuellement présent sur site (avec état de dépassement).
+/// PlannedDurationMinutes permet au client de calculer une alerte prédictive
+/// (« bientôt en dépassement ») avant que le seuil dur ne soit atteint —
+/// calcul d'affichage seulement, l'escalade réelle reste dans Visit.cs.
+/// </summary>
 public sealed record OnSiteVisitorDto(
     Guid VisitId,
     string VisitorName,
     string VisitorCompany,
     DateTimeOffset? CheckedInAt,
     int OverstayMinutes,
-    int OverstayLevel);
+    int OverstayLevel,
+    int PlannedDurationMinutes);
 
 /// <summary>
 /// Alerte de dépassement de durée diffusée en temps réel au dashboard sûreté

@@ -145,7 +145,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             <div class="empty">
                 @EmptyIcon()
                 <p>Aucune demande pour le moment.</p>
-                <p class="hint">Générez un QR ci-dessus : la demande apparaîtra ici.</p>
+                <button class="btn-primary" style="max-width:14rem;margin-top:.5rem" @onclick="OpenForm">Créer ma première demande →</button>
             </div>
         }
         else

@@ -17,6 +17,15 @@ public sealed record DailyTrendPoint(
 /// <summary>Total d'un site sur la période demandée.</summary>
 public sealed record SiteActivityTotal(string SiteId, int ScansTotal);
 
+/// <summary>
+/// Identité refusée à plusieurs reprises sur les dernières 24h — signal
+/// simple qu'un QR volé/copié est retenté, ou qu'une personne écartée
+/// insiste. Fenêtre fixe (indépendante du nombre de jours demandé pour les
+/// courbes) : un signal vieux de 3 semaines n'a plus d'intérêt opérationnel.
+/// </summary>
+public sealed record RepeatedDenial(string SiteId, string VisitorName, int Count, DateTimeOffset LastAttemptUtc);
+
 public sealed record SiteTrendsResult(
     IReadOnlyList<DailyTrendPoint> Daily,
-    IReadOnlyList<SiteActivityTotal> BySite);
+    IReadOnlyList<SiteActivityTotal> BySite,
+    IReadOnlyList<RepeatedDenial> RepeatedDenials);

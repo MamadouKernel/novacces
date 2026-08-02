@@ -47,7 +47,7 @@ public static class DashboardEndpoints
 
             var dto = onSite.Select(v => new OnSiteVisitorDto(
                 v.Id, v.VisitorName, v.VisitorCompany, v.CheckedInAt,
-                v.ComputeOverstayMinutes(now), v.OverstayLevel)).ToList();
+                v.ComputeOverstayMinutes(now), v.OverstayLevel, v.PlannedDurationMinutes)).ToList();
 
             return Results.Ok(dto);
         })

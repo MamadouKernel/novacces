@@ -12,6 +12,7 @@ public sealed class SiteTrendsService : ISiteTrendsService
 {
     private const int MinDays = 1;
     private const int MaxDays = 90;
+    private const int RepeatedDenialThreshold = 3;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISiteCatalog _sites;
@@ -33,6 +34,8 @@ public sealed class SiteTrendsService : ISiteTrendsService
 
         var buckets = new Dictionary<DateOnly, (int Scans, int Entries, int Exits, int Denied, int Security)>();
         var siteTotals = new List<SiteActivityTotal>();
+        var repeatedDenials = new List<RepeatedDenial>();
+        var denialWindowUtc = now.AddHours(-24);
 
         foreach (var siteId in await _sites.GetSiteIdsAsync(ct))
         {
@@ -57,6 +60,12 @@ public sealed class SiteTrendsService : ISiteTrendsService
                     if (e.IsSecurityEvent) b.Security++;
                     buckets[date] = b;
                 }
+
+                repeatedDenials.AddRange(entries
+                    .Where(e => !e.WasGranted && !e.WasCheckOut && e.Timestamp >= denialWindowUtc)
+                    .GroupBy(e => e.VisitorName, StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() >= RepeatedDenialThreshold)
+                    .Select(g => new RepeatedDenial(siteId, g.Key, g.Count(), g.Max(e => e.Timestamp))));
             }
             catch
             {
@@ -73,6 +82,9 @@ public sealed class SiteTrendsService : ISiteTrendsService
             daily.Add(new DailyTrendPoint(d, b.Scans, b.Entries, b.Exits, b.Denied, b.Security));
         }
 
-        return new SiteTrendsResult(daily, siteTotals.OrderByDescending(s => s.ScansTotal).ToList());
+        return new SiteTrendsResult(
+            daily,
+            siteTotals.OrderByDescending(s => s.ScansTotal).ToList(),
+            repeatedDenials.OrderByDescending(d => d.Count).ToList());
     }
 }

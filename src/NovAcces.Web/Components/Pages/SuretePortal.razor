@@ -261,6 +261,12 @@ else if (CanViewDashboard)
                                     ⏱ dépassement +@v.OverstayMinutes min@(v.OverstayLevel > 0 ? $" (niv. {v.OverstayLevel})" : "")
                                 </span>
                             }
+                            else if (IsApproachingOverstay(v))
+                            {
+                                <span class="badge badge-pending" title="Durée prévue atteinte dans @MinutesUntilOverstay(v) min">
+                                    ⏳ bientôt en dépassement (@MinutesUntilOverstay(v) min)
+                                </span>
+                            }
                             <div class="flex gap-1.5" style="margin-left:auto">
                                 <button class="btn-ghost" style="padding:.15rem .5rem;font-size:.75rem"
                                         @onclick="() => _historyVisitId = v.VisitId">Historique</button>
@@ -663,6 +669,26 @@ else if (CanViewDashboard)
 
     private static string VerdictClass(ScanEventDto e) =>
         e.IsSecurityEvent ? "v-security" : e.IsGranted ? "v-granted" : "v-denied";
+
+    // Alerte prédictive : signale un visiteur qui approche de sa durée prévue,
+    // AVANT le dépassement effectif (qui reste calculé côté serveur par
+    // Visit.ComputeOverstayMinutes). Purement indicatif côté affichage — ne
+    // déclenche aucune escalade, n'écrit rien.
+    private const int ApproachingOverstayFloorMinutes = 5;
+    private const int ApproachingOverstayCeilingMinutes = 15;
+
+    private static int MinutesUntilOverstay(OnSiteVisitorDto v) =>
+        v.CheckedInAt is null
+            ? int.MaxValue
+            : v.PlannedDurationMinutes - (int)(DateTimeOffset.UtcNow - v.CheckedInAt.Value).TotalMinutes;
+
+    private static bool IsApproachingOverstay(OnSiteVisitorDto v)
+    {
+        if (v.OverstayMinutes > 0 || v.CheckedInAt is null) return false;
+        var threshold = Math.Clamp(v.PlannedDurationMinutes / 5, ApproachingOverstayFloorMinutes, ApproachingOverstayCeilingMinutes);
+        var remaining = MinutesUntilOverstay(v);
+        return remaining >= 0 && remaining <= threshold;
+    }
 
     private void SignOut()
     {

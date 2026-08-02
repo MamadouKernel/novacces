@@ -31,13 +31,22 @@
     </div>
 }
 
-@if (_loaded && _overview.Count == 0 && _users.Count <= 1)
+@if (_loaded && !SetupComplete)
 {
     <section class="card" style="border-left:4px solid #f5a300;">
-        <h2>Bienvenue — démarrage en 2 étapes</h2>
-        <ol style="margin:0;padding-left:1.2rem;line-height:1.9;color:#3c4854;">
-            <li><strong>Provisionnez un site</strong> (section « Sites ») : tapez le nom du client, l'identifiant technique est généré tout seul.</li>
-            <li><strong>Créez un compte Hôte et un compte Sûreté</strong> pour ce site (section « Comptes ») : ils pourront alors inviter des visiteurs et superviser les accès.</li>
+        <h2>Premiers pas (@SetupSteps.Count(s => s.Done)/@SetupSteps.Count)</h2>
+        <ol style="margin:0;padding-left:0;line-height:1.9;color:#3c4854;list-style:none;">
+            @foreach (var step in SetupSteps)
+            {
+                <li style="display:flex;align-items:center;gap:.5rem;@(step.Done ? "opacity:.55" : "")">
+                    <span aria-hidden="true">@(step.Done ? "✅" : "⬜")</span>
+                    <span style="@(step.Done ? "text-decoration:line-through" : "")"><strong>@step.Title</strong> — @step.Description</span>
+                    @if (!step.Done)
+                    {
+                        <a href="@step.LinkHref" class="nav-links" style="display:inline;margin-left:.25rem">@step.LinkLabel →</a>
+                    }
+                </li>
+            }
         </ol>
     </section>
 }
@@ -63,7 +72,10 @@
         <h2>Vue consolidée multi-sites (@_overview.Count)</h2>
         @if (_overview.Count == 0)
         {
-            <div class="empty">@EmptyIcon()<p>Aucun site provisionné pour l'instant.</p></div>
+            <div class="empty">
+                @EmptyIcon()<p>Aucun site provisionné pour l'instant.</p>
+                <a href="/admin/sites" class="btn-ghost" style="max-width:14rem;margin-top:.5rem">Provisionner un site →</a>
+            </div>
         }
         else
         {
@@ -250,6 +262,28 @@
     private bool _connected;
 
     private sealed record Alert(string Severity, string Text, string LinkHref, string LinkLabel);
+    private sealed record SetupStep(bool Done, string Title, string Description, string LinkHref, string LinkLabel);
+
+    // Checklist calculée à partir des données déjà chargées (aucun appel API
+    // supplémentaire) : reste visible tant que l'installation n'est pas
+    // complète, disparaît d'elle-même une fois les 4 étapes franchies.
+    private bool SetupComplete => SetupSteps.All(s => s.Done);
+
+    private List<SetupStep> SetupSteps => new()
+    {
+        new SetupStep(_overview.Count > 0,
+            "Provisionner un site", "crée le schéma et le journal inaltérable du client",
+            "/admin/sites", "Provisionner"),
+        new SetupStep(_overview.Any(s => s.TerminalsEnrolled > 0),
+            "Enrôler un terminal", "sans poste enrôlé, aucun contrôle d'accès physique n'est possible",
+            "/admin/terminaux", "Enrôler"),
+        new SetupStep(_users.Any(u => u.Roles.Contains(NovAccesRoles.Hote)),
+            "Créer un compte Hôte", "pour que les visites puissent être invitées",
+            "/admin/comptes", "Créer"),
+        new SetupStep(_users.Any(u => u.Roles.Contains(NovAccesRoles.Surete)),
+            "Créer un compte Sûreté", "pour que les accès puissent être supervisés",
+            "/admin/comptes", "Créer"),
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -341,10 +375,24 @@
                 $"« {s.SiteId} » : aucun terminal enrôlé — le contrôle d'accès physique n'est pas encore opérationnel.",
                 "/admin/terminaux", "Enrôler un terminal"));
 
+        // Silence PARTIEL (au moins un poste répond encore) — distinct de la
+        // règle ci-dessus qui couvre le cas total. Un poste éteint/hors-ligne
+        // n'est pas forcément une panne, mais mérite d'être vérifié.
+        foreach (var s in _overview.Where(s => s.TerminalsEnrolled > 0 && s.TerminalsActive > 0 && s.TerminalsActive < s.TerminalsEnrolled))
+            alerts.Add(new Alert("warn",
+                $"« {s.SiteId} » : {s.TerminalsEnrolled - s.TerminalsActive} poste(s) sur {s.TerminalsEnrolled} silencieux depuis plus de 30 min.",
+                "/admin/terminaux", "Voir les terminaux"));
+
         foreach (var s in _overview.Where(s => s.DegradedScansToday > 0))
             alerts.Add(new Alert("warn",
                 $"« {s.SiteId} » : {s.DegradedScansToday} scan(s) validé(s) en mode dégradé aujourd'hui.",
                 "/admin/audit", "Voir le journal"));
+
+        if (_trends is not null)
+            foreach (var d in _trends.RepeatedDenials)
+                alerts.Add(new Alert("security",
+                    $"« {d.SiteId} » : « {d.VisitorName} » refusé {d.Count} fois sur les dernières 24h — QR copié ou personne écartée qui insiste ?",
+                    "/admin/audit", "Voir le journal"));
 
         var pendingActivation = _users.Count(u =>
             !u.IsDeactivated && !u.TwoFactorEnabled

@@ -8,7 +8,7 @@
 
     <ScrollView>
         <VerticalStackLayout Padding="24" Spacing="14">
-            <Label Text="NovAcces — Enrôlement" TextColor="White"
+            <Label Text="SigasAcces — Enrôlement" TextColor="White"
                    FontSize="24" FontAttributes="Bold" />
             <Label Text="Scannez le QR temporaire fourni par l'administration. Aucune clé API n'est saisie sur le téléphone."
                    TextColor="{StaticResource BrandMuted}" FontSize="13" />

@@ -8,7 +8,7 @@
 @inject IJSRuntime JS
 @inject ToastService Toasts
 
-<PageTitle>NovAcces — Dashboard sûreté</PageTitle>
+<PageTitle>SigasAcces — Dashboard sûreté</PageTitle>
 
 @if (!Auth.Initialized)
 {
@@ -43,7 +43,7 @@ else if (CanViewDashboard)
     {
         <div class="wall">
             <div class="wall-top">
-                <span class="wall-brand">NOV<span>ACCÈS</span></span>
+                <span class="wall-brand">SIGAS<span>ACCÈS</span></span>
                 <span class="wall-title">Salle de supervision — @(Auth.SiteId ?? "—")</span>
                 <span class="wall-status"><span class="dot @(_connected ? "dot-on" : "dot-off")"></span> @(_connected ? "temps réel" : "hors ligne")</span>
                 <span class="wall-clock">@_clock.ToString("HH:mm:ss")</span>

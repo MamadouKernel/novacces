@@ -13,7 +13,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-		<ApplicationTitle>NovAccès</ApplicationTitle>
+		<ApplicationTitle>SigasAccès</ApplicationTitle>
 		<ApplicationId>ci.sigasecurite.novacces</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>

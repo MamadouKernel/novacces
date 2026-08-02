@@ -14,7 +14,7 @@ namespace NovAcces.Api.Endpoints;
 
 public static class AuthEndpoints
 {
-    private const string AuthenticatorIssuer = "NovAcces";
+    private const string AuthenticatorIssuer = "SigasAcces";
 
     public static RouteGroupBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {

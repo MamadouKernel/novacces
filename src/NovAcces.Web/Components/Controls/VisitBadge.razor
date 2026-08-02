@@ -7,7 +7,7 @@
 @inject IJSRuntime JS
 
 <div class="badge-doc" id="visitor-badge">
-    <div class="badge-head">NOV<span>ACCÈS</span></div>
+    <div class="badge-head">SIGAS<span>ACCÈS</span></div>
     <div class="badge-site">@(SiteId?.ToUpperInvariant())</div>
     <img class="qr" src="@QrImage.ToDataUri(SignedQrPayload)" alt="QR visiteur" />
     <div class="badge-name">@VisitorName</div>

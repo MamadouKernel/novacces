@@ -56,6 +56,22 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
 - Le Mobile scanne le QR, génère une paire de clés, active le device et reçoit automatiquement une nouvelle clé API.
 - Le ticket est hashé en base, invalidé après activation ou lors de la génération d'un nouveau QR.
 - L'activation, la rotation de clé, la révocation et chaque requête API sont tracées.
+
+## 4. Nom commercial de l'application — ✅ décidé (02/08/2026)
+
+- **Décision de Sigasécurité** : l'application s'appelle désormais **SigasAcces**
+  (remplace « NovAcces », nom de travail utilisé depuis le cahier des charges
+  original du 17/07/2026).
+- **Domaine acheté** : `sigasacces.com` (VPS Contabo, Hub Europe — voir
+  `docs/deploiement.md` §1).
+- **Portée du changement** : tout ce que voit l'utilisateur — logo, titres de
+  page, pied de page, badge visiteur imprimé, emails automatiques (QR
+  d'invitation, notifications hôte), nom affiché dans l'application
+  d'authentification (2FA), titre de l'app mobile agent. Les noms techniques
+  internes (projets .NET, espaces de noms C#, dépôt Git) restent `NovAcces` —
+  changement cosmétique uniquement, aucun impact fonctionnel ni migration de
+  données nécessaire.
+
 ## Synthèse
 
 | # | Évolution | Priorité | Indicatif (j-h) |
@@ -63,6 +79,7 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
 | 1 | Prise de poste agent | ✅ Réalisée (26/07/2026) | 3–5 |
 | 2 | Clé de signature par site | Avant phase revente | 3–4 |
 | 3 | Console terminaux + QR d'enrôlement | ✅ Réalisée | 5–8 |
+| 4 | Renommage SigasAcces + domaine | ✅ Décidé/réalisé (02/08/2026) | < 1 |
 
 **Décision attendue** : confirmer si l'une ou l'autre entre dans le périmètre du
 pilote (auquel cas avenant), ou est planifiée pour la phase de déploiement

@@ -66,7 +66,7 @@ internal static class InvitationMessage
       <table role=""presentation"" width=""560"" cellpadding=""0"" cellspacing=""0"" style=""max-width:560px;width:100%;background:#ffffff;border:1px solid #dce0db;border-radius:10px;overflow:hidden;"">
         <!-- En-tête -->
         <tr><td style=""background:#0e2a3a;border-bottom:3px solid #f5a300;padding:18px 28px;"">
-          <span style=""font-size:20px;font-weight:700;letter-spacing:.5px;color:#ffffff;"">NOV<span style=""color:#f5a300;"">ACCÈS</span></span>
+          <span style=""font-size:20px;font-weight:700;letter-spacing:.5px;color:#ffffff;"">SIGAS<span style=""color:#f5a300;"">ACCÈS</span></span>
           <span style=""display:block;margin-top:2px;font-size:12px;color:rgba(255,255,255,.7);"">Contrôle des accès visiteurs</span>
         </td></tr>
         <!-- Corps -->

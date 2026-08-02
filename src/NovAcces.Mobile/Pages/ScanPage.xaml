@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
              x:Class="NovAcces.Mobile.Pages.ScanPage"
-             Title="NovAcces — Poste de contrôle"
+             Title="SigasAcces — Poste de contrôle"
              BackgroundColor="{StaticResource BrandNavyDeep}">
 
     <ContentPage.ToolbarItems>

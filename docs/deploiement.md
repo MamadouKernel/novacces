@@ -28,7 +28,9 @@ reste valide si vous préférez ne pas passer par Docker.
 
 - **VPS Contabo (Union européenne)**, ~8-15 €/mois (décision actée, voir
   `accord-commercial.md`). Localisation UE explicitée au client.
-- **Nom de domaine** à prévoir (ex. `sicopa.novacces.ci` — à confirmer).
+- **Nom de domaine** : `sigasacces.com` (acheté le 02/08/2026). Deux
+  sous-domaines : `sigasacces.com` (portail Web) et `api.sigasacces.com` (API,
+  terminaux agents) — voir `.env.example`.
 - OS conseillé : Linux (Debian/Ubuntu LTS). **System.Drawing volontairement
   écarté** (le QR est rendu via `PngByteQRCode`, sans libgdiplus).
 

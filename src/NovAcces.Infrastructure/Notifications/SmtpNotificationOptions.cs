@@ -9,5 +9,5 @@ public sealed class SmtpNotificationOptions
     public string Username { get; set; } = default!;
     public string Password { get; set; } = default!;
     public string FromAddress { get; set; } = default!;
-    public string FromDisplayName { get; set; } = "NovAcces";
+    public string FromDisplayName { get; set; } = "SigasAcces";
 }

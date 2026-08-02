@@ -7,8 +7,8 @@ namespace NovAcces.Infrastructure.Identity;
 /// </summary>
 public sealed class JwtOptions
 {
-    public string Issuer { get; set; } = "NovAcces";
-    public string Audience { get; set; } = "NovAcces";
+    public string Issuer { get; set; } = "SigasAcces";
+    public string Audience { get; set; } = "SigasAcces";
     public string SigningKey { get; set; } = default!;
     public int ExpiryMinutes { get; set; } = 60;
 

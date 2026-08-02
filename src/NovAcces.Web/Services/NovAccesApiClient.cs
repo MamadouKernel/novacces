@@ -273,11 +273,11 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
-    /// <summary>Modifie le nom, le rôle et le site d'un compte.</summary>
-    public async Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, string displayName, string role, string? siteId)
+    /// <summary>Modifie l'email, le nom, le rôle et le site d'un compte.</summary>
+    public async Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, string email, string displayName, string role, string? siteId)
     {
         var response = await CreateClient(true)
-            .PutAsJsonAsync($"/api/admin/users/{id}", new UpdateUserRequestDto(displayName, role, siteId));
+            .PutAsJsonAsync($"/api/admin/users/{id}", new UpdateUserRequestDto(email, displayName, role, siteId));
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
@@ -339,6 +339,14 @@ public sealed class NovAccesApiClient
     {
         var response = await CreateClient(true).PostAsJsonAsync(
             "/api/auth/me/password", new ChangePasswordRequestDto(current, @new));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Change l'email (identifiant de connexion) de l'utilisateur connecté ; mot de passe requis.</summary>
+    public async Task<(bool Success, string? Error)> ChangeEmailAsync(string currentPassword, string newEmail)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            "/api/auth/me/email", new ChangeEmailRequestDto(currentPassword, newEmail));
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
@@ -478,7 +486,7 @@ public sealed class NovAccesApiClient
         if (login is null || string.IsNullOrEmpty(login.AccessToken))
             return LoginOutcome.Failed("Réponse d'authentification inattendue.");
 
-        _auth.SignIn(login.AccessToken, login.DisplayName, login.Roles, login.SiteId);
+        _auth.SignIn(login.AccessToken, login.DisplayName, login.Email, login.Roles, login.SiteId);
         return LoginOutcome.Connected();
     }
 }

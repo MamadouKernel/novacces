@@ -22,7 +22,8 @@ public sealed record LoginResponseDto(
     IReadOnlyList<string> Roles,
     string? SiteId,
     string? RefreshToken = null,
-    int ExpiresIn = 0);
+    int ExpiresIn = 0,
+    string Email = "");
 
 public sealed record RefreshTokenRequestDto(string RefreshToken);
 public sealed record AgentLoginResponseDto(string AccessToken, string RefreshToken, int ExpiresIn, AgentLoginIdentityDto Agent);
@@ -90,10 +91,12 @@ public sealed record TwoFactorLoginRequestDto(string Email, string Password, str
 public sealed record DeactivateUserRequestDto(string Reason);
 
 /// <summary>
-/// Édition d'un compte par un administrateur : nom, rôle, site de rattachement.
-/// SiteId est ignoré (forcé à null) si Role est Admin ou SuperAdmin.
+/// Édition d'un compte par un administrateur : email, nom, rôle, site de
+/// rattachement. SiteId est ignoré (forcé à null) si Role est Admin ou
+/// SuperAdmin. Permet de corriger une erreur de saisie sur l'email à la
+/// création — sans quoi le compte reste bloqué sur une adresse erronée.
 /// </summary>
-public sealed record UpdateUserRequestDto(string DisplayName, string Role, string? SiteId);
+public sealed record UpdateUserRequestDto(string Email, string DisplayName, string Role, string? SiteId);
 
 /// <summary>Réinitialisation forcée du mot de passe d'un compte par un administrateur.</summary>
 public sealed record AdminResetPasswordRequestDto(string NewPassword);
@@ -111,6 +114,12 @@ public sealed record ProvisionSiteRequestDto(string SiteId);
 public sealed record UpdateDisplayNameRequestDto(string DisplayName);
 
 public sealed record ChangePasswordRequestDto(string CurrentPassword, string NewPassword);
+
+/// <summary>
+/// Changement d'email (identifiant de connexion) par l'utilisateur lui-même —
+/// mot de passe actuel exigé, comme pour le changement de mot de passe.
+/// </summary>
+public sealed record ChangeEmailRequestDto(string CurrentPassword, string NewEmail);
 
 /// <summary>Ligne de la vue consolidée multi-sites (§10).</summary>
 /// <summary>

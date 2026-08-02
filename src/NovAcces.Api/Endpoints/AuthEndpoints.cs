@@ -269,7 +269,7 @@ public static class AuthEndpoints
                 var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
                 var next = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
                 return Results.Ok(new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(),
-                    user.SiteId, next.Token, SecondsUntil(expiresAt)));
+                    user.SiteId, next.Token, SecondsUntil(expiresAt), user.Email!));
             }
 
             if (subject.SubjectType == "agent" && !string.IsNullOrWhiteSpace(subject.SiteId))
@@ -359,6 +359,49 @@ public static class AuthEndpoints
         .RequireAuthorization()
         .WithName("ChangePassword")
         .WithSummary("Change le mot de passe de l'utilisateur connecté (ancien requis).");
+
+        // --- Profil : changer son email/identifiant de connexion (authentifié, mot de passe requis) ---
+        group.MapPost("/me/email", async (
+            ChangeEmailRequestDto request,
+            System.Security.Claims.ClaimsPrincipal principal,
+            UserManager<ApplicationUser> users) =>
+        {
+            var user = await users.GetUserAsync(principal);
+            if (user is null)
+                return Results.Unauthorized();
+
+            if (!await users.CheckPasswordAsync(user, request.CurrentPassword ?? string.Empty))
+                return Results.BadRequest(new { error = "Mot de passe incorrect." });
+
+            var newEmail = request.NewEmail?.Trim();
+            if (string.IsNullOrWhiteSpace(newEmail) || !newEmail.Contains('@') || newEmail.Length > 256)
+                return Results.BadRequest(new { error = "Email invalide." });
+
+            if (string.Equals(newEmail, user.Email, StringComparison.OrdinalIgnoreCase))
+                return Results.Ok(new { user.Email });
+
+            var existing = await users.FindByEmailAsync(newEmail);
+            if (existing is not null && existing.Id != user.Id)
+                return Results.Conflict(new { error = "Cet email est déjà utilisé par un autre compte." });
+
+            var emailResult = await users.SetEmailAsync(user, newEmail);
+            if (!emailResult.Succeeded)
+                return Results.BadRequest(new { error = "Changement refusé.", details = emailResult.Errors.Select(e => e.Description) });
+
+            var userNameResult = await users.SetUserNameAsync(user, newEmail);
+            if (!userNameResult.Succeeded)
+                return Results.BadRequest(new { error = "Changement refusé.", details = userNameResult.Errors.Select(e => e.Description) });
+
+            // Pas de flux de confirmation d'email dans l'app (EmailConfirmed = true
+            // à la création) : on préserve cet invariant après un changement.
+            user.EmailConfirmed = true;
+            await users.UpdateAsync(user);
+
+            return Results.Ok(new { user.Email });
+        })
+        .RequireAuthorization()
+        .WithName("ChangeEmail")
+        .WithSummary("Change l'email (identifiant de connexion) de l'utilisateur connecté, mot de passe requis.");
 
         // --- 2FA : état actuel (authentifié) — pour afficher activer/désactiver dans le profil ---
         group.MapGet("/me/2fa-status", async (
@@ -501,7 +544,7 @@ public static class AuthEndpoints
         var roles = await users.GetRolesAsync(user);
         var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
         var refreshToken = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
-        return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt));
+        return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt), user.Email!);
     }
 
     /// <summary>

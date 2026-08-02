@@ -9,6 +9,7 @@ public sealed class AuthState
 {
     public string? AccessToken { get; private set; }
     public string? DisplayName { get; private set; }
+    public string? Email { get; private set; }
     public IReadOnlyList<string> Roles { get; private set; } = Array.Empty<string>();
     public string? SiteId { get; private set; }
 
@@ -24,10 +25,11 @@ public sealed class AuthState
 
     public event Action? Changed;
 
-    public void SignIn(string accessToken, string displayName, IReadOnlyList<string> roles, string? siteId)
+    public void SignIn(string accessToken, string displayName, string? email, IReadOnlyList<string> roles, string? siteId)
     {
         AccessToken = accessToken;
         DisplayName = displayName;
+        Email = email;
         Roles = roles;
         SiteId = siteId;
         Changed?.Invoke();
@@ -37,6 +39,7 @@ public sealed class AuthState
     {
         AccessToken = null;
         DisplayName = null;
+        Email = null;
         Roles = Array.Empty<string>();
         SiteId = null;
         Changed?.Invoke();
@@ -49,6 +52,13 @@ public sealed class AuthState
         Changed?.Invoke();
     }
 
+    /// <summary>Met à jour l'email après modification du profil (identifiant de connexion).</summary>
+    public void UpdateEmail(string email)
+    {
+        Email = email;
+        Changed?.Invoke();
+    }
+
     /// <summary>Marque la restauration comme effectuée (notifie les abonnés).</summary>
     public void MarkInitialized()
     {
@@ -58,7 +68,7 @@ public sealed class AuthState
 
     /// <summary>Instantané persistable (null si non connecté).</summary>
     public PersistedSession? Snapshot() =>
-        IsAuthenticated ? new PersistedSession(AccessToken!, DisplayName ?? "", Roles, SiteId) : null;
+        IsAuthenticated ? new PersistedSession(AccessToken!, DisplayName ?? "", Roles, SiteId, Email ?? "") : null;
 
     /// <summary>Restaure sans notifier (l'événement est levé ensuite par MarkInitialized).</summary>
     public void RestoreSilently(PersistedSession s)
@@ -67,8 +77,9 @@ public sealed class AuthState
         DisplayName = s.DisplayName;
         Roles = s.Roles;
         SiteId = s.SiteId;
+        Email = s.Email;
     }
 }
 
 public sealed record PersistedSession(
-    string AccessToken, string DisplayName, IReadOnlyList<string> Roles, string? SiteId);
+    string AccessToken, string DisplayName, IReadOnlyList<string> Roles, string? SiteId, string Email = "");

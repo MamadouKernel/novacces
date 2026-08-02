@@ -224,6 +224,10 @@ public static class AdminEndpoints
             if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 160)
                 return Results.BadRequest(new { error = "Nom affiché invalide." });
 
+            var email = request.Email?.Trim();
+            if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || email.Length > 256)
+                return Results.BadRequest(new { error = "Email invalide." });
+
             var actor = await users.GetUserAsync(caller);
             if (actor is null)
                 return Results.Unauthorized();
@@ -237,6 +241,16 @@ public static class AdminEndpoints
                 return Results.Json(
                     new { error = "Votre rôle ne permet pas de modifier ce compte." },
                     statusCode: StatusCodes.Status403Forbidden);
+
+            // Corrige une erreur de saisie à la création : sans ce contrôle, un
+            // email mal tapé bloquerait le compte définitivement (impossible à
+            // corriger autrement qu'en recréant le compte).
+            if (!string.Equals(email, target.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var existingEmail = await users.FindByEmailAsync(email);
+                if (existingEmail is not null && existingEmail.Id != target.Id)
+                    return Results.Conflict(new { error = "Cet email est déjà utilisé par un autre compte." });
+            }
 
             var isElevatedRole = role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
             if (isElevatedRole && !NovAccesAuthorizationMatrix.CanCreateElevatedAccount(caller))
@@ -263,6 +277,29 @@ public static class AdminEndpoints
                 var provisionedSites = await sites.GetSiteIdsAsync(ct);
                 if (!provisionedSites.Contains(siteId!, StringComparer.OrdinalIgnoreCase))
                     return Results.BadRequest(new { error = "Le site demandé n'est pas provisionné." });
+            }
+
+            if (!string.Equals(email, target.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var emailResult = await users.SetEmailAsync(target, email);
+                if (!emailResult.Succeeded)
+                    return Results.BadRequest(new
+                    {
+                        error = "Modification de l'email refusée.",
+                        details = emailResult.Errors.Select(e => e.Description)
+                    });
+
+                var userNameResult = await users.SetUserNameAsync(target, email);
+                if (!userNameResult.Succeeded)
+                    return Results.BadRequest(new
+                    {
+                        error = "Modification de l'email refusée.",
+                        details = userNameResult.Errors.Select(e => e.Description)
+                    });
+
+                // Pas de flux de confirmation d'email dans l'app (EmailConfirmed = true
+                // à la création) : on préserve cet invariant après un changement.
+                target.EmailConfirmed = true;
             }
 
             target.DisplayName = displayName;
@@ -293,13 +330,13 @@ public static class AdminEndpoints
             {
                 tenant.Resolve(target.SiteId);
                 await audit.RecordAsync(AdminAuditAction.AccountUpdated, actor.Id.ToString(),
-                    target.Id.ToString(), $"Compte modifié : nom « {displayName} », rôle « {role} », site « {siteId ?? "—"} ».", ct);
+                    target.Id.ToString(), $"Compte modifié : email « {target.Email} », nom « {displayName} », rôle « {role} », site « {siteId ?? "—"} ».", ct);
             }
 
-            return Results.Ok(new { userId = target.Id, target.DisplayName, Role = role, target.SiteId });
+            return Results.Ok(new { userId = target.Id, target.Email, target.DisplayName, Role = role, target.SiteId });
         })
         .WithName("AdminUpdateUser")
-        .WithSummary("Modifie le nom, le rôle et le site d'un compte.");
+        .WithSummary("Modifie l'email, le nom, le rôle et le site d'un compte.");
 
         // Réinitialisation forcée : révoque les sessions, comme une désactivation.
         group.MapPost("/users/{id:guid}/reset-password", async (

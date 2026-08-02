@@ -23,6 +23,17 @@
                 Enregistrer le nom
             </button>
 
+            <hr class="sep" style="margin:1rem 0" />
+
+            <div class="field"><label>Email (identifiant de connexion)</label>
+                <input type="email" @bind="_email" placeholder="prenom@site.local" /></div>
+            <p class="hint" style="margin-top:-.6rem">Utilisé pour se connecter — une erreur de saisie ici bloquerait vos prochaines connexions.</p>
+            <PasswordBox @bind-Value="_emailPassword" Label="Mot de passe actuel" Autocomplete="current-password" />
+            <button class="btn-primary" style="max-width:220px" @onclick="SaveEmailAsync" disabled="@_busy">
+                Enregistrer l'email
+            </button>
+            @if (_emailError is not null) { <p class="error">@_emailError</p> }
+
             <hr class="sep" />
 
             <div class="eyebrow">Sécurité</div>
@@ -137,6 +148,9 @@
     private enum TwoFaStep { Status, Enroll, RecoveryCodes, ConfirmDisable }
 
     private string _name = "";
+    private string _email = "";
+    private string _emailPassword = "";
+    private string? _emailError;
     private string _current = "";
     private string _new = "";
     private bool _busy;
@@ -154,6 +168,7 @@
     protected override async Task OnInitializedAsync()
     {
         _name = Auth.DisplayName ?? "";
+        _email = Auth.Email ?? "";
         try { _twoFactorEnabled = await Api.GetTwoFactorStatusAsync(); }
         catch { _twoFactorEnabled = false; }
     }
@@ -171,6 +186,27 @@
             else { _error = err; Toasts.Error(err ?? "Mise à jour refusée."); }
         }
         catch { _error = "Service indisponible."; }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveEmailAsync()
+    {
+        _emailError = null;
+        var email = _email.Trim();
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
+        { _emailError = "Email invalide."; return; }
+        if (string.IsNullOrEmpty(_emailPassword))
+        { _emailError = "Mot de passe actuel requis."; return; }
+
+        _busy = true;
+        try
+        {
+            var (ok, err) = await Api.ChangeEmailAsync(_emailPassword, email);
+            _emailPassword = "";
+            if (ok) { Auth.UpdateEmail(email); Toasts.Success("Email mis à jour."); }
+            else { _emailError = err; Toasts.Error(err ?? "Mise à jour refusée."); }
+        }
+        catch { _emailError = "Service indisponible."; }
         finally { _busy = false; }
     }
 

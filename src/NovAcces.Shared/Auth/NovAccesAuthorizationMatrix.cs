@@ -31,18 +31,20 @@ public static class NovAccesAuthorizationMatrix
     /// <summary>
     /// Vérifie la hiérarchie de gestion d'un compte (désactivation, édition,
     /// réinitialisation de mot de passe) : un Admin peut gérer les comptes
-    /// ordinaires ; seul un SuperAdmin peut toucher un compte Admin ou
-    /// SuperAdmin.
+    /// ordinaires ET les autres comptes Admin ; seul un SuperAdmin peut
+    /// toucher un compte SuperAdmin (invisible pour un Admin, voir
+    /// CanViewAllUsers — donc inatteignable en pratique, ce contrôle reste la
+    /// barrière serveur de dernier recours).
     /// </summary>
     public static bool CanManageAccount(
         ClaimsPrincipal caller, IEnumerable<string> targetRoles)
     {
+        if (IsSuperAdmin(caller))
+            return true;
+
         if (!IsGlobalOperator(caller))
             return false;
 
-        var roles = targetRoles.ToArray();
-        return !roles.Contains(NovAccesRoles.Admin, StringComparer.Ordinal)
-            && !roles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal)
-            || IsSuperAdmin(caller);
+        return !targetRoles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal);
     }
 }

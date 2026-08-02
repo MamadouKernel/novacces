@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\NovAcces.Domain\NovAcces.Domain.csproj" />
     <ProjectReference Include="..\..\src\NovAcces.Application\NovAcces.Application.csproj" />
     <ProjectReference Include="..\..\src\NovAcces.Infrastructure\NovAcces.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\NovAcces.Shared\NovAcces.Shared.csproj" />
   </ItemGroup>
 
 </Project>

@@ -255,7 +255,13 @@ public static class AdminEndpoints
             }
 
             var isElevatedRole = role is NovAccesRoles.Admin or NovAccesRoles.SuperAdmin;
-            if (isElevatedRole && !NovAccesAuthorizationMatrix.CanCreateElevatedAccount(caller))
+            // Un Admin peut désormais gérer un autre compte Admin (édition, site,
+            // désactivation) sans le repromouvoir explicitement — seule une
+            // PROMOTION (rôle élevé nouvellement attribué) reste réservée au
+            // SuperAdmin. Garder un rôle déjà élevé inchangé n'est pas une
+            // promotion.
+            var isPromotion = isElevatedRole && !currentRoles.Contains(role, StringComparer.Ordinal);
+            if (isPromotion && !NovAccesAuthorizationMatrix.CanCreateElevatedAccount(caller))
                 return Results.Json(
                     new { error = "Seul le SuperAdmin peut attribuer le rôle Admin ou SuperAdmin." },
                     statusCode: StatusCodes.Status403Forbidden);

@@ -163,19 +163,21 @@
 
     private AdminUserDto? _editing;
 
-    // Un Admin ordinaire ne peut pas gérer un autre Admin/SuperAdmin (seul un
-    // SuperAdmin le peut — cohérent avec la règle serveur CanManageAccount),
-    // ni se gérer lui-même via cet écran : rôle/site/désactivation restent hors
-    // de portée de l'auto-édition pour un Admin simple. Un SuperAdmin, en
-    // revanche, peut se gérer lui-même : le serveur protège déjà contre
-    // l'auto-verrouillage total (rétrogradation/désactivation du dernier
-    // SuperAdmin actif refusées, voir AdminEndpoints.cs). Comparaison par
-    // email (unique) et non par nom affiché, qui peut être partagé.
+    // Un Admin ordinaire peut désormais gérer n'importe quel compte visible
+    // (Hôte/Sûreté/Admin — les SuperAdmin sont déjà invisibles pour lui, filtrés
+    // côté serveur), sauf lui-même via cet écran : rôle/site/désactivation
+    // restent hors de portée de l'auto-édition pour un Admin simple. Un
+    // SuperAdmin, en revanche, peut se gérer lui-même : le serveur protège déjà
+    // contre l'auto-verrouillage total (rétrogradation/désactivation du dernier
+    // SuperAdmin actif refusées, voir AdminEndpoints.cs). Comparaison par email
+    // (unique) et non par nom affiché, qui peut être partagé. Le contrôle
+    // SuperAdmin ci-dessous est une barrière de dernier recours, cohérente avec
+    // la règle serveur CanManageAccount.
     private bool CanManage(AdminUserDto u)
     {
         if (Auth.IsInRole(NovAccesRoles.SuperAdmin)) return true;
         if (string.Equals(u.Email, Auth.Email, StringComparison.OrdinalIgnoreCase)) return false;
-        return !u.Roles.Contains(NovAccesRoles.Admin) && !u.Roles.Contains(NovAccesRoles.SuperAdmin);
+        return !u.Roles.Contains(NovAccesRoles.SuperAdmin);
     }
 
     private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; }

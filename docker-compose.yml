@@ -52,6 +52,11 @@ services:
     # Pas de "ports:" publiés directement : Caddy reverse-proxy vers ce
     # service par son nom DNS interne ("api"). L'app agent mobile (terminaux)
     # passe aussi par Caddy, jamais directement sur ce conteneur.
+    volumes:
+      # Clés DataProtection persistées (voir Program.cs) : sans ce volume,
+      # chaque recréation du conteneur invalide les jetons en cours
+      # (réinitialisation de mot de passe, confirmation d'email).
+      - api_keys:/app/keys
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -74,6 +79,10 @@ services:
       # l'API (voir AdminOverview.razor) — le navigateur du visiteur ne parle
       # jamais directement à l'API, seulement à ce conteneur Web.
       Api__BaseUrl: http://api:8080
+    volumes:
+      # Clés DataProtection (antiforgery Blazor Server) — même raison que côté
+      # api : persister au-delà de la durée de vie du conteneur.
+      - web_keys:/app/keys
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -102,3 +111,5 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  api_keys:
+  web_keys:

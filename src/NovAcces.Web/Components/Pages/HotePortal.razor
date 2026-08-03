@@ -186,12 +186,12 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 <table class="visits">
                     <thead>
                         <tr>
-                            <th class="sortable" @onclick='() => SortBy("name")'>Visiteur@(Arrow("name"))</th>
+                            <th scope="col" aria-sort="@AriaSort("name")"><button type="button" class="sortable-th-btn" @onclick='() => SortBy("name")'>Visiteur@(Arrow("name"))</button></th>
                             <th>Société</th>
                             <th>Mode</th>
                             <th>Rendez-vous</th>
-                            <th class="sortable" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</th>
-                            <th class="sortable" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</th>
+                            <th scope="col" aria-sort="@AriaSort("status")"><button type="button" class="sortable-th-btn" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</button></th>
+                            <th scope="col" aria-sort="@AriaSort("created")"><button type="button" class="sortable-th-btn" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</button></th>
                             <th></th>
                         </tr>
                     </thead>
@@ -542,8 +542,12 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     }
 
     private MarkupString Arrow(string key) => _sortKey == key
-        ? (MarkupString)$"<span class=\"arrow\">{(_sortAsc ? "▲" : "▼")}</span>"
+        ? (MarkupString)$"<span class=\"arrow\" aria-hidden=\"true\">{(_sortAsc ? "▲" : "▼")}</span>"
         : default;
+
+    // aria-sort sur le <th> : façon standard d'annoncer au lecteur d'écran
+    // l'état de tri courant d'une colonne.
+    private string AriaSort(string key) => _sortKey == key ? (_sortAsc ? "ascending" : "descending") : "none";
 
     private IReadOnlyList<HostVisitDto> FilteredVisits
     {

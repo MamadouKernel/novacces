@@ -1,7 +1,9 @@
 using NovAcces.Shared.Auth;
 using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using NovAcces.Api;
@@ -19,6 +21,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (!builder.Environment.IsDevelopment())
     ProductionConfigurationValidator.Validate(builder.Configuration);
+
+// Clés DataProtection (jetons Identity : réinitialisation de mot de passe,
+// confirmation d'email) persistées sur un volume Docker dédié (voir
+// docker-compose.yml, service "api") — sans quoi chaque recréation du
+// conteneur au redéploiement invalide silencieusement tout jeton en cours.
+// En développement, le répertoire par défaut d'ASP.NET Core suffit.
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo("/app/keys"))
+        .SetApplicationName("SigasAcces.Api");
+}
 
 // --- Services ---
 builder.Services.AddNovAccesInfrastructure(builder.Configuration);
@@ -264,7 +278,25 @@ app.UseAuthorization();
 
 app.UseActiveUser();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow, serverTimeUtc = DateTimeOffset.UtcNow }));
+// Sonde de santé : vérifie que le schéma identity partagé est réellement
+// accessible ET à jour, pas seulement que le processus répond. C'est cette
+// requête qui aurait détecté en quelques secondes l'incident du 03/08/2026
+// (table identity.sites absente faute de migration rejouée après déploiement)
+// au lieu de le laisser découvrir manuellement des jours plus tard. Le détail
+// de l'exception va aux logs serveur, jamais à la réponse (non authentifiée).
+app.MapGet("/health", async (NovAccesIdentityDbContext identityDb, ILogger<Program> logger, CancellationToken ct) =>
+{
+    try
+    {
+        await identityDb.Sites.AsNoTracking().Select(s => s.SiteId).Take(1).ToListAsync(ct);
+        return Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Sonde de santé en échec : schéma identity inaccessible ou migrations non à jour.");
+        return Results.Json(new { status = "degraded" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 app.MapAuthEndpoints().RequireRateLimiting("auth");
 app.MapScanEndpoints().RequireRateLimiting("sensitive");

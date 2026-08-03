@@ -302,17 +302,25 @@
     @apply whitespace-nowrap border-b border-line px-3 py-2.5 text-left font-mono
            text-[0.65rem] font-medium uppercase tracking-[0.1em] text-muted;
   }
-  .visits th.sortable { @apply cursor-pointer select-none hover:text-ink; }
-  .visits th .arrow { @apply ml-1 inline-block text-amber-600; }
+  /* Colonne triable : le <th> lui-même ne porte plus le clic (inaccessible au
+     clavier/lecteur d'écran) — un vrai <button> à l'intérieur porte l'action,
+     le <th> lui cède tout son padding pour garder la même zone cliquable
+     qu'avant (tout l'en-tête, pas juste le texte). */
+  .visits th:has(> .sortable-th-btn) { padding: 0; }
+  .visits th .arrow, .sort-indicator { @apply ml-1 inline-block text-amber-600; }
+  .sortable-th-btn {
+    border: none;
+    font: inherit;
+    @apply flex w-full cursor-pointer select-none items-center gap-1 whitespace-nowrap
+           bg-transparent px-3 py-2.5 text-left font-mono text-[0.65rem] font-medium
+           uppercase tracking-[0.1em] text-muted transition hover:text-ink;
+  }
+  .sortable-th-btn:focus-visible {
+    @apply outline outline-2 outline-offset-[-2px] outline-brand-600;
+  }
   .visits td { @apply whitespace-nowrap border-b border-line px-3 py-2.5 align-middle; }
   .visits tbody tr:hover td { @apply bg-paper/70; }
   .row-security td { @apply bg-nobg/60; }
-
-  /* ---- En-tête de colonne triable (SortableTh, tous les tableaux Admin) ---- */
-  .sortable-th {
-    @apply cursor-pointer select-none whitespace-nowrap transition hover:text-brand-700;
-  }
-  .sort-indicator { @apply ml-1 inline-block text-[0.65rem] text-brand-600; }
 
   /* ---- Pagination (uniforme sur tous les tableaux) ---- */
   .pagination { @apply mt-3 flex flex-wrap items-center justify-between gap-2; }

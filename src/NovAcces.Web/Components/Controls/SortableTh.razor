@@ -1,10 +1,16 @@
 @* En-tête de colonne triable, réutilisable sur tous les tableaux Admin.
    L'état du tri (colonne + sens) vit dans la page hôte — ce composant ne
-   fait qu'afficher et déclencher le changement, pas de logique de tri ici. *@
+   fait qu'afficher et déclencher le changement, pas de logique de tri ici.
+   Le déclencheur est un vrai <button> (pas un <th> cliqué au clic seul) :
+   sans ça, le tri est invisible et inutilisable au clavier/lecteur d'écran.
+   aria-sort sur le <th> lui-même est la façon standard d'annoncer l'état
+   de tri courant d'une colonne. *@
 
-<th class="sortable-th" @onclick="() => OnSort.InvokeAsync(Column)">
-    @ChildContent
-    <span class="sort-indicator">@(SortColumn == Column ? (SortAscending ? "▲" : "▼") : "")</span>
+<th scope="col" aria-sort="@AriaSort">
+    <button type="button" class="sortable-th-btn" @onclick="() => OnSort.InvokeAsync(Column)">
+        @ChildContent
+        <span class="sort-indicator" aria-hidden="true">@(SortColumn == Column ? (SortAscending ? "▲" : "▼") : "")</span>
+    </button>
 </th>
 
 @code {
@@ -13,4 +19,6 @@
     [Parameter] public bool SortAscending { get; set; }
     [Parameter] public EventCallback<string> OnSort { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string AriaSort => SortColumn == Column ? (SortAscending ? "ascending" : "descending") : "none";
 }

@@ -32,6 +32,10 @@ RUN apt-get update \
 
 RUN useradd --system --create-home --shell /usr/sbin/nologin novacces
 COPY --from=build /app/publish .
+# Répertoire des clés DataProtection : monté en volume nommé (docker-compose)
+# pour survivre à la recréation du conteneur — sans quoi chaque redéploiement
+# invalide les jetons en cours (réinitialisation de mot de passe, etc.).
+RUN mkdir -p /app/keys
 RUN chown -R novacces:novacces /app
 USER novacces
 

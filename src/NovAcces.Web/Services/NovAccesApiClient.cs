@@ -418,6 +418,21 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Désactive un site (contrat non reconduit) : coupe l'accès sans supprimer les données.</summary>
+    public async Task<(bool Success, string? Error)> DeactivateSiteAsync(string siteId, string reason)
+    {
+        var response = await CreateClient(true)
+            .PostAsJsonAsync($"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto(reason));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Réactive un site désactivé (SuperAdmin uniquement).</summary>
+    public async Task<(bool Success, string? Error)> ReactivateSiteAsync(string siteId)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/admin/sites/{siteId}/reactivate", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>Liste les agents (matricule + nom) d'un site.</summary>
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(string siteId)
     {

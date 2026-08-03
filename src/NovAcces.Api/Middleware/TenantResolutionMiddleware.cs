@@ -24,6 +24,12 @@ namespace NovAcces.Api.Middleware;
 ///  - Requête non authentifiée : aucun tenant résolu ; l'autorisation rejettera
 ///    l'accès aux endpoints protégés (401/403). Les endpoints publics (login,
 ///    health, hub) sont exemptés ci-dessous.
+///  - Site désactivé (contrat non reconduit, voir ISiteCatalog.IsActiveAsync) :
+///    403 pour TOUTE requête tenant-résolue, y compris les comptes déjà
+///    rattachés à ce site — c'est le mécanisme d'« arrêt du service » du
+///    contrat. Les données restent intactes (aucune suppression), seul l'accès
+///    est coupé. La (ré)activation elle-même (POST /api/admin/sites/{id}/...)
+///    n'envoie pas X-Site-Id et n'est donc jamais bloquée par ce contrôle.
 /// </summary>
 public sealed class TenantResolutionMiddleware
 {
@@ -105,6 +111,16 @@ public sealed class TenantResolutionMiddleware
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(new { error = "Site inconnu ou non provisionné." });
+                return;
+            }
+
+            // Site provisionné mais désactivé (contrat non reconduit) : coupe
+            // l'accès sans toucher aux données. Message explicite (pas un 404) :
+            // le site existe réellement, seul l'accès est suspendu.
+            if (!await sites.IsActiveAsync(currentTenant.SiteId, context.RequestAborted))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new { error = "Ce site est désactivé." });
                 return;
             }
         }

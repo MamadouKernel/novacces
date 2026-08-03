@@ -85,6 +85,23 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
 
         // 4. Privilèges du rôle applicatif (défense en profondeur, §8.5).
         await ApplyApplicationRoleGrantsAsync(connection, schema, ct);
+
+        // 5. Enregistrement dans le registre partagé (schéma « identity »), pour
+        // le statut actif/inactif (voir SiteRegistration). ON CONFLICT DO
+        // NOTHING : ré-exécuter provision-site sur un site déjà désactivé ne
+        // doit PAS le réactiver silencieusement — seul un appel explicite à
+        // /reactivate le peut.
+        await using (var registerCommand = connection.CreateCommand())
+        {
+            registerCommand.CommandText = """
+                INSERT INTO "identity"."sites" ("SiteId", "ProvisionedAt", "IsActive")
+                VALUES (@siteId, @now, TRUE)
+                ON CONFLICT ("SiteId") DO NOTHING;
+                """;
+            registerCommand.Parameters.AddWithValue("siteId", siteId);
+            registerCommand.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
+            await registerCommand.ExecuteNonQueryAsync(ct);
+        }
     }
 
     /// <summary>

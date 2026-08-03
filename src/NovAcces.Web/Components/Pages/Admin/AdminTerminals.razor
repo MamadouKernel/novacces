@@ -95,7 +95,9 @@
 
     private async Task RefreshAsync()
     {
-        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        // Un site désactivé (contrat non reconduit) ne doit plus être proposé
+        // pour l'enrôlement d'un NOUVEAU terminal.
+        try { _overview = (await Api.GetSiteOverviewAsync()).Where(s => s.IsActive).ToList(); } catch { /* best-effort */ }
         try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
     }
 

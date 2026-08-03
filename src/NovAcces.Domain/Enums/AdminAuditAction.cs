@@ -57,5 +57,14 @@ public enum AdminAuditAction
     ManualCheckOut,
 
     /// <summary>Correction des coordonnées d'un visiteur (nom, société, motif, contacts) avant son arrivée.</summary>
-    VisitUpdated
+    VisitUpdated,
+
+    /// <summary>
+    /// Désactivation d'un site (contrat non reconduit) : coupe l'accès sans
+    /// supprimer les données. Voir TenantResolutionMiddleware.
+    /// </summary>
+    SiteDeactivated,
+
+    /// <summary>Réactivation d'un site désactivé (SuperAdmin uniquement).</summary>
+    SiteReactivated
 }

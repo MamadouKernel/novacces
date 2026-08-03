@@ -2,6 +2,7 @@
 @layout AdminLayout
 @inject NovAccesApiClient Api
 @inject ToastService Toasts
+@inject AuthState Auth
 
 <PageTitle>SigasAcces — Administration · Sites</PageTitle>
 
@@ -48,20 +49,55 @@
     {
         <div class="table-wrap">
         <table class="visits">
-            <thead><tr><th>Site</th><th>Présents</th><th>Scans aujourd'hui</th></tr></thead>
+            <thead><tr><th>Site</th><th>Statut</th><th>Présents</th><th>Scans aujourd'hui</th><th></th></tr></thead>
             <tbody>
                 @foreach (var s in _overview)
                 {
                     <tr>
                         <td><strong>@s.SiteId</strong></td>
+                        <td>
+                            @if (s.IsActive)
+                            {
+                                <span class="badge badge-onsite">Actif</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-revoked" title="@s.DeactivationReason">Désactivé</span>
+                            }
+                        </td>
                         <td>@s.OnSite</td>
                         <td>@s.ScansToday</td>
+                        <td style="white-space:nowrap">
+                            @if (_actingSiteId == s.SiteId)
+                            {
+                                @if (s.IsActive)
+                                {
+                                    <div class="field" style="margin:0"><label>Motif (5 à 500 caractères)</label>
+                                        <input @bind="_deactivateReason" placeholder="ex. Contrat non reconduit" /></div>
+                                    <button class="btn-danger" @onclick="() => DeactivateAsync(s.SiteId)" disabled="@_busy">Confirmer</button>
+                                    <button class="btn-ghost" @onclick="() => _actingSiteId = null">Annuler</button>
+                                }
+                                else
+                                {
+                                    <button class="btn-primary" @onclick="() => ReactivateAsync(s.SiteId)" disabled="@_busy">Confirmer la réactivation</button>
+                                    <button class="btn-ghost" @onclick="() => _actingSiteId = null">Annuler</button>
+                                }
+                            }
+                            else if (s.IsActive)
+                            {
+                                <button class="btn-ghost" @onclick="() => StartDeactivate(s.SiteId)" disabled="@_busy">Désactiver</button>
+                            }
+                            else if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+                            {
+                                <button class="btn-ghost" @onclick="() => _actingSiteId = s.SiteId" disabled="@_busy">Réactiver</button>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
         </table>
         </div>
-        <p class="hint">Détail par poste et affluence : voir « Dashboard ».</p>
+        <p class="hint">Détail par poste et affluence : voir « Dashboard ». La réactivation d'un site désactivé est réservée au SuperAdmin.</p>
     }
 </section>
 
@@ -71,6 +107,9 @@
     private string SiteSlugValue => SiteSlug.From(_siteInput);
     private string? _siteMsg; private bool _siteOk;
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+
+    private string? _actingSiteId;
+    private string _deactivateReason = "";
 
     protected override async Task OnInitializedAsync() => await RefreshAsync();
 
@@ -105,6 +144,55 @@
                 await RefreshAsync();
             }
             else { Toasts.Error(error ?? "Provisionnement refusé."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private void StartDeactivate(string siteId)
+    {
+        _actingSiteId = siteId;
+        _deactivateReason = "";
+    }
+
+    private async Task DeactivateAsync(string siteId)
+    {
+        var reason = _deactivateReason.Trim();
+        if (reason.Length is < 5 or > 500)
+        {
+            Toasts.Error("Le motif doit faire entre 5 et 500 caractères.");
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeactivateSiteAsync(siteId, reason);
+            if (ok)
+            {
+                Toasts.Success($"Site « {siteId} » désactivé.");
+                _actingSiteId = null;
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Désactivation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task ReactivateAsync(string siteId)
+    {
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.ReactivateSiteAsync(siteId);
+            if (ok)
+            {
+                Toasts.Success($"Site « {siteId} » réactivé.");
+                _actingSiteId = null;
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Réactivation refusée."); }
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

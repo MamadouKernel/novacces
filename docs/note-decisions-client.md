@@ -92,6 +92,26 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
   self-service existait déjà pour tous les rôles, seul le caractère
   **obligatoire** pour les comptes à privilèges a été retiré.
 
+## 6. Désactivation d'un site (fin de contrat client) — ✅ réalisé (03/08/2026)
+
+- **Manque identifié** : `accord-commercial.md` engage explicitement, en cas de
+  non-reconduction du récurrent annuel, un « arrêt du service + restitution
+  intégrale des données en formats ouverts, sans frais ». Rien dans le code
+  n'implémentait la moitié « arrêt du service » — un site provisionné restait
+  actif indéfiniment, sans mécanisme de désactivation (contrairement aux
+  comptes, agents et terminaux, qui ont tous ce cycle de vie).
+- **Réalisé** : `POST /api/admin/sites/{id}/deactivate` (Admin/SuperAdmin,
+  motif obligatoire) coupe l'accès au site — toute requête déjà rattachée à ce
+  site reçoit un 403 explicite (`TenantResolutionMiddleware`), **sans aucune
+  suppression de donnée** (schéma et journaux intacts). Réactivation réservée
+  au SuperAdmin (`POST .../reactivate`), même asymétrie que pour un compte.
+  Console Admin → Sites : statut Actif/Désactivé visible, action en un clic.
+- **Non couvert par ce lot** : l'export complet d'un tenant (moitié
+  « restitution des données » de la clause contractuelle) reste à faire —
+  seul un export CSV du journal existe. Signalé aussi dans
+  `rapport-recette-securite.md`. Pas urgent (aucun site ne quitte le contrat
+  actuellement), mais reste une dette contractuelle réelle.
+
 ## Synthèse
 
 | # | Évolution | Priorité | Indicatif (j-h) |
@@ -101,6 +121,7 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
 | 3 | Console terminaux + QR d'enrôlement | ✅ Réalisée | 5–8 |
 | 4 | Renommage SigasAcces + domaine | ✅ Décidé/réalisé (02/08/2026) | < 1 |
 | 5 | 2FA optionnel pour tous les comptes | ⚠️ Décidé (02/08/2026), écart CDC §7.2 à confirmer par écrit | < 1 |
+| 6 | Désactivation d'un site (fin de contrat) | ✅ Réalisée (03/08/2026) — export complet du tenant non couvert | 1 |
 
 **Décision attendue** : confirmer si l'une ou l'autre entre dans le périmètre du
 pilote (auquel cas avenant), ou est planifiée pour la phase de déploiement

@@ -25,12 +25,28 @@ public static class AdminEndpoints
         var group = app.MapGroup("/api/admin").WithTags("Admin")
             .RequireAuthorization(NovAccesRoles.Admin);
 
-        group.MapGet("/overview", async (ISiteOverviewService overview, CancellationToken ct) =>
+        group.MapGet("/overview", async (
+            ISiteOverviewService overview, NovAccesIdentityDbContext identityDb, CancellationToken ct) =>
         {
             var sites = await overview.GetAsync(ct);
-            var dto = sites.Select(s => new AdminSiteOverviewDto(
-                s.SiteId, s.OnSite, s.ScansToday,
-                s.TerminalsEnrolled, s.TerminalsActive, s.DegradedScansToday)).ToList();
+
+            // Absence de ligne = site jamais désactivé (voir SiteRegistration) :
+            // actif par défaut, sans qu'il soit nécessaire de rétro-peupler le
+            // registre pour les sites provisionnés avant cette fonctionnalité.
+            var registrations = await identityDb.Sites
+                .Where(s => sites.Select(x => x.SiteId).Contains(s.SiteId))
+                .ToDictionaryAsync(s => s.SiteId, s => s, StringComparer.OrdinalIgnoreCase, ct);
+
+            var dto = sites.Select(s =>
+            {
+                registrations.TryGetValue(s.SiteId, out var reg);
+                return new AdminSiteOverviewDto(
+                    s.SiteId, s.OnSite, s.ScansToday,
+                    s.TerminalsEnrolled, s.TerminalsActive, s.DegradedScansToday,
+                    IsActive: reg?.IsActive ?? true,
+                    DeactivatedAt: reg?.DeactivatedAt,
+                    DeactivationReason: reg?.DeactivationReason);
+            }).ToList();
             return Results.Ok(dto);
         })
         .WithName("AdminOverview")
@@ -111,6 +127,11 @@ public static class AdminEndpoints
             if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, targetRoles))
                 return Results.Json(
                     new { error = "Votre rôle ne permet pas de désactiver ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (target.Id == actor.Id && !NovAccesAuthorizationMatrix.CanActOnOwnAccount(caller))
+                return Results.Json(
+                    new { error = "Vous ne pouvez pas désactiver votre propre compte." },
                     statusCode: StatusCodes.Status403Forbidden);
 
             if (targetRoles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal))
@@ -244,6 +265,11 @@ public static class AdminEndpoints
                     new { error = "Votre rôle ne permet pas de modifier ce compte." },
                     statusCode: StatusCodes.Status403Forbidden);
 
+            if (target.Id == actor.Id && !NovAccesAuthorizationMatrix.CanActOnOwnAccount(caller))
+                return Results.Json(
+                    new { error = "Vous ne pouvez pas modifier votre propre compte depuis cet écran." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
             // Corrige une erreur de saisie à la création : sans ce contrôle, un
             // email mal tapé bloquerait le compte définitivement (impossible à
             // corriger autrement qu'en recréant le compte).
@@ -371,6 +397,14 @@ public static class AdminEndpoints
                     new { error = "Votre rôle ne permet pas de réinitialiser le mot de passe de ce compte." },
                     statusCode: StatusCodes.Status403Forbidden);
 
+            // Sans mot de passe actuel exigé (contrairement à /me/password) : un
+            // Admin ne doit jamais pouvoir réinitialiser LE SIEN par cette voie,
+            // même s'il peut désormais gérer d'autres comptes Admin.
+            if (target.Id == actor.Id && !NovAccesAuthorizationMatrix.CanActOnOwnAccount(caller))
+                return Results.Json(
+                    new { error = "Utilisez le changement de mot de passe depuis votre profil." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
             var resetToken = await users.GeneratePasswordResetTokenAsync(target);
             var result = await users.ResetPasswordAsync(target, resetToken, request.NewPassword);
             if (!result.Succeeded)
@@ -418,6 +452,106 @@ public static class AdminEndpoints
         })
         .WithName("AdminProvisionSite")
         .WithSummary("Provisionne un nouveau site (schéma + modèle + journal append-only).");
+
+        // Désactivation : coupe l'accès au site (contrat non reconduit) SANS
+        // toucher aux données — jamais de DROP SCHEMA depuis un endpoint HTTP.
+        // Même hiérarchie de motif que la désactivation d'un compte.
+        group.MapPost("/sites/{siteId}/deactivate", async (
+            string siteId,
+            DeactivateSiteRequestDto request,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            NovAccesIdentityDbContext identityDb,
+            ISiteCatalog sites,
+            IDateTimeProvider clock,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
+        {
+            siteId = siteId.Trim().ToLowerInvariant();
+            var reason = request?.Reason?.Trim();
+            if (string.IsNullOrWhiteSpace(reason) || reason.Length < 5 || reason.Length > 500)
+                return Results.BadRequest(new { error = "Un motif de désactivation (5 à 500 caractères) est obligatoire." });
+
+            if (!await sites.ExistsAsync(siteId, ct))
+                return Results.NotFound(new { error = "Site introuvable ou non provisionné." });
+
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var registration = await identityDb.Sites.FindAsync(new object?[] { siteId }, ct);
+            if (registration is null)
+            {
+                registration = SiteRegistration.Create(siteId, clock.UtcNow);
+                identityDb.Sites.Add(registration);
+            }
+            else if (!registration.IsActive)
+            {
+                return Results.Conflict(new { error = "Ce site est déjà désactivé." });
+            }
+
+            registration.Deactivate(clock.UtcNow, actor.Id.ToString(), reason);
+            await identityDb.SaveChangesAsync(ct);
+
+            // Sans invalidation, TenantResolutionMiddleware continuerait à
+            // servir ce site jusqu'à expiration du cache (30s) — trop long pour
+            // une action de sûreté censée être immédiate.
+            sites.Invalidate();
+
+            tenant.Resolve(siteId);
+            await audit.RecordAsync(
+                AdminAuditAction.SiteDeactivated, actor.Id.ToString(), siteId,
+                $"Site désactivé. Motif : {reason}", ct);
+
+            return Results.Ok(new
+            {
+                message = "Site désactivé. Les données sont conservées, l'accès est coupé.",
+                siteId,
+                isActive = false
+            });
+        })
+        .WithName("AdminDeactivateSite")
+        .WithSummary("Désactive un site (contrat non reconduit) : coupe l'accès sans supprimer les données.");
+
+        // Réactivation : réservée au SuperAdmin, même asymétrie que pour un compte.
+        group.MapPost("/sites/{siteId}/reactivate", async (
+            string siteId,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            NovAccesIdentityDbContext identityDb,
+            ISiteCatalog sites,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            CancellationToken ct) =>
+        {
+            siteId = siteId.Trim().ToLowerInvariant();
+
+            if (!await sites.ExistsAsync(siteId, ct))
+                return Results.NotFound(new { error = "Site introuvable ou non provisionné." });
+
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var registration = await identityDb.Sites.FindAsync(new object?[] { siteId }, ct);
+            if (registration is null || registration.IsActive)
+                return Results.Conflict(new { error = "Ce site n'est pas désactivé." });
+
+            registration.Reactivate();
+            await identityDb.SaveChangesAsync(ct);
+
+            sites.Invalidate();
+
+            tenant.Resolve(siteId);
+            await audit.RecordAsync(
+                AdminAuditAction.SiteReactivated, actor.Id.ToString(), siteId, "Site réactivé.", ct);
+
+            return Results.Ok(new { message = "Site réactivé.", siteId, isActive = true });
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminReactivateSite")
+        .WithSummary("Réactive un site désactivé (SuperAdmin uniquement).");
 
         // --- Rétention / purge des données personnelles (§7.3) ---
 

@@ -269,6 +269,88 @@ public sealed class AdminTests
             new DeactivateUserRequestDto("Test garde dernier SuperAdmin"));
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
     }
+    /// <summary>
+    /// Désactiver un site coupe l'accès (403, message explicite) SANS toucher
+    /// aux données, pour tous les comptes rattachés — pas seulement les
+    /// nouveaux. La réactivation reste réservée au SuperAdmin, comme pour un
+    /// compte. Touche TenantResolutionMiddleware (zone sensible, CLAUDE.md §7.3).
+    /// </summary>
+    [SkippableFact]
+    public async Task DeactivateSite_BlocksTenantAccess_ReactivationRequiresSuperAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var siteId = $"dsite{Guid.NewGuid():N}".Substring(0, 20);
+        var superAdmin = await AdminClientAsync();
+        try
+        {
+            var provision = await superAdmin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            // Hôte rattaché au site, accès normal avant désactivation.
+            var email = $"hote-{Guid.NewGuid():N}@{siteId}.local";
+            const string password = "Test!Passw0rd2026";
+            var register = await superAdmin.PostAsJsonAsync("/api/auth/register",
+                new RegisterUserRequestDto(email, password, "Hôte Test", "Hote", siteId));
+            Assert.Equal(HttpStatusCode.OK, register.StatusCode);
+
+            var hote = _factory.CreateClient();
+            var login = await hote.PostAsJsonAsync("/api/auth/login", new LoginRequestDto(email, password));
+            login.EnsureSuccessStatusCode();
+            var token = (await login.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+            hote.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var beforeDeactivation = await hote.GetAsync("/api/visits/mine");
+            Assert.Equal(HttpStatusCode.OK, beforeDeactivation.StatusCode);
+
+            // Motif trop court : refusé, même hiérarchie de validation qu'un compte.
+            var badReason = await superAdmin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("x"));
+            Assert.Equal(HttpStatusCode.BadRequest, badReason.StatusCode);
+
+            var deactivate = await superAdmin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("Contrat non reconduit (test)"));
+            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+            // Un compte DÉJÀ existant sur ce site perd l'accès immédiatement —
+            // pas seulement les nouveaux rattachements.
+            var afterDeactivation = await hote.GetAsync("/api/visits/mine");
+            Assert.Equal(HttpStatusCode.Forbidden, afterDeactivation.StatusCode);
+            var body = await afterDeactivation.Content.ReadAsStringAsync();
+            Assert.Contains("désactivé", body, StringComparison.OrdinalIgnoreCase);
+
+            // Redondant : refuse une seconde désactivation.
+            var alreadyDeactivated = await superAdmin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("Nouvelle tentative"));
+            Assert.Equal(HttpStatusCode.Conflict, alreadyDeactivated.StatusCode);
+
+            // Un Admin ordinaire (pas SuperAdmin) ne peut pas réactiver.
+            var plainAdminEmail = $"admin-target-{Guid.NewGuid():N}@sicopa.local";
+            var registerAdmin = await superAdmin.PostAsJsonAsync("/api/auth/register",
+                new RegisterUserRequestDto(plainAdminEmail, password, "Admin cible", "Admin", null));
+            Assert.Equal(HttpStatusCode.OK, registerAdmin.StatusCode);
+            var plainAdmin = _factory.CreateClient();
+            var adminLogin = await plainAdmin.PostAsJsonAsync(
+                "/api/auth/login", new LoginRequestDto(plainAdminEmail, password));
+            adminLogin.EnsureSuccessStatusCode();
+            var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+            plainAdmin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+            var forbiddenReactivate = await plainAdmin.PostAsync($"/api/admin/sites/{siteId}/reactivate", null);
+            Assert.Equal(HttpStatusCode.Forbidden, forbiddenReactivate.StatusCode);
+
+            var reactivate = await superAdmin.PostAsync($"/api/admin/sites/{siteId}/reactivate", null);
+            Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+
+            var afterReactivation = await hote.GetAsync("/api/visits/mine");
+            Assert.Equal(HttpStatusCode.OK, afterReactivation.StatusCode);
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{siteId}");
+        }
+    }
+
     // ---- Aides ----
 
     private async Task<HttpClient> AdminClientAsync()

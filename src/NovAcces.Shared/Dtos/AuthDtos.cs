@@ -146,7 +146,13 @@ public sealed record AdminSiteOverviewDto(
     int ScansToday,
     int TerminalsEnrolled = 0,
     int TerminalsActive = 0,
-    int DegradedScansToday = 0);
+    int DegradedScansToday = 0,
+    bool IsActive = true,
+    DateTimeOffset? DeactivatedAt = null,
+    string? DeactivationReason = null);
+
+/// <summary>Désactivation d'un site (contrat non reconduit) : motif obligatoire, comme pour un compte.</summary>
+public sealed record DeactivateSiteRequestDto(string Reason);
 
 /// <summary>Point d'une courbe journalière, tous sites confondus (dashboard Admin).</summary>
 public sealed record DailyTrendPointDto(

@@ -55,4 +55,20 @@ public sealed class NovAccesAuthorizationMatrixTests
         Assert.False(NovAccesAuthorizationMatrix.CanManageAccount(hote, new[] { NovAccesRoles.Hote }));
         Assert.False(NovAccesAuthorizationMatrix.CanManageAccount(hote, new[] { NovAccesRoles.Admin }));
     }
+
+    [Fact]
+    public void Admin_CannotActOnOwnAccount()
+    {
+        var admin = UserWithRole(NovAccesRoles.Admin);
+
+        Assert.False(NovAccesAuthorizationMatrix.CanActOnOwnAccount(admin));
+    }
+
+    [Fact]
+    public void SuperAdmin_CanActOnOwnAccount()
+    {
+        var superAdmin = UserWithRole(NovAccesRoles.SuperAdmin);
+
+        Assert.True(NovAccesAuthorizationMatrix.CanActOnOwnAccount(superAdmin));
+    }
 }

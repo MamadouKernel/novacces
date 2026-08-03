@@ -22,6 +22,10 @@ public sealed class SiteCatalog : ISiteCatalog
     private HashSet<string> _cachedSites = new(StringComparer.OrdinalIgnoreCase);
     private DateTimeOffset _cachedAt = DateTimeOffset.MinValue;
 
+    private readonly SemaphoreSlim _inactiveRefreshLock = new(1, 1);
+    private HashSet<string> _cachedInactiveSites = new(StringComparer.OrdinalIgnoreCase);
+    private DateTimeOffset _inactiveCachedAt = DateTimeOffset.MinValue;
+
     public SiteCatalog(IConfiguration configuration) =>
         _connectionString = configuration.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.");
@@ -40,7 +44,61 @@ public sealed class SiteCatalog : ISiteCatalog
         return sites.Contains(siteId);
     }
 
-    public void Invalidate() => _cachedAt = DateTimeOffset.MinValue;
+    /// <summary>
+    /// Absence d'enregistrement = actif par défaut (site provisionné avant
+    /// cette fonctionnalité, ou jamais désactivé) — voir ISiteCatalog.IsActiveAsync.
+    /// </summary>
+    public async Task<bool> IsActiveAsync(string siteId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(siteId)) return false;
+
+        var inactive = await GetCachedInactiveSitesAsync(ct);
+        return !inactive.Contains(siteId);
+    }
+
+    public void Invalidate()
+    {
+        _cachedAt = DateTimeOffset.MinValue;
+        _inactiveCachedAt = DateTimeOffset.MinValue;
+    }
+
+    private async Task<HashSet<string>> GetCachedInactiveSitesAsync(CancellationToken ct)
+    {
+        if (DateTimeOffset.UtcNow - _inactiveCachedAt < CacheTtl)
+            return _cachedInactiveSites;
+
+        await _inactiveRefreshLock.WaitAsync(ct);
+        try
+        {
+            if (DateTimeOffset.UtcNow - _inactiveCachedAt < CacheTtl)
+                return _cachedInactiveSites;
+
+            var inactive = await QueryInactiveSiteIdsAsync(ct);
+            _cachedInactiveSites = inactive;
+            _inactiveCachedAt = DateTimeOffset.UtcNow;
+            return _cachedInactiveSites;
+        }
+        finally
+        {
+            _inactiveRefreshLock.Release();
+        }
+    }
+
+    private async Task<HashSet<string>> QueryInactiveSiteIdsAsync(CancellationToken ct)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT \"SiteId\" FROM \"identity\".\"sites\" WHERE \"IsActive\" = FALSE";
+
+        var inactive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            inactive.Add(reader.GetString(0));
+
+        return inactive;
+    }
 
     private async Task<HashSet<string>> GetCachedSitesAsync(CancellationToken ct)
     {

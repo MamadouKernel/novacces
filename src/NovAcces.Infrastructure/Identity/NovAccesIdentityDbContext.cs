@@ -26,6 +26,7 @@ public sealed class NovAccesIdentityDbContext
     public DbSet<TerminalEnrollmentTicketEntity> TerminalEnrollmentTickets => Set<TerminalEnrollmentTicketEntity>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<ApplicationAuditEntry> ApplicationAudit => Set<ApplicationAuditEntry>();
+    public DbSet<SiteRegistration> Sites => Set<SiteRegistration>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -91,6 +92,15 @@ public sealed class NovAccesIdentityDbContext
             s.HasIndex(x => x.TokenHash).IsUnique();
             s.HasIndex(x => new { x.SubjectType, x.SubjectId });
             s.HasIndex(x => x.ExpiresAt);
+        });
+        builder.Entity<SiteRegistration>(s =>
+        {
+            s.ToTable("sites");
+            s.HasKey(x => x.SiteId);
+            s.Property(x => x.SiteId).HasMaxLength(40);
+            s.Property(x => x.DeactivatedBy).HasMaxLength(200);
+            s.Property(x => x.DeactivationReason).HasMaxLength(500);
+            s.HasIndex(x => x.IsActive);
         });
     }
 }

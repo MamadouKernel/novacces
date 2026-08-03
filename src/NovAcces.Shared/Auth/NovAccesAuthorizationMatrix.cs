@@ -47,4 +47,15 @@ public static class NovAccesAuthorizationMatrix
 
         return !targetRoles.Contains(NovAccesRoles.SuperAdmin, StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// Un Admin ordinaire ne peut pas agir sur son PROPRE compte via les
+    /// endpoints de gestion (édition, désactivation) — risque d'auto-
+    /// verrouillage ou d'auto-promotion. Un SuperAdmin le peut : le serveur
+    /// protège déjà contre l'auto-verrouillage total (dernier SuperAdmin actif
+    /// non rétrogradable/désactivable, voir AdminEndpoints.cs). Barrière
+    /// SERVEUR — distincte du filtre d'affichage côté client
+    /// (AdminAccounts.razor:CanManage), qui ne fait que masquer le bouton.
+    /// </summary>
+    public static bool CanActOnOwnAccount(ClaimsPrincipal caller) => IsSuperAdmin(caller);
 }

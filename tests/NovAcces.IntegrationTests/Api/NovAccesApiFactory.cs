@@ -44,6 +44,20 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
             using var probe = new NpgsqlConnection(ConnectionString);
             probe.Open();
 
+            // Schéma partagé « identity » migré AVANT tout provisionnement de
+            // site : TenantProvisioningService.ProvisionAsync enregistre
+            // désormais chaque site dans "identity"."sites" (statut actif/
+            // inactif), qui doit donc déjà exister. Reproduit l'ordre réel de
+            // déploiement (migrate PUIS provision-site, voir
+            // docs/guide-premier-deploiement.md).
+            var identityOptions = new DbContextOptionsBuilder<NovAccesIdentityDbContext>()
+                .UseNpgsql(ConnectionString)
+                .Options;
+            using (var identityDb = new NovAccesIdentityDbContext(identityOptions))
+            {
+                identityDb.Database.Migrate();
+            }
+
             // Sites de test provisionnés (idempotent) pour que la création de
             // visite et le scan disposent de leur schéma. TestSite2 sert aux tests
             // de terminal multi-sites (une tablette qui sert plusieurs sites).
@@ -55,12 +69,8 @@ public sealed class NovAccesApiFactory : WebApplicationFactory<Program>
             // sont plus en configuration statique, voir TerminalDirectory) —
             // un mono-site et un multi-sites, avec des clés connues à l'avance
             // pour que les tests puissent les présenter dans X-Api-Key.
-            var identityOptions = new DbContextOptionsBuilder<NovAccesIdentityDbContext>()
-                .UseNpgsql(ConnectionString)
-                .Options;
             using (var identityDb = new NovAccesIdentityDbContext(identityOptions))
             {
-                identityDb.Database.Migrate();
                 SeedTerminal(identityDb, "Terminal Test Intégration", TestApiKey, new[] { TestSite });
                 SeedTerminal(identityDb, "Terminal Test Multi-sites", TestApiKeyMultiSite, new[] { TestSite, TestSite2 });
             }

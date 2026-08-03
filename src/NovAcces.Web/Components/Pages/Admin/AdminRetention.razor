@@ -62,7 +62,7 @@
             <table class="visits">
                 <thead><tr><th>Site</th><th>Visites purgées</th><th>Scans anonymisés</th></tr></thead>
                 <tbody>
-                    @foreach (var s in _lastRun.Sites)
+                    @foreach (var s in PagedRunSites)
                     {
                         <tr>
                             <td><strong>@s.SiteId</strong></td>
@@ -73,6 +73,8 @@
                 </tbody>
             </table>
             </div>
+            <Pagination Page="_runSitesPage" PageSize="_runSitesPageSize" TotalCount="_lastRun.Sites.Count"
+                        OnPageChanged="p => _runSitesPage = p" />
         }
     }
 </section>
@@ -82,6 +84,12 @@
     private bool _confirming;
     private RetentionStatusDto? _status;
     private RetentionRunResultDto? _lastRun;
+
+    private int _runSitesPage = 1;
+    private const int _runSitesPageSize = 20;
+    private IReadOnlyList<SitePurgeDto> PagedRunSites =>
+        _lastRun is null ? Array.Empty<SitePurgeDto>()
+            : _lastRun.Sites.Skip((_runSitesPage - 1) * _runSitesPageSize).Take(_runSitesPageSize).ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -97,6 +105,7 @@
             if (result is not null)
             {
                 _lastRun = result;
+                _runSitesPage = 1;
                 Toasts.Success("Passe de rétention exécutée.");
             }
             else { Toasts.Error("Passe de rétention refusée."); }

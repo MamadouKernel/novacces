@@ -25,19 +25,21 @@
    Admin, l'Admin gère l'exploitation courante d'un ou plusieurs sites. La
    distinction doit sauter aux yeux, pas être devinée. *@
 <div class="role-banner @(IsSuperAdmin ? "role-banner-super" : "role-banner-admin")">
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        @if (IsSuperAdmin)
-        {
-            <path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.3 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z" />
-        }
-        else
-        {
-            <path d="M12 2l7 4v6c0 5-3.4 7.4-7 10-3.6-2.6-7-5-7-10V6z" />
-        }
-    </svg>
+    <span class="role-banner-icon">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            @if (IsSuperAdmin)
+            {
+                <path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.3 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z" />
+            }
+            else
+            {
+                <path d="M12 2l7 4v6c0 5-3.4 7.4-7 10-3.6-2.6-7-5-7-10V6z" />
+            }
+        </svg>
+    </span>
     <div>
         <strong>@(IsSuperAdmin ? "Vue SuperAdmin" : "Vue Admin")</strong>
-        <span>
+        <span class="role-banner-desc">
             @(IsSuperAdmin
                 ? "Accès complet : supervision de tous les sites et gestion des comptes à privilèges (Admin/SuperAdmin)."
                 : "Gestion opérationnelle des sites, des comptes Hôte/Sûreté et des terminaux.")
@@ -458,8 +460,12 @@
 
     // ---- Séries pour les graphiques SVG (BarChart / StackedBarChart / DonutChart) ----
 
+    // Palette catégorielle (site, rôle) délibérément limitée aux teintes navy/ambre
+    // de la marque, SANS reprendre --ok/--onsite/--amber utilisées ailleurs pour un
+    // état précis (accordé/présent/refus, cf. EntryExitDenialSeries) — un site coloré
+    // en vert « ok » ou bleu « présent » laisserait croire à un statut qui n'existe pas.
     private static readonly string[] SitePalette =
-        { "#2f5c6d", "#f5a300", "#1b5e9e", "#0f8a3d", "#7a5200", "#4f7d8d", "#123649", "#7ca1ae" };
+        { "#0e2a3a", "#f5a300", "#4f7d8d", "#7a5200", "#7ca1ae", "#ffcf6e", "#123649", "#c98200" };
 
     private List<ChartPoint> AttendanceBySite =>
         _overview.OrderByDescending(s => s.ScansToday)
@@ -475,10 +481,13 @@
             var surete = _users.Count(u => u.Roles.Contains(NovAccesRoles.Surete));
             var hotes = _users.Count(u => u.Roles.Contains(NovAccesRoles.Hote));
 
+            // Dégradé de privilège au sein de chaque famille de teinte : navy pour
+            // les rôles opérationnels (Hôte, clair → Sûreté, plus soutenu), ambre
+            // pour les rôles d'administration (Admin, clair → SuperAdmin, soutenu).
             return new()
             {
-                new("Hôtes", hotes, "#2f5c6d"),
-                new("Sûreté", surete, "#1b5e9e"),
+                new("Hôtes", hotes, "#7ca1ae"),
+                new("Sûreté", surete, "#123649"),
                 new("Admin", admins, "#f5a300"),
                 new("SuperAdmin", superAdmins, "#7a5200"),
             };

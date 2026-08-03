@@ -118,16 +118,27 @@
 
   /* ---- Bandeau de rôle (Dashboard Admin) ---- */
   .role-banner {
-    @apply mb-4 flex items-center gap-3 rounded-lg border-l-4 px-4 py-3 text-sm;
+    @apply mb-4 flex items-center gap-3.5 rounded-lg border px-4 py-3.5 text-sm shadow-sm;
   }
-  .role-banner strong { @apply mr-1.5 font-display text-base; }
-  .role-banner span { @apply text-ink2; }
-  .role-banner-admin { @apply border-l-brand-600 bg-brand-50 text-brand-700; }
-  .role-banner-super { @apply border-l-amber-500 bg-amber-50 text-amber-700; }
+  .role-banner-icon {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-full;
+  }
+  .role-banner strong { @apply block font-display text-base leading-tight sm:inline sm:mr-1.5; }
+  .role-banner-desc { @apply block text-[0.85rem] leading-snug text-ink2 sm:inline; }
+  /* Admin : sobre, opérationnel. SuperAdmin : traitement soutenu (fond plein,
+     texte clair) pour que la distinction saute aux yeux sans lire le texte. */
+  .role-banner-admin { @apply border-brand-200 bg-brand-50 text-brand-700; }
+  .role-banner-admin .role-banner-icon { @apply bg-brand-700 text-white; }
+  .role-banner-super { @apply border-amber-600 bg-amber-500 text-brand-900; }
+  .role-banner-super strong { @apply text-brand-950; }
+  .role-banner-super .role-banner-desc { @apply text-brand-800; }
+  .role-banner-super .role-banner-icon { @apply bg-brand-900 text-amber-400; }
 
   /* ---- Grille de cartes-graphiques (Dashboard Admin, § Analyse & tendances) ---- */
-  .chart-grid { @apply grid grid-cols-1 gap-5 md:grid-cols-2; }
-  .chart-card { @apply rounded-md border border-line bg-paper/60 p-4; }
+  .chart-grid { @apply grid grid-cols-1 gap-6 md:grid-cols-2; }
+  .chart-card {
+    @apply rounded-lg border border-line bg-paper/70 p-5 transition hover:border-brand-200;
+  }
   .chart-card-donut { @apply flex flex-col items-center text-center; }
   .row   { display: grid; @apply grid-cols-1 gap-4 sm:grid-cols-2; }
 

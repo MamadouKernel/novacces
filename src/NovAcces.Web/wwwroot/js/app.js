@@ -16,6 +16,24 @@ window.novaccesDownload = (filename, text, mimeType) => {
 // Copie un texte dans le presse-papiers (ex. codes de récupération 2FA).
 window.novaccesCopyToClipboard = (text) => navigator.clipboard.writeText(text);
 
+// Comme novaccesDownload, mais pour un contenu BINAIRE reçu en base64 depuis
+// .NET (ex. export ZIP d'un site) — un ZIP ne peut pas transiter tel quel via
+// l'interop JS, qui sérialise les chaînes en UTF-16/JSON.
+window.novaccesDownloadBase64 = (filename, base64Content, mimeType) => {
+    const binary = atob(base64Content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};
+
 // Déconnexion après inactivité : la détection tourne entièrement en JS (pas
 // un round-trip serveur à chaque mouvement de souris) — seul l'écoulement du
 // délai rappelle .NET, une fois.

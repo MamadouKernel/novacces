@@ -3,6 +3,7 @@
 @inject NovAccesApiClient Api
 @inject ToastService Toasts
 @inject AuthState Auth
+@inject IJSRuntime JS
 
 <PageTitle>SigasAcces — Administration · Sites</PageTitle>
 
@@ -86,10 +87,15 @@
                             else if (s.IsActive)
                             {
                                 <button class="btn-ghost" @onclick="() => StartDeactivate(s.SiteId)" disabled="@_busy">Désactiver</button>
+                                <button class="btn-ghost" @onclick="() => ExportAsync(s.SiteId)" disabled="@_busy">Exporter</button>
                             }
-                            else if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+                            else
                             {
-                                <button class="btn-ghost" @onclick="() => _actingSiteId = s.SiteId" disabled="@_busy">Réactiver</button>
+                                @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+                                {
+                                    <button class="btn-ghost" @onclick="() => _actingSiteId = s.SiteId" disabled="@_busy">Réactiver</button>
+                                }
+                                <button class="btn-ghost" @onclick="() => ExportAsync(s.SiteId)" disabled="@_busy">Exporter</button>
                             }
                         </td>
                     </tr>
@@ -175,6 +181,26 @@
                 await RefreshAsync();
             }
             else { Toasts.Error(error ?? "Désactivation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task ExportAsync(string siteId)
+    {
+        _busy = true;
+        try
+        {
+            var bytes = await Api.ExportSiteAsync(siteId);
+            if (bytes is null)
+            {
+                Toasts.Error("Export refusé ou service indisponible.");
+                return;
+            }
+
+            var filename = $"export-{siteId}-{DateTime.Now:yyyyMMdd-HHmm}.zip";
+            await JS.InvokeVoidAsync("novaccesDownloadBase64", filename, Convert.ToBase64String(bytes), "application/zip");
+            Toasts.Success($"Export de « {siteId} » téléchargé.");
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

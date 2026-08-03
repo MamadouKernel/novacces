@@ -495,6 +495,61 @@ public sealed class AdminTests
         }
     }
 
+    /// <summary>
+    /// Export d'un site (restitution contractuelle) : renvoie un ZIP contenant
+    /// visites/journal/audit en CSV, fonctionne sur un site actif comme
+    /// désactivé, refusé pour un rôle non-Admin.
+    /// </summary>
+    [SkippableFact]
+    public async Task ExportSite_ReturnsZipWithThreeCsvFiles_ActiveOrDeactivated()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var siteId = $"exsite{Guid.NewGuid():N}".Substring(0, 20);
+        var superAdmin = await AdminClientAsync();
+        try
+        {
+            var provision = await superAdmin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            // Export d'un site encore ACTIF : doit déjà fonctionner.
+            var exportActive = await superAdmin.GetAsync($"/api/admin/sites/{siteId}/export");
+            Assert.Equal(HttpStatusCode.OK, exportActive.StatusCode);
+            Assert.Equal("application/zip", exportActive.Content.Headers.ContentType?.MediaType);
+            AssertZipContainsExpectedEntries(await exportActive.Content.ReadAsByteArrayAsync());
+
+            // Un rôle non-Admin (Sûreté) ne peut pas exporter.
+            var surete = await NewUserClientAsync("Surete");
+            var forbidden = await surete.GetAsync($"/api/admin/sites/{siteId}/export");
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+
+            // Export après désactivation : doit continuer de fonctionner
+            // (c'est précisément le cas d'usage — restituer les données à la
+            // fin d'un contrat).
+            var deactivate = await superAdmin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("Test export"));
+            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+            var exportDeactivated = await superAdmin.GetAsync($"/api/admin/sites/{siteId}/export");
+            Assert.Equal(HttpStatusCode.OK, exportDeactivated.StatusCode);
+            AssertZipContainsExpectedEntries(await exportDeactivated.Content.ReadAsByteArrayAsync());
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{siteId}");
+        }
+    }
+
+    private static void AssertZipContainsExpectedEntries(byte[] zipBytes)
+    {
+        using var stream = new MemoryStream(zipBytes);
+        using var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+        var names = zip.Entries.Select(e => e.Name).ToList();
+        Assert.Contains("visites.csv", names);
+        Assert.Contains("journal-scans.csv", names);
+        Assert.Contains("audit-administration.csv", names);
+    }
+
     // ---- Aides ----
 
     private async Task<HttpClient> AdminClientAsync()

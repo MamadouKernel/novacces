@@ -433,6 +433,17 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>
+    /// Exporte les données d'un site (visites, journal, audit) en CSV zippé.
+    /// Retourne les octets bruts du ZIP — à l'appelant de déclencher le
+    /// téléchargement via JS interop (novaccesDownloadBase64).
+    /// </summary>
+    public async Task<byte[]?> ExportSiteAsync(string siteId)
+    {
+        var response = await CreateClient(true).GetAsync($"/api/admin/sites/{siteId}/export");
+        return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
+    }
+
     /// <summary>Liste les agents (matricule + nom) d'un site.</summary>
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(string siteId)
     {

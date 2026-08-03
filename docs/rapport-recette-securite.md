@@ -177,10 +177,9 @@ par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
    documentée dans `docs/deploiement.md`.
 6. **Fériés hors-ligne** : la vérification de jour ouvré en mode dégradé ne
    connaît pas les fériés (confrontés au retour en ligne lors de la resync).
-7. **Réversibilité des données** (clause contractuelle de restitution en
-   formats ouverts) : seul un export CSV du journal existe ; un export complet
-   d'un tenant n'est pas implémenté. Pas d'urgence opérationnelle, mais une
-   dette contractuelle réelle.
+7. ~~**Réversibilité des données**~~ — **corrigé (03/08/2026)** : export complet
+   d'un tenant (visites, journal, audit — CSV zippé) à la demande, console
+   Admin → Sites, voir `note-decisions-client.md` §6.
 8. ~~**Énumération de comptes par canal temporel**~~ — **corrigé (25/07/2026)**.
 9. ~~**Enrôlement 2FA obligatoire pour Sûreté/Admin : parcours incomplet**~~ —
    **corrigé (01/08/2026)**, cf. §9.3.

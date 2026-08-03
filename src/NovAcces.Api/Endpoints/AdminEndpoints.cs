@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.RateLimiting;
+using System.Globalization;
+using System.IO.Compression;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +10,7 @@ using Microsoft.Extensions.Options;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Enums;
 using NovAcces.Infrastructure.Identity;
+using NovAcces.Infrastructure.Persistence;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 using NovAcces.Infrastructure.Retention;
 using NovAcces.Shared.Auth;
@@ -560,6 +564,79 @@ public static class AdminEndpoints
         .WithName("AdminReactivateSite")
         .WithSummary("Réactive un site désactivé (SuperAdmin uniquement).");
 
+        // Export complet d'un site (visites, journal des scans, audit
+        // d'administration) — à la demande, en formats ouverts (CSV zippé),
+        // pour la clause contractuelle de restitution des données
+        // (accord-commercial.md) à la fin d'une relation client. Fonctionne
+        // aussi sur un site encore actif (utile avant même de désactiver).
+        // Ne dépend PAS de TenantResolutionMiddleware (comme provision/
+        // deactivate/reactivate) : le tenant est résolu manuellement dans un
+        // scope dédié, donc jamais bloqué par le statut actif/inactif.
+        group.MapGet("/sites/{siteId}/export", async (
+            string siteId,
+            IServiceScopeFactory scopeFactory,
+            ISiteCatalog sites,
+            CancellationToken ct) =>
+        {
+            siteId = siteId.Trim().ToLowerInvariant();
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+            if (!await sites.ExistsAsync(siteId, ct))
+                return Results.NotFound(new { error = "Site introuvable ou non provisionné." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var db = scope.ServiceProvider.GetRequiredService<NovAccesDbContext>();
+
+            var visits = await db.Visits.AsNoTracking().OrderBy(v => v.CreatedAt).ToListAsync(ct);
+            var scans = await db.ScanLogs.AsNoTracking().OrderBy(s => s.Timestamp).ToListAsync(ct);
+            var auditEntries = await db.AdminAudit.AsNoTracking().OrderBy(a => a.Timestamp).ToListAsync(ct);
+
+            using var zipStream = new MemoryStream();
+            using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                await WriteCsvEntryAsync(zip, "visites.csv",
+                    "Id;VisiteurNom;VisiteurSociete;VisiteurTelephone;VisiteurEmail;Motif;HoteId;Mode;Statut;PlanifieLe;DureePrevueMin;PresentSurSite;ArriveLe;PartiLe;CycleComplet;CreeLe;RevoqueParS;RevoqueLe",
+                    visits.Select(v => string.Join(';', new[]
+                    {
+                        v.Id.ToString(), Csv(v.VisitorName), Csv(v.VisitorCompany), Csv(v.VisitorPhone ?? ""),
+                        Csv(v.VisitorEmail ?? ""), Csv(v.Motif), Csv(v.HostUserId), v.Mode.ToString(), v.Status.ToString(),
+                        v.ScheduledAt?.ToString("o", CultureInfo.InvariantCulture) ?? "",
+                        v.PlannedDurationMinutes.ToString(CultureInfo.InvariantCulture),
+                        v.IsOnSite ? "oui" : "non",
+                        v.CheckedInAt?.ToString("o", CultureInfo.InvariantCulture) ?? "",
+                        v.CheckedOutAt?.ToString("o", CultureInfo.InvariantCulture) ?? "",
+                        v.HasCompletedCycle ? "oui" : "non",
+                        v.CreatedAt.ToString("o", CultureInfo.InvariantCulture),
+                        Csv(v.RevokedBy ?? ""),
+                        v.RevokedAt?.ToString("o", CultureInfo.InvariantCulture) ?? "",
+                    })), ct);
+
+                await WriteCsvEntryAsync(zip, "journal-scans.csv",
+                    "Horodatage;Visiteur;Agent;Direction;Autorise;Sortie;EvenementSecurite;MotifRefus;ModeDegrade;Detail",
+                    scans.Select(s => string.Join(';', new[]
+                    {
+                        s.Timestamp.ToString("o", CultureInfo.InvariantCulture), Csv(s.VisitorName), Csv(s.AgentId),
+                        s.Direction.ToString(), s.WasGranted ? "oui" : "non", s.WasCheckOut ? "oui" : "non",
+                        s.IsSecurityEvent ? "oui" : "non", s.DenialReason?.ToString() ?? "",
+                        s.RecordedInDegradedMode ? "oui" : "non", Csv(s.Detail),
+                    })), ct);
+
+                await WriteCsvEntryAsync(zip, "audit-administration.csv",
+                    "Horodatage;Acteur;Action;Cible;Detail",
+                    auditEntries.Select(a => string.Join(';', new[]
+                    {
+                        a.Timestamp.ToString("o", CultureInfo.InvariantCulture), Csv(a.Actor), a.Action.ToString(),
+                        Csv(a.TargetId ?? ""), Csv(a.Detail),
+                    })), ct);
+            }
+
+            return Results.File(zipStream.ToArray(), "application/zip",
+                $"export-{siteId}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmm}.zip");
+        })
+        .WithName("AdminExportSite")
+        .WithSummary("Exporte les données d'un site (visites, journal, audit) en CSV zippé — formats ouverts.");
+
         // --- Rétention / purge des données personnelles (§7.3) ---
 
         group.MapGet("/retention", (IOptions<RetentionOptions> options) =>
@@ -857,5 +934,34 @@ public static class AdminEndpoints
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
             await audit.RecordAsync(action, actor, targetId, detail, ct);
         }
+    }
+
+    // ---- Export d'un site (visites, journal, audit) en CSV zippé ----
+
+    private static async Task WriteCsvEntryAsync(
+        ZipArchive zip, string entryName, string header, IEnumerable<string> rows, CancellationToken ct)
+    {
+        var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+        await using var entryStream = entry.Open();
+        await using var writer = new StreamWriter(entryStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        await writer.WriteLineAsync(header);
+        foreach (var row in rows)
+        {
+            ct.ThrowIfCancellationRequested();
+            await writer.WriteLineAsync(row);
+        }
+    }
+
+    // Échappement CSV (séparateur ';') + neutralisation de l'injection de
+    // formule — même règle que DashboardEndpoints.Csv (OWASP), dupliquée ici
+    // faute d'utilitaire partagé pour un si petit helper.
+    private static string Csv(string value)
+    {
+        value ??= "";
+        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+            value = "'" + value;
+        if (value.Contains(';') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
     }
 }

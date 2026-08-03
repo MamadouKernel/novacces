@@ -30,6 +30,10 @@ namespace NovAcces.Api.Middleware;
 ///    contrat. Les données restent intactes (aucune suppression), seul l'accès
 ///    est coupé. La (ré)activation elle-même (POST /api/admin/sites/{id}/...)
 ///    n'envoie pas X-Site-Id et n'est donc jamais bloquée par ce contrôle.
+///    SEULE exception : Admin/SuperAdmin gardent une lecture seule (GET/HEAD
+///    uniquement — jamais d'écriture) pour consultation de conformité/litige
+///    après désactivation. Hôte/Sûreté/Agent restent bloqués sans exception,
+///    même en lecture, même sur leur propre site rattaché.
 /// </summary>
 public sealed class TenantResolutionMiddleware
 {
@@ -117,11 +121,26 @@ public sealed class TenantResolutionMiddleware
             // Site provisionné mais désactivé (contrat non reconduit) : coupe
             // l'accès sans toucher aux données. Message explicite (pas un 404) :
             // le site existe réellement, seul l'accès est suspendu.
+            //
+            // Exception volontaire et étroite : Admin/SuperAdmin gardent une
+            // lecture seule (GET/HEAD) pour consulter l'historique d'un site
+            // désactivé (conformité, litige) — jamais d'écriture, et jamais
+            // pour un autre rôle. HasResolvedTenant + les policies en aval
+            // (SecurityJournal, etc.) continuent de s'appliquer normalement
+            // après ce point ; ceci ne fait que NE PAS bloquer plus tôt.
             if (!await sites.IsActiveAsync(currentTenant.SiteId, context.RequestAborted))
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { error = "Ce site est désactivé." });
-                return;
+                var isReadOnly = HttpMethods.IsGet(context.Request.Method)
+                    || HttpMethods.IsHead(context.Request.Method);
+                var isPrivilegedReader = context.User?.IsInRole(NovAccesRoles.Admin) == true
+                    || context.User?.IsInRole(NovAccesRoles.SuperAdmin) == true;
+
+                if (!isReadOnly || !isPrivilegedReader)
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Ce site est désactivé." });
+                    return;
+                }
             }
         }
 

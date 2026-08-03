@@ -52,6 +52,10 @@
                                 <button class="btn-ghost" @onclick="() => StartReassign(a.Matricule, a.DisplayName)" disabled="@_busy">Réaffecter</button>
                                 <button class="btn-danger" @onclick="() => DeactivateAgentAsync(a.Matricule)" disabled="@_busy">Désactiver</button>
                             }
+                            else
+                            {
+                                <button class="btn-primary" @onclick="() => ReactivateAgentAsync(a.Matricule)" disabled="@_busy">Réactiver</button>
+                            }
                         </td>
                     </tr>
                     @if (_reassignMatricule == a.Matricule)
@@ -209,6 +213,24 @@
                 await RefreshAgentsAsync();
             }
             else { Toasts.Error(error ?? "Désactivation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task ReactivateAgentAsync(string matricule)
+    {
+        if (string.IsNullOrEmpty(_agentSite)) return;
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.ReactivateAgentAsync(_agentSite, matricule);
+            if (ok)
+            {
+                Toasts.Success($"Agent « {matricule} » réactivé.");
+                await RefreshAgentsAsync();
+            }
+            else { Toasts.Error(error ?? "Réactivation refusée."); }
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

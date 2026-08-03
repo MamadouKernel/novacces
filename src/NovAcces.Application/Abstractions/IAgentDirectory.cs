@@ -22,6 +22,13 @@ public interface IAgentDirectory
     /// si le matricule est introuvable sur ce site.
     /// </summary>
     Task<bool> DeactivateAsync(string matricule, CancellationToken ct);
+
+    /// <summary>
+    /// Réactive un agent désactivé sur ce site (retour après réaffectation) :
+    /// il retrouve son matricule d'origine, le PIN précédent restant valable.
+    /// Retourne false si le matricule est introuvable sur ce site.
+    /// </summary>
+    Task<bool> ReactivateAsync(string matricule, CancellationToken ct);
 }
 
 /// <summary>Identité d'un agent, sans secret.</summary>

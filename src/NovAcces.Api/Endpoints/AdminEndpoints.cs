@@ -678,6 +678,35 @@ public static class AdminEndpoints
         .WithName("AdminDeactivateAgent")
         .WithSummary("Désactive un agent sur un site (départ ou réaffectation vers un autre site).");
 
+        // Réactivation : retour d'un agent sur un site qu'il avait quitté — il
+        // reprend son matricule d'origine plutôt que d'en obtenir un nouveau.
+        group.MapPost("/agents/{siteId}/{matricule}/reactivate", async (
+            string siteId,
+            string matricule,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+            var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+
+            var reactivated = await agents.ReactivateAsync(matricule, ct);
+            if (!reactivated)
+                return Results.NotFound(new { error = $"Agent {matricule} introuvable sur le site {siteId}." });
+
+            await audit.RecordAsync(AdminAuditAction.AgentReactivated, user.HostIdentifier(), matricule,
+                $"Réactivation de l'agent {matricule} sur le site {siteId}.", ct);
+
+            return Results.Ok(new { message = $"Agent {matricule} réactivé sur le site {siteId}." });
+        })
+        .WithName("AdminReactivateAgent")
+        .WithSummary("Réactive un agent sur un site qu'il avait quitté (retour d'affectation).");
+
         // --- Terminaux (enrôlement) ---
         // Contrairement aux agents, un terminal ne vit dans le schéma d'AUCUN
         // site (il peut en servir plusieurs) : ITerminalDirectory est adossé au

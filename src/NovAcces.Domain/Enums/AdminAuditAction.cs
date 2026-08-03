@@ -22,6 +22,9 @@ public enum AdminAuditAction
     /// <summary>Désactivation d'un agent sur un site (départ, réaffectation vers un autre site).</summary>
     AgentDeactivated,
 
+    /// <summary>Réactivation d'un agent sur un site qu'il avait quitté (retour d'affectation).</summary>
+    AgentReactivated,
+
     /// <summary>Enrôlement d'un terminal (clé API générée pour un ou plusieurs sites).</summary>
     TerminalCreated,
 

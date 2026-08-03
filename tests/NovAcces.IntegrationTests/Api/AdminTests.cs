@@ -315,6 +315,44 @@ public sealed class AdminTests
     }
 
     /// <summary>
+    /// Un agent désactivé (départ d'un site) peut être réactivé s'il revient —
+    /// il retrouve son matricule d'origine plutôt qu'un nouveau.
+    /// </summary>
+    [SkippableFact]
+    public async Task ReactivateAgent_RestoresOriginalMatricule()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var matricule = $"AG-{Guid.NewGuid():N}".Substring(0, 12);
+
+        var create = await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test Réactivation", "1234"));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+
+        var deactivate = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/deactivate", null);
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+        var listedAfterDeactivate = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+        Assert.False(listedAfterDeactivate!.Single(a => a.Matricule == matricule).IsActive);
+
+        var reactivate = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/reactivate", null);
+        Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+
+        var listedAfterReactivate = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+        Assert.True(listedAfterReactivate!.Single(a => a.Matricule == matricule).IsActive);
+
+        // Matricule inconnu sur ce site : 404, pas d'exception.
+        var unknown = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/inconnu-{Guid.NewGuid():N}/reactivate", null);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+    }
+
+    /// <summary>
     /// Désactiver un site coupe l'accès (403, message explicite) SANS toucher
     /// aux données, pour tous les comptes rattachés — pas seulement les
     /// nouveaux. La réactivation reste réservée au SuperAdmin, comme pour un
@@ -389,6 +427,67 @@ public sealed class AdminTests
 
             var afterReactivation = await hote.GetAsync("/api/visits/mine");
             Assert.Equal(HttpStatusCode.OK, afterReactivation.StatusCode);
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{siteId}");
+        }
+    }
+
+    /// <summary>
+    /// Exception étroite au blocage d'un site désactivé : Admin/SuperAdmin
+    /// gardent une lecture seule (consultation de conformité), jamais
+    /// l'écriture, et jamais les autres rôles (Sûreté), même en lecture, même
+    /// sur leur propre site rattaché. Touche TenantResolutionMiddleware
+    /// (zone sensible, CLAUDE.md §7.3).
+    /// </summary>
+    [SkippableFact]
+    public async Task DeactivatedSite_AllowsReadOnlyForAdmin_ButNeverWrites_NorOtherRoles()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var siteId = $"rosite{Guid.NewGuid():N}".Substring(0, 20);
+        var superAdmin = await AdminClientAsync();
+        try
+        {
+            var provision = await superAdmin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            // Un compte Sûreté rattaché au site, pour vérifier qu'il perd TOUT
+            // accès (même lecture) une fois le site désactivé.
+            var sureteEmail = $"surete-{Guid.NewGuid():N}@{siteId}.local";
+            const string password = "Test!Passw0rd2026";
+            var registerSurete = await superAdmin.PostAsJsonAsync("/api/auth/register",
+                new RegisterUserRequestDto(sureteEmail, password, "Sûreté Test", "Surete", siteId));
+            Assert.Equal(HttpStatusCode.OK, registerSurete.StatusCode);
+            var surete = _factory.CreateClient();
+            var sureteLogin = await surete.PostAsJsonAsync("/api/auth/login", new LoginRequestDto(sureteEmail, password));
+            sureteLogin.EnsureSuccessStatusCode();
+            var sureteToken = (await sureteLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+            surete.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", sureteToken);
+
+            var deactivate = await superAdmin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("Test lecture seule"));
+            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+            // SuperAdmin : lecture (GET, via X-Site-Id) autorisée malgré la désactivation.
+            using var readRequest = new HttpRequestMessage(HttpMethod.Get, "/api/exclusions");
+            readRequest.Headers.Add("X-Site-Id", siteId);
+            var read = await superAdmin.SendAsync(readRequest);
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+
+            // SuperAdmin : écriture (POST) toujours refusée, même en lecture seule autorisée.
+            using var writeRequest = new HttpRequestMessage(HttpMethod.Post, "/api/exclusions")
+            {
+                Content = JsonContent.Create(new AddExclusionRequestDto("Test Écriture", "Test"))
+            };
+            writeRequest.Headers.Add("X-Site-Id", siteId);
+            var write = await superAdmin.SendAsync(writeRequest);
+            Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+
+            // Sûreté : bloquée même en lecture, même sur SON propre site (claim, pas X-Site-Id).
+            var sureteRead = await surete.GetAsync("/api/exclusions");
+            Assert.Equal(HttpStatusCode.Forbidden, sureteRead.StatusCode);
         }
         finally
         {

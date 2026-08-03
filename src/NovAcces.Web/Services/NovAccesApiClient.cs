@@ -456,6 +456,14 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Réactive un agent sur un site qu'il avait quitté (retour d'affectation).</summary>
+    public async Task<(bool Success, string? Error)> ReactivateAgentAsync(string siteId, string matricule)
+    {
+        var response = await CreateClient(true).PostAsync(
+            $"/api/admin/agents/{Uri.EscapeDataString(siteId)}/{Uri.EscapeDataString(matricule)}/reactivate", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>Liste les terminaux enrôlés (jamais leur clé).</summary>
     public async Task<IReadOnlyList<TerminalSummaryDto>> GetTerminalsAsync()
     {

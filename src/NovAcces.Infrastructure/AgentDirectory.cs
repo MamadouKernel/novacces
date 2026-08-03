@@ -97,4 +97,18 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    public async Task<bool> ReactivateAsync(string matricule, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var m = (matricule ?? string.Empty).Trim();
+
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m, ct);
+        if (agent is null)
+            return false;
+
+        agent.Reactivate();
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
 }

@@ -73,4 +73,15 @@ public sealed class Agent
     }
 
     public void Deactivate() => IsActive = false;
+
+    /// <summary>
+    /// Rouvre le matricule d'un agent désactivé (retour sur un site quitté).
+    /// Le PIN précédent reste valable — la sûreté peut le réinitialiser
+    /// séparément si nécessaire, comme pour tout autre agent actif.
+    /// </summary>
+    public void Reactivate()
+    {
+        IsActive = true;
+        ResetPinFailures();
+    }
 }

@@ -269,6 +269,51 @@ public sealed class AdminTests
             new DeactivateUserRequestDto("Test garde dernier SuperAdmin"));
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
     }
+
+    /// <summary>
+    /// Un Admin (pas seulement SuperAdmin) peut désormais réactiver un compte
+    /// qu'il gère (Hôte, Sûreté, autre Admin) — même hiérarchie que la
+    /// désactivation/édition. Un SuperAdmin reste hors de portée d'un Admin.
+    /// </summary>
+    [SkippableFact]
+    public async Task Reactivation_AllowedForAdmin_OnManagedAccounts_NotOnSuperAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var superAdmin = await AdminClientAsync();
+        const string password = "Test!Passw0rd2026";
+
+        // Un Admin réactive un Hôte qu'il a lui-même désactivé.
+        var admin = await NewUserClientAsync("Admin");
+        var hoteEmail = $"hote-reactiv-{Guid.NewGuid():N}@sicopa.local";
+        var registerHote = await admin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(hoteEmail, password, "Hôte À Réactiver", "Hote", NovAccesApiFactory.TestSite));
+        Assert.Equal(HttpStatusCode.OK, registerHote.StatusCode);
+        var hoteId = Assert.Single(
+            (await admin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json))!,
+            u => u.Email == hoteEmail).Id;
+
+        var deactivate = await admin.PostAsJsonAsync(
+            $"/api/admin/users/{hoteId}/deactivate", new DeactivateUserRequestDto("Test réactivation par Admin"));
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+        var reactivate = await admin.PostAsync($"/api/admin/users/{hoteId}/reactivate", null);
+        Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+
+        var afterReactivate = Assert.Single(
+            (await superAdmin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json))!, u => u.Id == hoteId);
+        Assert.False(afterReactivate.IsDeactivated);
+
+        // Ce même Admin ne peut pas réactiver un SuperAdmin (invisible/hors
+        // hiérarchie) : on ne peut même pas retrouver son Id via cet Admin,
+        // mais l'appel direct avec l'Id réel du SuperAdmin doit rester refusé.
+        var allAsSuperAdmin = await superAdmin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        var superAdminId = Assert.Single(allAsSuperAdmin!, u =>
+            u.Email == NovAccesApiFactory.AdminEmail && u.Roles.Contains("SuperAdmin")).Id;
+        var forbidden = await admin.PostAsync($"/api/admin/users/{superAdminId}/reactivate", null);
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
     /// <summary>
     /// Désactiver un site coupe l'accès (403, message explicite) SANS toucher
     /// aux données, pour tous les comptes rattachés — pas seulement les

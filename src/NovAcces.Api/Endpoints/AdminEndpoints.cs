@@ -181,9 +181,11 @@ public static class AdminEndpoints
         .WithName("AdminDeactivateUser")
         .WithSummary("Désactive logiquement un compte et révoque ses sessions.");
 
-        // Réactivation : réservée au SuperAdmin (pas la même hiérarchie que la
-        // désactivation/édition — un Admin ne peut réactiver personne, même un
-        // compte qu'il aurait lui-même désactivé).
+        // Réactivation : même hiérarchie que la désactivation/édition
+        // (CanManageAccount) — un Admin peut réactiver les comptes qu'il gère
+        // (Hôte/Sûreté/autre Admin), jamais un SuperAdmin. L'auto-réactivation
+        // n'a pas besoin d'un garde séparé : un compte désactivé ne peut plus
+        // s'authentifier, donc ne peut jamais appeler cet endpoint sur lui-même.
         group.MapPost("/users/{id:guid}/reactivate", async (
             Guid id,
             ClaimsPrincipal caller,
@@ -199,6 +201,12 @@ public static class AdminEndpoints
             var target = await users.FindByIdAsync(id.ToString());
             if (target is null)
                 return Results.NotFound(new { error = "Compte introuvable." });
+
+            var targetRoles = await users.GetRolesAsync(target);
+            if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, targetRoles))
+                return Results.Json(
+                    new { error = "Votre rôle ne permet pas de réactiver ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
 
             if (!target.IsDeactivated)
                 return Results.Conflict(new { error = "Ce compte n'est pas désactivé." });
@@ -221,9 +229,8 @@ public static class AdminEndpoints
 
             return Results.Ok(new { message = "Compte réactivé.", userId = target.Id });
         })
-        .RequireAuthorization(NovAccesRoles.SuperAdmin)
         .WithName("AdminReactivateUser")
-        .WithSummary("Réactive un compte désactivé (SuperAdmin uniquement).");
+        .WithSummary("Réactive un compte désactivé (Admin/SuperAdmin selon hiérarchie).");
 
         // Édition : nom affiché, rôle, site de rattachement. Même hiérarchie que
         // la désactivation (CanManageAccount) ; promouvoir vers Admin/SuperAdmin

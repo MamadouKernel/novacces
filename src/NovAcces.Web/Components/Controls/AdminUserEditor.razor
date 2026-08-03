@@ -66,14 +66,7 @@
             <div class="eyebrow">Statut du compte</div>
             @if (User.IsDeactivated)
             {
-                @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
-                {
-                    <button class="btn-primary" style="max-width:220px" @onclick="ReactivateAsync" disabled="@_busy">Réactiver</button>
-                }
-                else
-                {
-                    <p class="hint" style="margin-top:0">Seul un SuperAdmin peut réactiver ce compte.</p>
-                }
+                <button class="btn-primary" style="max-width:220px" @onclick="ReactivateAsync" disabled="@_busy">Réactiver</button>
             }
             else if (!_confirmingDeactivate)
             {

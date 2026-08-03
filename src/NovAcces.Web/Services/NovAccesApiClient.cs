@@ -548,11 +548,25 @@ public sealed class NovAccesApiClient
                     return string.IsNullOrWhiteSpace(message) ? joined : $"{message} {joined}";
             }
 
-            return message ?? "Échec.";
+            if (!string.IsNullOrWhiteSpace(message)) return message;
+
+            // Repli sur la forme RFC 7807 (ProblemDetails) que renvoie l'API pour
+            // toute exception non gérée (voir app.UseExceptionHandler()) — "title"
+            // au lieu de "error" ; sans ce repli, une panne serveur imprévue ne
+            // laisse à l'utilisateur qu'un « Échec. » muet et inexploitable.
+            var title = doc.RootElement.TryGetProperty("title", out var t) ? t.GetString() : null;
+            var detail = doc.RootElement.TryGetProperty("detail", out var d) ? d.GetString() : null;
+            var problem = string.Join(" ", new[] { title, detail }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (!string.IsNullOrWhiteSpace(problem)) return problem;
+
+            return GenericFailureMessage(response);
         }
         catch { /* corps non JSON */ }
-        return $"Échec ({(int)response.StatusCode}).";
+        return GenericFailureMessage(response);
     }
+
+    private static string GenericFailureMessage(HttpResponseMessage response) =>
+        $"Erreur serveur inattendue ({(int)response.StatusCode}). Réessayez ; si le problème persiste, contactez le support technique.";
 
     private static readonly System.Text.Json.JsonSerializerOptions WebJson =
         new(System.Text.Json.JsonSerializerDefaults.Web);

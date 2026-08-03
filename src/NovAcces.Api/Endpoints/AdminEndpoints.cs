@@ -446,13 +446,31 @@ public static class AdminEndpoints
             ProvisionSiteRequestDto request,
             ITenantProvisioningService provisioning,
             ISiteCatalog sites,
+            ILogger<Program> logger,
             CancellationToken ct) =>
         {
             var siteId = request.SiteId?.Trim().ToLowerInvariant();
             if (!CurrentTenant.IsValidSiteId(siteId))
                 return Results.BadRequest(new { error = "Identifiant de site invalide (a-z, 0-9, _ ; max 40)." });
 
-            await provisioning.ProvisionAsync(siteId!, ct);
+            // Le provisionnement fait du DDL brut hors du modèle EF habituel
+            // (schéma, triggers, GRANT) : contrairement au reste de la console,
+            // une panne ici (base de données injoignable, migration serveur pas
+            // à jour, rôle applicatif mal configuré) ne doit pas remonter comme
+            // une exception muette — l'opérateur a besoin de savoir QUOI a cassé
+            // sans qu'on lui expose la trace complète (détails journalisés).
+            try
+            {
+                await provisioning.ProvisionAsync(siteId!, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Échec du provisionnement du site {SiteId}.", siteId);
+                return Results.Problem(
+                    detail: "Le provisionnement a échoué côté serveur (base de données ou configuration). " +
+                            "L'erreur a été journalisée ; contactez le support technique si le problème persiste.",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
 
             // Le catalogue met l'existence des sites en cache pour ne pas
             // interroger la base à chaque requête : sans invalidation, le site

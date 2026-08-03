@@ -67,6 +67,13 @@ public sealed record AdminScanActivityDto(
     bool IsSecurityEvent,
     DateTimeOffset OccurredAt);
 
+/// <summary>
+/// Signale, au même canal global que <see cref="AdminScanActivityDto"/>,
+/// qu'une entité gérée depuis la console (site/agent/terminal/compte) a
+/// changé — pour rafraîchir un tableau ouvert sans rechargement de page.
+/// </summary>
+public sealed record AdminEntityChangedDto(string Kind, DateTimeOffset OccurredAt);
+
 /// <summary>Synthèse du jour (dashboard sûreté), avec appréciation et recommandation.</summary>
 public sealed record DashboardSummaryDto(
     int ScansToday,

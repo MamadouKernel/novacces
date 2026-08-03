@@ -1,8 +1,10 @@
 @page "/admin/comptes"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject ToastService Toasts
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Comptes</PageTitle>
 
@@ -72,6 +74,11 @@
                 }
             </div>
         </div>
+        <div class="filters" style="margin:.5rem 0 .9rem">
+            <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous statuts <span class="count">@_users.Count</span></button>
+            <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_users.Count(u => !u.IsDeactivated)</span></button>
+            <button class="filter @(_statusFilter == "inactive" ? "on" : "")" @onclick='() => SetStatusFilter("inactive")'>Désactivés <span class="count">@_users.Count(u => u.IsDeactivated)</span></button>
+        </div>
 
         var urows = FilteredUsers;
         if (urows.Count == 0)
@@ -88,7 +95,15 @@
             var pageRows = urows.Skip((_usersPage - 1) * _usersPageSize).Take(_usersPageSize).ToList();
             <div class="table-wrap">
             <table class="visits">
-                <thead><tr><th>Email</th><th>Nom</th><th>Rôles</th><th>Site</th><th>2FA</th><th>Statut</th><th></th></tr></thead>
+                <thead><tr>
+                    <SortableTh Column="email" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Email</SortableTh>
+                    <SortableTh Column="nom" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Nom</SortableTh>
+                    <th>Rôles</th>
+                    <SortableTh Column="site" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Site</SortableTh>
+                    <th>2FA</th>
+                    <SortableTh Column="statut" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Statut</SortableTh>
+                    <th></th>
+                </tr></thead>
                 <tbody>
                     @foreach (var u in pageRows)
                     {
@@ -148,6 +163,9 @@
 
     private string _userSearch = "";
     private string _roleFilter = "all";
+    private string _statusFilter = "all";
+    private string? _sortColumn;
+    private bool _sortAscending = true;
     private int _usersPage = 1;
     private const int _usersPageSize = 20;
 
@@ -156,7 +174,12 @@
         ("all", "Tous"), ("Admin", "Admin"), ("Surete", "Sûreté"), ("Hote", "Hôte"),
     };
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
+    }
 
     private async Task RefreshAsync()
     {
@@ -165,6 +188,31 @@
         // pour un NOUVEAU rattachement — celui-ci reste géré (édition, désactivation)
         // pour les comptes déjà existants dessus.
         try { _overview = (await Api.GetSiteOverviewAsync()).Where(s => s.IsActive).ToList(); } catch { /* best-effort */ }
+    }
+
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "accounts") return;
+        _ = InvokeAsync(async () =>
+        {
+            try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Live.EntityChanged -= OnEntityChanged;
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAscending = !_sortAscending;
+        else { _sortColumn = column; _sortAscending = true; }
+        _usersPage = 1;
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+        _usersPage = 1;
     }
 
     private int RoleCount(string key) =>
@@ -189,7 +237,7 @@
         return !u.Roles.Contains(NovAccesRoles.SuperAdmin);
     }
 
-    private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; _usersPage = 1; }
+    private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; _statusFilter = "all"; _usersPage = 1; }
 
     private IReadOnlyList<AdminUserDto> FilteredUsers
     {
@@ -200,6 +248,9 @@
             if (_roleFilter != "all")
                 q = q.Where(u => u.Roles.Contains(_roleFilter));
 
+            if (_statusFilter != "all")
+                q = q.Where(u => (_statusFilter == "inactive") == u.IsDeactivated);
+
             var s = _userSearch?.Trim();
             if (!string.IsNullOrEmpty(s))
                 q = q.Where(u =>
@@ -207,7 +258,16 @@
                     (u.DisplayName?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
                     (u.SiteId?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
 
-            return q.OrderBy(u => u.Email).ToList();
+            q = _sortColumn switch
+            {
+                "email" => _sortAscending ? q.OrderBy(u => u.Email) : q.OrderByDescending(u => u.Email),
+                "nom" => _sortAscending ? q.OrderBy(u => u.DisplayName) : q.OrderByDescending(u => u.DisplayName),
+                "site" => _sortAscending ? q.OrderBy(u => u.SiteId) : q.OrderByDescending(u => u.SiteId),
+                "statut" => _sortAscending ? q.OrderBy(u => u.IsDeactivated) : q.OrderByDescending(u => u.IsDeactivated),
+                _ => q.OrderBy(u => u.Email),
+            };
+
+            return q.ToList();
         }
     }
 

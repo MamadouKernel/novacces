@@ -11,6 +11,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<AuthState>();
 builder.Services.AddScoped<NovAccesApiClient>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<AdminLiveUpdates>();
 
 // HttpClient vers l'API. En développement, l'API expose un certificat auto-signé :
 // on accepte n'importe quel certificat UNIQUEMENT en dev. En production, le

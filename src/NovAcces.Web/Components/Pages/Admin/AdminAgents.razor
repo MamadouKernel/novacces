@@ -1,7 +1,9 @@
 @page "/admin/agents"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject ToastService Toasts
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Agents</PageTitle>
 
@@ -36,9 +38,22 @@
         <button class="btn-primary" @onclick="CreateAgentAsync" disabled="@_busy">Créer l'agent</button>
         @if (_agentMsg is not null) { <p class="@(_agentOk ? "info" : "error")">@_agentMsg</p> }
 
-        <div class="table-wrap" style="margin-top:1rem">
+        <div class="field" style="max-width:22rem;margin-top:1rem"><label>Rechercher</label>
+            <input @bind="_search" @bind:event="oninput" @bind:after="() => _agentsPage = 1" placeholder="Matricule ou nom…" /></div>
+        <div class="filters" style="margin-bottom:.9rem">
+            <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous <span class="count">@_agents.Count</span></button>
+            <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_agents.Count(a => a.IsActive)</span></button>
+            <button class="filter @(_statusFilter == "inactive" ? "on" : "")" @onclick='() => SetStatusFilter("inactive")'>Désactivés <span class="count">@_agents.Count(a => !a.IsActive)</span></button>
+        </div>
+
+        <div class="table-wrap">
         <table class="visits">
-            <thead><tr><th>Matricule</th><th>Nom</th><th>Statut</th><th></th></tr></thead>
+            <thead><tr>
+                <SortableTh Column="matricule" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Matricule</SortableTh>
+                <SortableTh Column="nom" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Nom</SortableTh>
+                <SortableTh Column="statut" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Statut</SortableTh>
+                <th></th>
+            </tr></thead>
             <tbody>
                 @foreach (var a in PagedAgents)
                 {
@@ -83,14 +98,14 @@
                         </tr>
                     }
                 }
-                @if (_agents.Count == 0)
+                @if (FilteredAgents.Count == 0)
                 {
-                    <tr><td colspan="4" class="muted">Aucun agent pour ce site.</td></tr>
+                    <tr><td colspan="4" class="muted">@(_agents.Count == 0 ? "Aucun agent pour ce site." : "Aucun agent ne correspond à ce filtre.")</td></tr>
                 }
             </tbody>
         </table>
         </div>
-        <Pagination Page="_agentsPage" PageSize="_agentsPageSize" TotalCount="_agents.Count"
+        <Pagination Page="_agentsPage" PageSize="_agentsPageSize" TotalCount="FilteredAgents.Count"
                     OnPageChanged="p => _agentsPage = p" />
     }
 </section>
@@ -106,8 +121,43 @@
     private string? _agentMsg; private bool _agentOk;
     private int _agentsPage = 1;
     private const int _agentsPageSize = 20;
+
+    private string _search = "";
+    private string _statusFilter = "all";
+    private string? _sortColumn;
+    private bool _sortAscending = true;
+
+    private List<AgentSummaryDto> FilteredAgents =>
+        _agents
+            .Where(a => _statusFilter switch { "active" => a.IsActive, "inactive" => !a.IsActive, _ => true })
+            .Where(a => string.IsNullOrWhiteSpace(_search)
+                || a.Matricule.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || a.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private IEnumerable<AgentSummaryDto> SortedAgents => _sortColumn switch
+    {
+        "matricule" => _sortAscending ? FilteredAgents.OrderBy(a => a.Matricule) : FilteredAgents.OrderByDescending(a => a.Matricule),
+        "nom" => _sortAscending ? FilteredAgents.OrderBy(a => a.DisplayName) : FilteredAgents.OrderByDescending(a => a.DisplayName),
+        "statut" => _sortAscending ? FilteredAgents.OrderBy(a => a.IsActive) : FilteredAgents.OrderByDescending(a => a.IsActive),
+        _ => FilteredAgents
+    };
+
     private IReadOnlyList<AgentSummaryDto> PagedAgents =>
-        _agents.Skip((_agentsPage - 1) * _agentsPageSize).Take(_agentsPageSize).ToList();
+        SortedAgents.Skip((_agentsPage - 1) * _agentsPageSize).Take(_agentsPageSize).ToList();
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAscending = !_sortAscending;
+        else { _sortColumn = column; _sortAscending = true; }
+        _agentsPage = 1;
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+        _agentsPage = 1;
+    }
 
     private string? _reassignMatricule;
     private string _reassignDisplayName = "";
@@ -118,6 +168,8 @@
     protected override async Task OnInitializedAsync()
     {
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
     }
 
     private async Task RefreshAgentsAsync()
@@ -127,6 +179,21 @@
         if (string.IsNullOrEmpty(_agentSite)) return;
         try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
     }
+
+    // Ne rappelle pas RefreshAgentsAsync (elle remet _agentsPage à 1) : une mise
+    // à jour en direct ne doit pas faire perdre à l'opérateur la page qu'il
+    // consulte.
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "agents" || string.IsNullOrEmpty(_agentSite)) return;
+        _ = InvokeAsync(async () =>
+        {
+            try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Live.EntityChanged -= OnEntityChanged;
 
     private async Task CreateAgentAsync()
     {

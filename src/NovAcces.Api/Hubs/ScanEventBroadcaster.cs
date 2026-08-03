@@ -4,7 +4,7 @@ using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Hubs;
 
-public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBroadcaster
+public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBroadcaster, IAdminActivityBroadcaster
 {
     private readonly IHubContext<ScanEventsHub> _hub;
     private readonly ICurrentTenant _tenant;
@@ -52,4 +52,8 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
     public Task BroadcastVisitRevokedAsync(Guid visitId, DateTimeOffset occurredAt, CancellationToken ct) =>
         _hub.Clients.Group(_tenant.SiteId).SendAsync(
             "VisitRevoked", new AgentVisitEventDto(visitId, null, occurredAt), ct);
+
+    public Task NotifyEntityChangedAsync(string kind, CancellationToken ct) =>
+        _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(
+            "AdminEntityChanged", new AdminEntityChangedDto(kind, DateTimeOffset.UtcNow), ct);
 }

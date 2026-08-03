@@ -107,6 +107,7 @@ public static class AdminEndpoints
             IDateTimeProvider clock,
             CurrentTenant tenant,
             IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var reason = request?.Reason?.Trim();
@@ -175,6 +176,8 @@ public static class AdminEndpoints
                     ct);
             }
 
+            await activity.NotifyEntityChangedAsync("accounts", ct);
+
             return Results.Ok(new
             {
                 message = "Compte désactivé. Les données historiques sont conservées.",
@@ -196,6 +199,7 @@ public static class AdminEndpoints
             UserManager<ApplicationUser> users,
             CurrentTenant tenant,
             IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var actor = await users.GetUserAsync(caller);
@@ -231,6 +235,8 @@ public static class AdminEndpoints
                     target.Id.ToString(), "Compte réactivé.", ct);
             }
 
+            await activity.NotifyEntityChangedAsync("accounts", ct);
+
             return Results.Ok(new { message = "Compte réactivé.", userId = target.Id });
         })
         .WithName("AdminReactivateUser")
@@ -248,6 +254,7 @@ public static class AdminEndpoints
             ISiteCatalog sites,
             CurrentTenant tenant,
             IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var role = request.Role?.Trim();
@@ -378,6 +385,8 @@ public static class AdminEndpoints
                     target.Id.ToString(), $"Compte modifié : email « {target.Email} », nom « {displayName} », rôle « {role} », site « {siteId ?? "—"} ».", ct);
             }
 
+            await activity.NotifyEntityChangedAsync("accounts", ct);
+
             return Results.Ok(new { userId = target.Id, target.Email, target.DisplayName, Role = role, target.SiteId });
         })
         .WithName("AdminUpdateUser")
@@ -447,6 +456,7 @@ public static class AdminEndpoints
             ITenantProvisioningService provisioning,
             ISiteCatalog sites,
             ILogger<Program> logger,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var siteId = request.SiteId?.Trim().ToLowerInvariant();
@@ -476,6 +486,7 @@ public static class AdminEndpoints
             // interroger la base à chaque requête : sans invalidation, le site
             // qu'on vient de créer resterait « inconnu » le temps du TTL.
             sites.Invalidate();
+            await activity.NotifyEntityChangedAsync("sites", ct);
 
             return Results.Ok(new { message = $"Site '{siteId}' provisionné." });
         })
@@ -495,6 +506,7 @@ public static class AdminEndpoints
             IDateTimeProvider clock,
             CurrentTenant tenant,
             IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             siteId = siteId.Trim().ToLowerInvariant();
@@ -533,6 +545,8 @@ public static class AdminEndpoints
                 AdminAuditAction.SiteDeactivated, actor.Id.ToString(), siteId,
                 $"Site désactivé. Motif : {reason}", ct);
 
+            await activity.NotifyEntityChangedAsync("sites", ct);
+
             return Results.Ok(new
             {
                 message = "Site désactivé. Les données sont conservées, l'accès est coupé.",
@@ -552,6 +566,7 @@ public static class AdminEndpoints
             ISiteCatalog sites,
             CurrentTenant tenant,
             IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             siteId = siteId.Trim().ToLowerInvariant();
@@ -575,6 +590,8 @@ public static class AdminEndpoints
             tenant.Resolve(siteId);
             await audit.RecordAsync(
                 AdminAuditAction.SiteReactivated, actor.Id.ToString(), siteId, "Site réactivé.", ct);
+
+            await activity.NotifyEntityChangedAsync("sites", ct);
 
             return Results.Ok(new { message = "Site réactivé.", siteId, isActive = true });
         })
@@ -708,6 +725,7 @@ public static class AdminEndpoints
             scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId!);
             var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var activity = scope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
 
             try
             {
@@ -720,6 +738,7 @@ public static class AdminEndpoints
 
             await audit.RecordAsync(AdminAuditAction.AgentCreated, user.HostIdentifier(), matricule!,
                 $"Création de l'agent « {displayName} » (matricule {matricule}).", ct);
+            await activity.NotifyEntityChangedAsync("agents", ct);
 
             return Results.Ok(new { message = $"Agent {matricule} créé pour le site {siteId}." });
         })
@@ -760,6 +779,7 @@ public static class AdminEndpoints
             scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
             var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var activity = scope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
 
             var deactivated = await agents.DeactivateAsync(matricule, ct);
             if (!deactivated)
@@ -767,6 +787,7 @@ public static class AdminEndpoints
 
             await audit.RecordAsync(AdminAuditAction.AgentDeactivated, user.HostIdentifier(), matricule,
                 $"Désactivation de l'agent {matricule} sur le site {siteId}.", ct);
+            await activity.NotifyEntityChangedAsync("agents", ct);
 
             return Results.Ok(new { message = $"Agent {matricule} désactivé sur le site {siteId}." });
         })
@@ -789,6 +810,7 @@ public static class AdminEndpoints
             scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
             var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var activity = scope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
 
             var reactivated = await agents.ReactivateAsync(matricule, ct);
             if (!reactivated)
@@ -796,6 +818,7 @@ public static class AdminEndpoints
 
             await audit.RecordAsync(AdminAuditAction.AgentReactivated, user.HostIdentifier(), matricule,
                 $"Réactivation de l'agent {matricule} sur le site {siteId}.", ct);
+            await activity.NotifyEntityChangedAsync("agents", ct);
 
             return Results.Ok(new { message = $"Agent {matricule} réactivé sur le site {siteId}." });
         })
@@ -812,6 +835,7 @@ public static class AdminEndpoints
             IServiceScopeFactory scopeFactory,
             ISiteCatalog sites,
             ClaimsPrincipal user,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var label = request.Label?.Trim();
@@ -842,6 +866,7 @@ public static class AdminEndpoints
             await RecordOnEachSiteAsync(scopeFactory, siteIds,
                 AdminAuditAction.TerminalCreated, user.HostIdentifier(), id.ToString(),
                 $"Terminal « {label} » enrôlé pour {string.Join(", ", siteIds)}.", ct);
+            await activity.NotifyEntityChangedAsync("terminals", ct);
 
             return Results.Created($"/api/admin/terminals/{id:D}", new CreateTerminalResponseDto(id, label!));
         })
@@ -916,6 +941,7 @@ public static class AdminEndpoints
             ITerminalDirectory terminals,
             IServiceScopeFactory scopeFactory,
             ClaimsPrincipal user,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var before = await terminals.ListAsync(ct);
@@ -928,6 +954,7 @@ public static class AdminEndpoints
             await RecordOnEachSiteAsync(scopeFactory, target.SiteIds,
                 AdminAuditAction.TerminalRevoked, user.HostIdentifier(), id.ToString(),
                 $"Terminal « {target.Label} » révoqué.", ct);
+            await activity.NotifyEntityChangedAsync("terminals", ct);
 
             return Results.Ok(new { message = "Terminal révoqué." });
         })

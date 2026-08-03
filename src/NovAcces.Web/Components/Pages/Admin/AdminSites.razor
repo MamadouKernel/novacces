@@ -1,9 +1,11 @@
 @page "/admin/sites"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject ToastService Toasts
 @inject AuthState Auth
 @inject IJSRuntime JS
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Sites</PageTitle>
 
@@ -48,9 +50,28 @@
     }
     else
     {
+        <div class="field" style="max-width:22rem"><label>Rechercher</label>
+            <input @bind="_search" @bind:event="oninput" @bind:after="() => _sitesPage = 1" placeholder="Identifiant de site…" /></div>
+        <div class="filters" style="margin-bottom:.9rem">
+            <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous <span class="count">@_overview.Count</span></button>
+            <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_overview.Count(s => s.IsActive)</span></button>
+            <button class="filter @(_statusFilter == "inactive" ? "on" : "")" @onclick='() => SetStatusFilter("inactive")'>Désactivés <span class="count">@_overview.Count(s => !s.IsActive)</span></button>
+        </div>
+        @if (FilteredSites.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun site ne correspond à ce filtre.</p></div>
+        }
+        else
+        {
         <div class="table-wrap">
         <table class="visits">
-            <thead><tr><th>Site</th><th>Statut</th><th>Présents</th><th>Scans aujourd'hui</th><th></th></tr></thead>
+            <thead><tr>
+                <SortableTh Column="site" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Site</SortableTh>
+                <SortableTh Column="statut" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Statut</SortableTh>
+                <SortableTh Column="presents" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Présents</SortableTh>
+                <SortableTh Column="scans" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Scans aujourd'hui</SortableTh>
+                <th></th>
+            </tr></thead>
             <tbody>
                 @foreach (var s in PagedSites)
                 {
@@ -103,8 +124,9 @@
             </tbody>
         </table>
         </div>
-        <Pagination Page="_sitesPage" PageSize="_sitesPageSize" TotalCount="_overview.Count"
+        <Pagination Page="_sitesPage" PageSize="_sitesPageSize" TotalCount="FilteredSites.Count"
                     OnPageChanged="p => _sitesPage = p" />
+        }
         <p class="hint">Détail par poste et affluence : voir « Dashboard ». La réactivation d'un site désactivé est réservée au SuperAdmin.</p>
     }
 </section>
@@ -120,15 +142,62 @@
     private string _deactivateReason = "";
     private int _sitesPage = 1;
     private const int _sitesPageSize = 20;
-    private IReadOnlyList<AdminSiteOverviewDto> PagedSites =>
-        _overview.Skip((_sitesPage - 1) * _sitesPageSize).Take(_sitesPageSize).ToList();
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    private string _search = "";
+    private string _statusFilter = "all";
+    private string? _sortColumn;
+    private bool _sortAscending = true;
+
+    private List<AdminSiteOverviewDto> FilteredSites =>
+        _overview
+            .Where(s => _statusFilter switch { "active" => s.IsActive, "inactive" => !s.IsActive, _ => true })
+            .Where(s => string.IsNullOrWhiteSpace(_search) || s.SiteId.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private IEnumerable<AdminSiteOverviewDto> SortedSites => _sortColumn switch
+    {
+        "site" => _sortAscending ? FilteredSites.OrderBy(s => s.SiteId) : FilteredSites.OrderByDescending(s => s.SiteId),
+        "statut" => _sortAscending ? FilteredSites.OrderBy(s => s.IsActive) : FilteredSites.OrderByDescending(s => s.IsActive),
+        "presents" => _sortAscending ? FilteredSites.OrderBy(s => s.OnSite) : FilteredSites.OrderByDescending(s => s.OnSite),
+        "scans" => _sortAscending ? FilteredSites.OrderBy(s => s.ScansToday) : FilteredSites.OrderByDescending(s => s.ScansToday),
+        _ => FilteredSites
+    };
+
+    private IReadOnlyList<AdminSiteOverviewDto> PagedSites =>
+        SortedSites.Skip((_sitesPage - 1) * _sitesPageSize).Take(_sitesPageSize).ToList();
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAscending = !_sortAscending;
+        else { _sortColumn = column; _sortAscending = true; }
+        _sitesPage = 1;
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+        _sitesPage = 1;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
+    }
 
     private async Task RefreshAsync()
     {
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
     }
+
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "sites") return;
+        _ = InvokeAsync(async () => { await RefreshAsync(); StateHasChanged(); });
+    }
+
+    public void Dispose() => Live.EntityChanged -= OnEntityChanged;
 
     private static RenderFragment EmptyIcon() => builder =>
         builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'

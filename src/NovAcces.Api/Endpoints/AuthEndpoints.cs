@@ -183,6 +183,7 @@ public static class AuthEndpoints
             ClaimsPrincipal caller,
             UserManager<ApplicationUser> users,
             ISiteCatalog sites,
+            IAdminActivityBroadcaster activity,
             CancellationToken ct) =>
         {
             var role = request.Role?.Trim();
@@ -232,6 +233,8 @@ public static class AuthEndpoints
 
             if (role == NovAccesRoles.SuperAdmin)
                 await users.AddToRoleAsync(user, NovAccesRoles.Admin);
+
+            await activity.NotifyEntityChangedAsync("accounts", ct);
 
             return Results.Ok(new { user.Id, user.Email, user.DisplayName, Role = role, user.SiteId });
         })

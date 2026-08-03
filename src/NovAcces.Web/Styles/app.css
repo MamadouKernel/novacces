@@ -298,6 +298,12 @@
   .visits tbody tr:hover td { @apply bg-paper/70; }
   .row-security td { @apply bg-nobg/60; }
 
+  /* ---- En-tête de colonne triable (SortableTh, tous les tableaux Admin) ---- */
+  .sortable-th {
+    @apply cursor-pointer select-none whitespace-nowrap transition hover:text-brand-700;
+  }
+  .sort-indicator { @apply ml-1 inline-block text-[0.65rem] text-brand-600; }
+
   /* ---- Pagination (uniforme sur tous les tableaux) ---- */
   .pagination { @apply mt-3 flex flex-wrap items-center justify-between gap-2; }
   .pagination-count { @apply font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted; }

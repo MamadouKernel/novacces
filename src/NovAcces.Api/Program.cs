@@ -87,6 +87,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IScanEventBroadcaster, ScanEventBroadcaster>();
 builder.Services.AddScoped<IAgentEventBroadcaster, ScanEventBroadcaster>();
+builder.Services.AddScoped<IAdminActivityBroadcaster, ScanEventBroadcaster>();
 
 // Supervision des dépassements de durée (§7) : service de fond périodique.
 builder.Services.AddHostedService<OverstayMonitor>();

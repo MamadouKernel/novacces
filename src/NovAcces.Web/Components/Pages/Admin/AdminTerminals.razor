@@ -1,7 +1,9 @@
 @page "/admin/terminaux"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject ToastService Toasts
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Terminaux</PageTitle>
 
@@ -29,10 +31,21 @@
             <input @bind="_newTerminal.Label" placeholder="ex. Poste Entrée A" /></div>
     </div>
     <div class="field">
-        <label>Sites autorisés</label>
+        <label>@(_multiSite ? "Sites autorisés" : "Site")</label>
         @if (_overview.Count == 0)
         {
             <p class="hint">Aucun site provisionné — voir la section « Sites ».</p>
+        }
+        else if (!_multiSite)
+        {
+            <select @bind="_singleSiteId" @bind:after="SyncSingleSite">
+                <option value="">— choisir un site —</option>
+                @foreach (var s in _overview)
+                {
+                    <option value="@s.SiteId">@s.SiteId</option>
+                }
+            </select>
+            <p class="hint">Poste de contrôle fixe : ce terminal ne servira que ce site, sans sélecteur côté agent.</p>
         }
         else
         {
@@ -46,15 +59,34 @@
                     </label>
                 }
             </div>
-            <p class="hint">Un seul site coché : le terminal ne servira que celui-ci, sans sélecteur côté agent. Plusieurs : l'agent choisit le site à la prise de poste.</p>
+            <p class="hint">Terminal itinérant : l'agent choisit le site à la prise de poste.</p>
         }
+        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.6rem;font-weight:400;font-size:0.82rem;" class="muted">
+            <input type="checkbox" checked="@_multiSite" @onchange="e => ToggleMultiSite(e.Value is bool b && b)" />
+            Terminal itinérant — dessert plusieurs sites (cas rare : superviseur mobile, poste de secours)
+        </label>
     </div>
     <button class="btn-primary" @onclick="CreateTerminalAsync" disabled="@_busy">Enrôler le terminal</button>
     @if (_terminalMsg is not null) { <p class="@(_terminalOk ? "info" : "error")">@_terminalMsg</p> }
 
-    <div class="table-wrap" style="margin-top:1rem">
+    <div class="field" style="max-width:22rem;margin-top:1rem"><label>Rechercher</label>
+        <input @bind="_search" @bind:event="oninput" @bind:after="() => _terminalsPage = 1" placeholder="Libellé ou site…" /></div>
+    <div class="filters" style="margin-bottom:.9rem">
+        <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous <span class="count">@_terminals.Count</span></button>
+        <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_terminals.Count(t => t.IsActive && t.IsEnrolled)</span></button>
+        <button class="filter @(_statusFilter == "pending" ? "on" : "")" @onclick='() => SetStatusFilter("pending")'>En attente <span class="count">@_terminals.Count(t => t.IsActive && !t.IsEnrolled)</span></button>
+        <button class="filter @(_statusFilter == "revoked" ? "on" : "")" @onclick='() => SetStatusFilter("revoked")'>Révoqués <span class="count">@_terminals.Count(t => !t.IsActive)</span></button>
+    </div>
+
+    <div class="table-wrap">
     <table class="visits">
-        <thead><tr><th>Libellé</th><th>Sites</th><th>Statut</th><th>Créé le</th><th></th></tr></thead>
+        <thead><tr>
+            <SortableTh Column="libelle" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Libellé</SortableTh>
+            <th>Sites</th>
+            <SortableTh Column="statut" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Statut</SortableTh>
+            <SortableTh Column="cree" SortColumn="_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Créé le</SortableTh>
+            <th></th>
+        </tr></thead>
         <tbody>
             @foreach (var t in PagedTerminals)
             {
@@ -72,14 +104,14 @@
                     </td>
                 </tr>
             }
-            @if (_terminals.Count == 0)
+            @if (FilteredTerminals.Count == 0)
             {
-                <tr><td colspan="5" class="muted">Aucun terminal enrôlé.</td></tr>
+                <tr><td colspan="5" class="muted">@(_terminals.Count == 0 ? "Aucun terminal enrôlé." : "Aucun terminal ne correspond à ce filtre.")</td></tr>
             }
         </tbody>
     </table>
     </div>
-    <Pagination Page="_terminalsPage" PageSize="_terminalsPageSize" TotalCount="_terminals.Count"
+    <Pagination Page="_terminalsPage" PageSize="_terminalsPageSize" TotalCount="FilteredTerminals.Count"
                 OnPageChanged="p => _terminalsPage = p" />
 </section>
 
@@ -88,16 +120,60 @@
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
     private int _terminalsPage = 1;
     private const int _terminalsPageSize = 20;
+
+    private string _search = "";
+    private string _statusFilter = "all";
+    private string? _sortColumn;
+    private bool _sortAscending = true;
+
+    private static string StatusKey(TerminalSummaryDto t) => t.IsActive ? (t.IsEnrolled ? "active" : "pending") : "revoked";
+
+    private List<TerminalSummaryDto> FilteredTerminals =>
+        _terminals
+            .Where(t => _statusFilter == "all" || StatusKey(t) == _statusFilter)
+            .Where(t => string.IsNullOrWhiteSpace(_search)
+                || t.Label.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || t.SiteIds.Any(s => s.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+    private IEnumerable<TerminalSummaryDto> SortedTerminals => _sortColumn switch
+    {
+        "libelle" => _sortAscending ? FilteredTerminals.OrderBy(t => t.Label) : FilteredTerminals.OrderByDescending(t => t.Label),
+        "statut" => _sortAscending ? FilteredTerminals.OrderBy(t => StatusKey(t)) : FilteredTerminals.OrderByDescending(t => StatusKey(t)),
+        "cree" => _sortAscending ? FilteredTerminals.OrderBy(t => t.CreatedAt) : FilteredTerminals.OrderByDescending(t => t.CreatedAt),
+        _ => FilteredTerminals
+    };
+
     private IReadOnlyList<TerminalSummaryDto> PagedTerminals =>
-        _terminals.Skip((_terminalsPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
+        SortedTerminals.Skip((_terminalsPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAscending = !_sortAscending;
+        else { _sortColumn = column; _sortAscending = true; }
+        _terminalsPage = 1;
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+        _terminalsPage = 1;
+    }
 
     private sealed class NewTerminal { public string Label = ""; public HashSet<string> SiteIds = new(); }
     private readonly NewTerminal _newTerminal = new();
+    private bool _multiSite;
+    private string _singleSiteId = "";
     private IReadOnlyList<TerminalSummaryDto> _terminals = Array.Empty<TerminalSummaryDto>();
     private string? _terminalMsg; private bool _terminalOk;
     private EnrollmentTicketResponseDto? _lastEnrollmentTicket;
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
+    }
 
     private async Task RefreshAsync()
     {
@@ -107,10 +183,43 @@
         try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
     }
 
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "terminals") return;
+        _ = InvokeAsync(async () =>
+        {
+            try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Live.EntityChanged -= OnEntityChanged;
+
     private void ToggleTerminalSite(string siteId, bool isChecked)
     {
         if (isChecked) _newTerminal.SiteIds.Add(siteId);
         else _newTerminal.SiteIds.Remove(siteId);
+    }
+
+    private void SyncSingleSite()
+    {
+        _newTerminal.SiteIds.Clear();
+        if (!string.IsNullOrEmpty(_singleSiteId)) _newTerminal.SiteIds.Add(_singleSiteId);
+    }
+
+    // Basculer vers « site unique » alors que plusieurs étaient cochés ne doit
+    // pas garder un état multi-sites caché : on ne conserve que le premier,
+    // sans quoi désactiver la case laisserait un terminal enrôlé sur plusieurs
+    // sites sans que l'écran ne le montre plus.
+    private void ToggleMultiSite(bool value)
+    {
+        _multiSite = value;
+        if (!_multiSite)
+        {
+            _singleSiteId = _newTerminal.SiteIds.FirstOrDefault() ?? "";
+            _newTerminal.SiteIds.Clear();
+            if (!string.IsNullOrEmpty(_singleSiteId)) _newTerminal.SiteIds.Add(_singleSiteId);
+        }
     }
 
     private async Task CreateTerminalAsync()
@@ -151,6 +260,8 @@
                 }
                 _newTerminal.Label = "";
                 _newTerminal.SiteIds.Clear();
+                _singleSiteId = "";
+                _multiSite = false;
                 await RefreshAsync();
             }
             else { Toasts.Error(error ?? "Enrôlement refusé."); }

@@ -1,0 +1,16 @@
+@* En-tête de colonne triable, réutilisable sur tous les tableaux Admin.
+   L'état du tri (colonne + sens) vit dans la page hôte — ce composant ne
+   fait qu'afficher et déclencher le changement, pas de logique de tri ici. *@
+
+<th class="sortable-th" @onclick="() => OnSort.InvokeAsync(Column)">
+    @ChildContent
+    <span class="sort-indicator">@(SortColumn == Column ? (SortAscending ? "▲" : "▼") : "")</span>
+</th>
+
+@code {
+    [Parameter] public string Column { get; set; } = "";
+    [Parameter] public string? SortColumn { get; set; }
+    [Parameter] public bool SortAscending { get; set; }
+    [Parameter] public EventCallback<string> OnSort { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

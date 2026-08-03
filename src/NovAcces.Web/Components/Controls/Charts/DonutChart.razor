@@ -1,0 +1,56 @@
+@* Graphique circulaire (anneau) — SVG pur, sans dépendance JS. Impossible à
+   faire proprement avec la technique précédente (div + height%) : le premier
+   vrai « circulaire » de l'app. Un cercle par segment, tracé via
+   stroke-dasharray/stroke-dashoffset sur un même cercle de base. *@
+@using System.Globalization
+
+<div class="donut">
+    <svg viewBox="0 0 120 120" class="donut-svg">
+        <circle cx="60" cy="60" r="@Radius" fill="none" class="donut-track" stroke-width="@StrokeWidth" />
+        @{
+            var total = Data.Sum(d => d.Value);
+            var offset = 0.0;
+        }
+        @foreach (var d in Data.Where(d => d.Value > 0))
+        {
+            var frac = total > 0 ? d.Value / total : 0;
+            var length = frac * Circumference;
+            var dashArray = $"{Fmt(length)} {Fmt(Circumference - length)}";
+            var dashOffset = Fmt(-offset);
+            <circle cx="60" cy="60" r="@Radius" fill="none" stroke="@(d.Color ?? "var(--chart-bar)")"
+                    stroke-width="@StrokeWidth" stroke-dasharray="@dashArray" stroke-dashoffset="@dashOffset"
+                    transform="rotate(-90 60 60)" class="donut-seg">
+                <title>@(d.Tooltip ?? $"{d.Label} : {d.Value:0.#} ({frac:P0})")</title>
+            </circle>
+            offset += length;
+        }
+    </svg>
+    @if (!string.IsNullOrEmpty(CenterValue) || !string.IsNullOrEmpty(CenterLabel))
+    {
+        <div class="donut-center">
+            @if (!string.IsNullOrEmpty(CenterValue)) { <span class="donut-center-value">@CenterValue</span> }
+            @if (!string.IsNullOrEmpty(CenterLabel)) { <span class="donut-center-label">@CenterLabel</span> }
+        </div>
+    }
+</div>
+@if (ShowLegend)
+{
+    <ul class="chartlegend">
+        @foreach (var d in Data)
+        {
+            <li><span class="swatch" style="background:@(d.Color ?? "var(--chart-bar)")"></span>@d.Label <strong>@(d.Value.ToString("0.#"))</strong></li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<ChartPoint> Data { get; set; } = Array.Empty<ChartPoint>();
+    [Parameter] public string? CenterValue { get; set; }
+    [Parameter] public string? CenterLabel { get; set; }
+    [Parameter] public bool ShowLegend { get; set; } = true;
+    [Parameter] public double Radius { get; set; } = 45;
+    [Parameter] public double StrokeWidth { get; set; } = 16;
+
+    private double Circumference => 2 * Math.PI * Radius;
+    private static string Fmt(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+}

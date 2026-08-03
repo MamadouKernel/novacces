@@ -160,7 +160,7 @@ else if (CanViewDashboard)
     @if (_searchResults is not null)
     {
         <section class="card" style="margin-bottom:1rem;">
-            <h2>Résultats de recherche (@_searchResults.Count)</h2>
+            <h2>Résultats de recherche</h2>
             <div class="table-wrap">
             <table class="visits">
                 <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Détail</th></tr></thead>
@@ -177,6 +177,8 @@ else if (CanViewDashboard)
                 </tbody>
             </table>
             </div>
+            <Pagination Page="_searchPage" PageSize="_searchPageSize" TotalCount="_searchTotal"
+                        OnPageChanged="ChangeSearchPageAsync" />
         </section>
     }
 
@@ -300,7 +302,7 @@ else if (CanViewDashboard)
                 <table class="visits">
                     <thead><tr><th>Nom</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
                     <tbody>
-                        @foreach (var e in _exclusions)
+                        @foreach (var e in PagedExclusions)
                         {
                             <tr>
                                 <td>@e.DisplayName</td>
@@ -313,6 +315,8 @@ else if (CanViewDashboard)
                     </tbody>
                 </table>
                 </div>
+                <Pagination Page="_exclusionsPage" PageSize="_exclusionsPageSize" TotalCount="_exclusions.Count"
+                            OnPageChanged="p => _exclusionsPage = p" />
             }
         </section>
     }
@@ -351,8 +355,15 @@ else if (CanViewDashboard)
     private DashboardSummaryDto? _summary;
     private readonly List<OverstayAlertDto> _overstayAlerts = new();
     private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
+    private int _exclusionsPage = 1;
+    private const int _exclusionsPageSize = 20;
+    private IReadOnlyList<ExclusionDto> PagedExclusions =>
+        _exclusions.Skip((_exclusionsPage - 1) * _exclusionsPageSize).Take(_exclusionsPageSize).ToList();
     private string _searchTerm = "";
     private IReadOnlyList<ScanJournalEntryDto>? _searchResults;
+    private int _searchPage = 1;
+    private const int _searchPageSize = 20;
+    private int _searchTotal;
     private string _exclName = "";
     private string _exclReason = "";
     private bool _exclBusy;
@@ -630,13 +641,27 @@ else if (CanViewDashboard)
     private async Task SearchJournalAsync()
     {
         if (string.IsNullOrWhiteSpace(_searchTerm)) { _searchResults = null; return; }
-        try { _searchResults = await Api.GetJournalAsync(100, _searchTerm); } catch { /* best-effort */ }
+        await ChangeSearchPageAsync(1);
+    }
+
+    private async Task ChangeSearchPageAsync(int page)
+    {
+        _searchPage = page;
+        try
+        {
+            var result = await Api.GetJournalPagedAsync(page, _searchPageSize, _searchTerm);
+            _searchResults = result.Items;
+            _searchTotal = result.TotalCount;
+        }
+        catch { /* best-effort */ }
     }
 
     private void ClearSearch()
     {
         _searchTerm = "";
         _searchResults = null;
+        _searchPage = 1;
+        _searchTotal = 0;
     }
 
     private async Task ExportCsvAsync()

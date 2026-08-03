@@ -204,14 +204,22 @@ public sealed class NovAccesApiClient
         return ReissueQrOutcome.Failed("Impossible de récupérer ce QR pour le moment.");
     }
 
-    /// <summary>Journal des derniers scans du site, avec recherche optionnelle.</summary>
-    public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 50, string? query = null)
+    /// <summary>Aperçu des derniers scans du site (flux temps réel initial) — non paginé.</summary>
+    public async Task<IReadOnlyList<ScanJournalEntryDto>> GetJournalAsync(int limit = 20)
     {
-        var url = $"/api/dashboard/journal?limit={limit}";
+        var page = await GetJournalPagedAsync(1, limit);
+        return page.Items;
+    }
+
+    /// <summary>Page de résultats du journal du site, avec recherche optionnelle.</summary>
+    public async Task<PagedResultDto<ScanJournalEntryDto>> GetJournalPagedAsync(
+        int page, int pageSize, string? query = null)
+    {
+        var url = $"/api/dashboard/journal?page={page}&pageSize={pageSize}";
         if (!string.IsNullOrWhiteSpace(query))
             url += $"&q={Uri.EscapeDataString(query.Trim())}";
-        var result = await CreateClient(true).GetFromJsonAsync<List<ScanJournalEntryDto>>(url);
-        return result ?? new List<ScanJournalEntryDto>();
+        var result = await CreateClient(true).GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(url);
+        return result ?? new PagedResultDto<ScanJournalEntryDto>(Array.Empty<ScanJournalEntryDto>(), page, pageSize, 0);
     }
 
     /// <summary>Visiteurs actuellement présents sur le site.</summary>
@@ -334,20 +342,29 @@ public sealed class NovAccesApiClient
     /// Journal d'audit des actions privilégiées d'UN site (§8.5) — endpoint
     /// tenant-résolu par en-tête, l'Admin global n'a pas de site dans son jeton.
     /// </summary>
-    public async Task<IReadOnlyList<AdminAuditDto>> GetAdminAuditAsync(string siteId, int limit = 100)
+    /// <summary>Aperçu des dernières entrées d'audit du site (ex. « Activité récente ») — non paginé.</summary>
+    public async Task<IReadOnlyList<AdminAuditDto>> GetAdminAuditAsync(string siteId, int limit = 8)
+    {
+        var page = await GetAdminAuditPagedAsync(siteId, 1, limit);
+        return page.Items;
+    }
+
+    /// <summary>Page du journal d'audit du site.</summary>
+    public async Task<PagedResultDto<AdminAuditDto>> GetAdminAuditPagedAsync(string siteId, int page, int pageSize)
     {
         var client = CreateClient(true);
         client.DefaultRequestHeaders.Remove("X-Site-Id");
         client.DefaultRequestHeaders.Add("X-Site-Id", siteId);
-        var result = await client.GetFromJsonAsync<List<AdminAuditDto>>($"/api/audit?limit={limit}");
-        return result ?? new List<AdminAuditDto>();
+        var result = await client.GetFromJsonAsync<PagedResultDto<AdminAuditDto>>($"/api/audit?page={page}&pageSize={pageSize}");
+        return result ?? new PagedResultDto<AdminAuditDto>(Array.Empty<AdminAuditDto>(), page, pageSize, 0);
     }
 
     /// <summary>Journal technique global de toutes les requêtes API (SuperAdmin uniquement).</summary>
-    public async Task<IReadOnlyList<ApplicationAuditDto>> GetApplicationAuditAsync(int limit = 200)
+    public async Task<PagedResultDto<ApplicationAuditDto>> GetApplicationAuditPagedAsync(int page, int pageSize)
     {
-        var result = await CreateClient(true).GetFromJsonAsync<List<ApplicationAuditDto>>($"/api/audit/application?limit={limit}");
-        return result ?? new List<ApplicationAuditDto>();
+        var result = await CreateClient(true)
+            .GetFromJsonAsync<PagedResultDto<ApplicationAuditDto>>($"/api/audit/application?page={page}&pageSize={pageSize}");
+        return result ?? new PagedResultDto<ApplicationAuditDto>(Array.Empty<ApplicationAuditDto>(), page, pageSize, 0);
     }
 
     /// <summary>Contenu CSV du journal technique global (SuperAdmin uniquement).</summary>

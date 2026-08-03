@@ -40,7 +40,7 @@
         <table class="visits">
             <thead><tr><th>Matricule</th><th>Nom</th><th>Statut</th><th></th></tr></thead>
             <tbody>
-                @foreach (var a in _agents)
+                @foreach (var a in PagedAgents)
                 {
                     <tr>
                         <td><strong>@a.Matricule</strong></td>
@@ -90,6 +90,8 @@
             </tbody>
         </table>
         </div>
+        <Pagination Page="_agentsPage" PageSize="_agentsPageSize" TotalCount="_agents.Count"
+                    OnPageChanged="p => _agentsPage = p" />
     }
 </section>
 
@@ -102,6 +104,10 @@
     private string _agentSite = "";
     private IReadOnlyList<AgentSummaryDto> _agents = Array.Empty<AgentSummaryDto>();
     private string? _agentMsg; private bool _agentOk;
+    private int _agentsPage = 1;
+    private const int _agentsPageSize = 20;
+    private IReadOnlyList<AgentSummaryDto> PagedAgents =>
+        _agents.Skip((_agentsPage - 1) * _agentsPageSize).Take(_agentsPageSize).ToList();
 
     private string? _reassignMatricule;
     private string _reassignDisplayName = "";
@@ -117,6 +123,7 @@
     private async Task RefreshAgentsAsync()
     {
         _agents = Array.Empty<AgentSummaryDto>();
+        _agentsPage = 1;
         if (string.IsNullOrEmpty(_agentSite)) return;
         try { _agents = await Api.GetAgentsAsync(_agentSite); } catch { /* best-effort */ }
     }

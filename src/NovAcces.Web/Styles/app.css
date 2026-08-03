@@ -115,6 +115,20 @@
 
   /* Conteneurs — NE PAS nommer « .grid » (utilitaire Tailwind natif). */
   .cards { display: grid; @apply grid-cols-1 gap-5 lg:grid-cols-2; }
+
+  /* ---- Bandeau de rôle (Dashboard Admin) ---- */
+  .role-banner {
+    @apply mb-4 flex items-center gap-3 rounded-lg border-l-4 px-4 py-3 text-sm;
+  }
+  .role-banner strong { @apply mr-1.5 font-display text-base; }
+  .role-banner span { @apply text-ink2; }
+  .role-banner-admin { @apply border-l-brand-600 bg-brand-50 text-brand-700; }
+  .role-banner-super { @apply border-l-amber-500 bg-amber-50 text-amber-700; }
+
+  /* ---- Grille de cartes-graphiques (Dashboard Admin, § Analyse & tendances) ---- */
+  .chart-grid { @apply grid grid-cols-1 gap-5 md:grid-cols-2; }
+  .chart-card { @apply rounded-md border border-line bg-paper/60 p-4; }
+  .chart-card-donut { @apply flex flex-col items-center text-center; }
   .row   { display: grid; @apply grid-cols-1 gap-4 sm:grid-cols-2; }
 
   /* ---- Champs de formulaire ---- */
@@ -273,6 +287,13 @@
   .visits tbody tr:hover td { @apply bg-paper/70; }
   .row-security td { @apply bg-nobg/60; }
 
+  /* ---- Pagination (uniforme sur tous les tableaux) ---- */
+  .pagination { @apply mt-3 flex flex-wrap items-center justify-between gap-2; }
+  .pagination-count { @apply font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted; }
+  .pagination-nav { @apply flex items-center gap-2; }
+  .pagination-nav .btn-ghost { @apply px-3 py-1.5 text-sm; }
+  .pagination-page { @apply font-mono text-[0.75rem] text-ink2; }
+
   /* ---- Pastilles d'état (pi-* de la maquette) ---- */
   .badge {
     @apply inline-flex items-center gap-1 rounded px-2 py-0.5 text-[0.7rem] font-semibold;
@@ -373,6 +394,30 @@
   .stack-seg.seg-denied { @apply bg-amber-500; }
   .stack-legend { @apply mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.65rem] text-muted; }
   .stack-legend .sw { @apply mr-1 inline-block h-2.5 w-2.5 rounded-sm align-middle; }
+
+  /* ---- Graphiques SVG réutilisables (BarChart / StackedBarChart / DonutChart) ---- */
+  .svgchart { --chart-bar: #2f5c6d; --chart-peak: #f5a300; }
+  .svgchart-svg { @apply w-full overflow-visible; }
+  .svgchart-bar { @apply transition-[fill] duration-300; }
+  .svgchart-baseline { @apply stroke-line; stroke-width: 0.5; }
+  .svgchart-labels {
+    @apply mt-1.5 flex justify-between font-mono text-[0.6rem] text-muted;
+  }
+
+  .chartlegend { @apply mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[0.65rem] text-muted; }
+  .chartlegend .swatch { @apply mr-1 inline-block h-2.5 w-2.5 rounded-sm align-middle; }
+  .swatch { @apply mr-1 inline-block h-2.5 w-2.5 rounded-sm align-middle; }
+
+  /* ---- Graphique circulaire (anneau) ---- */
+  .donut { @apply relative mx-auto w-full max-w-[9rem]; }
+  .donut-svg { @apply w-full; }
+  .donut-track { @apply stroke-paper; }
+  .donut-seg { @apply transition-[stroke-dashoffset] duration-500; }
+  .donut-center {
+    @apply pointer-events-none absolute inset-0 flex flex-col items-center justify-center;
+  }
+  .donut-center-value { @apply font-display text-xl font-bold leading-none text-brand-700; }
+  .donut-center-label { @apply mt-1 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-muted; }
 
   /* ---- Mode « salle de supervision » (control-room plein écran) ---- */
   .wall { @apply fixed inset-0 z-[70] flex flex-col gap-4 overflow-auto bg-brand-950 p-5 text-white; }

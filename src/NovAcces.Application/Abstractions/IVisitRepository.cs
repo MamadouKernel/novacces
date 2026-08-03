@@ -75,6 +75,14 @@ public interface IScanLogRepository
     /// </summary>
     Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct);
 
+    /// <summary>
+    /// Page de résultats de recherche dans le journal, avec le total réel —
+    /// distinct de GetRecentAsync (aperçu tronqué, utilisé pour le flux temps
+    /// réel initial et l'export CSV, pas pour l'écran de recherche paginé).
+    /// </summary>
+    Task<(IReadOnlyCollection<ScanLogEntry> Items, int TotalCount)> GetPagedAsync(
+        int page, int pageSize, string? query, CancellationToken ct);
+
     /// <summary>Scans depuis un instant donné (synthèse quotidienne).</summary>
     Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct);
 

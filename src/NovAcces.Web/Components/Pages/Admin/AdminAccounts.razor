@@ -61,12 +61,12 @@
     {
         <div class="toolbar">
             <input class="search" placeholder="Rechercher un email, un nom, un site…"
-                   @bind="_userSearch" @bind:event="oninput" />
+                   @bind="_userSearch" @bind:event="oninput" @bind:after="() => _usersPage = 1" />
             <div class="filters">
                 @foreach (var f in RoleFilters)
                 {
                     <button class="filter @(_roleFilter == f.Key ? "on" : "")"
-                            @onclick="() => _roleFilter = f.Key">
+                            @onclick="() => { _roleFilter = f.Key; _usersPage = 1; }">
                         @f.Label <span class="count">@RoleCount(f.Key)</span>
                     </button>
                 }
@@ -83,11 +83,14 @@
         }
         else
         {
+            var pageCount = (int)Math.Ceiling(urows.Count / (double)_usersPageSize);
+            if (_usersPage > pageCount) { _usersPage = pageCount; }
+            var pageRows = urows.Skip((_usersPage - 1) * _usersPageSize).Take(_usersPageSize).ToList();
             <div class="table-wrap">
             <table class="visits">
                 <thead><tr><th>Email</th><th>Nom</th><th>Rôles</th><th>Site</th><th>2FA</th><th>Statut</th><th></th></tr></thead>
                 <tbody>
-                    @foreach (var u in urows)
+                    @foreach (var u in pageRows)
                     {
                         <tr>
                             <td>@Highlight(u.Email)</td>
@@ -112,7 +115,8 @@
                 </tbody>
             </table>
             </div>
-            <p class="hint">@urows.Count compte(s) affiché(s) sur @_users.Count.</p>
+            <Pagination Page="_usersPage" PageSize="_usersPageSize" TotalCount="urows.Count"
+                        OnPageChanged="p => _usersPage = p" />
         }
     }
 </section>
@@ -144,6 +148,8 @@
 
     private string _userSearch = "";
     private string _roleFilter = "all";
+    private int _usersPage = 1;
+    private const int _usersPageSize = 20;
 
     private static readonly (string Key, string Label)[] RoleFilters =
     {
@@ -183,7 +189,7 @@
         return !u.Roles.Contains(NovAccesRoles.SuperAdmin);
     }
 
-    private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; }
+    private void ResetUserFilters() { _userSearch = ""; _roleFilter = "all"; _usersPage = 1; }
 
     private IReadOnlyList<AdminUserDto> FilteredUsers
     {

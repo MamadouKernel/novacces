@@ -1,0 +1,73 @@
+@* Graphique en barres empilées (plusieurs séries par catégorie) — SVG pur.
+   Ex. Entrées/Sorties/Refus par jour. Une catégorie par entrée de Labels,
+   une série par entrée de Series (même longueur que Labels). *@
+@using System.Globalization
+
+<div class="svgchart">
+    <svg viewBox="0 0 @ViewWidth @ViewHeight" preserveAspectRatio="none" class="svgchart-svg" style="height:@(HeightPx)px">
+        @{
+            var n = Math.Max(1, Labels.Count);
+            var totals = Enumerable.Range(0, Labels.Count)
+                .Select(i => Series.Sum(s => s.Values.Count > i ? s.Values[i] : 0))
+                .ToList();
+            var max = totals.Count == 0 ? 0 : totals.Max();
+            var gap = 3.0;
+            var barWidth = (ViewWidth - gap * (n + 1)) / n;
+        }
+        @for (var i = 0; i < Labels.Count; i++)
+        {
+            var x = gap + i * (barWidth + gap);
+            var yCursor = ViewHeight;
+            @foreach (var s in Series)
+            {
+                var v = s.Values.Count > i ? s.Values[i] : 0;
+                var h = max > 0 ? v / max * ViewHeight : 0;
+                var y = yCursor - h;
+                yCursor = y;
+                if (v <= 0) { continue; }
+                <rect x="@Fmt(x)" y="@Fmt(y)" width="@Fmt(barWidth)" height="@Fmt(h)" fill="@s.Color" class="svgchart-bar">
+                    <title>@Labels[i] — @s.Name : @(v.ToString("0.#"))</title>
+                </rect>
+            }
+        }
+    </svg>
+    @if (ShowLabels && Labels.Count > 0)
+    {
+        <div class="svgchart-labels">
+            @foreach (var l in LabelsToShow())
+            {
+                <span>@l</span>
+            }
+        </div>
+    }
+    @if (ShowLegend)
+    {
+        <ul class="chartlegend">
+            @foreach (var s in Series)
+            {
+                <li><span class="swatch" style="background:@s.Color"></span>@s.Name</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<string> Labels { get; set; } = Array.Empty<string>();
+    [Parameter] public IReadOnlyList<ChartSeries> Series { get; set; } = Array.Empty<ChartSeries>();
+    [Parameter] public int HeightPx { get; set; } = 120;
+    [Parameter] public bool ShowLabels { get; set; } = true;
+    [Parameter] public bool ShowLegend { get; set; } = true;
+    [Parameter] public int MaxLabels { get; set; } = 8;
+
+    private const double ViewWidth = 300;
+    private const double ViewHeight = 100;
+
+    private static string Fmt(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private IEnumerable<string> LabelsToShow()
+    {
+        if (MaxLabels <= 0 || Labels.Count <= MaxLabels) return Labels;
+        var step = (int)Math.Ceiling(Labels.Count / (double)MaxLabels);
+        return Labels.Where((_, i) => i % step == 0);
+    }
+}

@@ -1,0 +1,38 @@
+@* Contrôle de pagination réutilisable — même convention sur tous les tableaux
+   de l'app (voir PagedResultDto côté API). Reste affiché même sur une seule
+   page (cohérence visuelle demandée), boutons simplement désactivés aux bornes. *@
+
+<div class="pagination">
+    <span class="pagination-count">
+        @if (TotalCount == 0)
+        {
+            <text>Aucun résultat.</text>
+        }
+        else
+        {
+            <text>@FirstItemIndex–@LastItemIndex sur @TotalCount</text>
+        }
+    </span>
+    <div class="pagination-nav">
+        <button class="btn-ghost" @onclick="() => ChangePage(Page - 1)" disabled="@(Page <= 1)">← Précédent</button>
+        <span class="pagination-page">Page @Page / @TotalPages</span>
+        <button class="btn-ghost" @onclick="() => ChangePage(Page + 1)" disabled="@(Page >= TotalPages)">Suivant →</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public int TotalCount { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private int TotalPages => TotalCount == 0 ? 1 : (int)Math.Ceiling(TotalCount / (double)PageSize);
+    private int FirstItemIndex => TotalCount == 0 ? 0 : (Page - 1) * PageSize + 1;
+    private int LastItemIndex => Math.Min(Page * PageSize, TotalCount);
+
+    private async Task ChangePage(int page)
+    {
+        if (page < 1 || page > TotalPages || page == Page) return;
+        await OnPageChanged.InvokeAsync(page);
+    }
+}

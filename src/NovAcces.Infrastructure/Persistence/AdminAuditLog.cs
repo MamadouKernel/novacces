@@ -38,4 +38,15 @@ public sealed class AdminAuditLog : IAdminAuditLog
             .Take(limit)
             .ToListAsync(ct);
     }
+
+    public async Task<(IReadOnlyList<AdminAuditEntry> Items, int TotalCount)> GetPagedAsync(
+        int page, int pageSize, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var query = _db.AdminAudit.AsNoTracking().OrderByDescending(e => e.Timestamp);
+
+        var total = await query.CountAsync(ct);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        return (items, total);
+    }
 }

@@ -1,0 +1,60 @@
+@* Graphique en barres verticales — SVG pur, sans dépendance JS, palette navy/ambre.
+   Remplace les anciennes barres en <div style="height:%">. Une barre par point,
+   la plus haute est mise en avant (ambre) sauf couleur explicite fournie. *@
+@using System.Globalization
+
+<div class="svgchart">
+    <svg viewBox="0 0 @ViewWidth @ViewHeight" preserveAspectRatio="none" class="svgchart-svg" style="height:@(HeightPx)px">
+        @{
+            var max = Data.Count == 0 ? 0 : Data.Max(d => d.Value);
+            var n = Math.Max(1, Data.Count);
+            var gap = 2.0;
+            var barWidth = (ViewWidth - gap * (n + 1)) / n;
+            var plotHeight = ViewHeight - AxisReserve;
+        }
+        @for (var i = 0; i < Data.Count; i++)
+        {
+            var d = Data[i];
+            var h = max > 0 ? Math.Max(d.Value > 0 ? 1.5 : 0, d.Value / max * plotHeight) : 0;
+            var x = gap + i * (barWidth + gap);
+            var y = plotHeight - h;
+            var isPeak = max > 0 && d.Value == max;
+            var fill = d.Color ?? (isPeak ? "var(--chart-peak)" : "var(--chart-bar)");
+            <rect x="@Fmt(x)" y="@Fmt(y)" width="@Fmt(barWidth)" height="@Fmt(h)" rx="1.5" fill="@fill" class="svgchart-bar">
+                <title>@(d.Tooltip ?? $"{d.Label} : {d.Value:0.#}")</title>
+            </rect>
+        }
+        @* Ligne de base *@
+        <line x1="0" y1="@Fmt(plotHeight)" x2="@ViewWidth" y2="@Fmt(plotHeight)" class="svgchart-baseline" />
+    </svg>
+    @if (ShowLabels && Data.Count > 0)
+    {
+        <div class="svgchart-labels">
+            @foreach (var d in LabelsToShow())
+            {
+                <span>@d.Label</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ChartPoint> Data { get; set; } = Array.Empty<ChartPoint>();
+    [Parameter] public int HeightPx { get; set; } = 100;
+    [Parameter] public bool ShowLabels { get; set; } = true;
+    /// <summary>Limite le nombre de libellés affichés sous l'axe (évite le chevauchement sur 24h/30j) — 0 = tous.</summary>
+    [Parameter] public int MaxLabels { get; set; } = 8;
+
+    private const double ViewWidth = 300;
+    private const double ViewHeight = 100;
+    private const double AxisReserve = 0;
+
+    private static string Fmt(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private IEnumerable<ChartPoint> LabelsToShow()
+    {
+        if (MaxLabels <= 0 || Data.Count <= MaxLabels) return Data;
+        var step = (int)Math.Ceiling(Data.Count / (double)MaxLabels);
+        return Data.Where((_, i) => i % step == 0);
+    }
+}

@@ -14,6 +14,12 @@ public interface IAdminAuditLog
     /// <summary>Enregistre une action privilégiée. L'horodatage est posé côté serveur.</summary>
     Task RecordAsync(AdminAuditAction action, string actor, string? targetId, string detail, CancellationToken ct);
 
-    /// <summary>Retourne les entrées les plus récentes (consultation Sûreté/Admin).</summary>
+    /// <summary>Retourne les entrées les plus récentes (aperçu — ex. « Activité récente » du dashboard).</summary>
     Task<IReadOnlyList<AdminAuditEntry>> GetRecentAsync(int limit, CancellationToken ct);
+
+    /// <summary>
+    /// Page du journal complet (écran « Audit »), avec le total réel — distinct
+    /// de GetRecentAsync qui ne sert qu'un aperçu tronqué sans pagination.
+    /// </summary>
+    Task<(IReadOnlyList<AdminAuditEntry> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, CancellationToken ct);
 }

@@ -300,9 +300,9 @@ public sealed class AuthEndpointsTests
             Assert.True(Convert.ToBoolean(await command.ExecuteScalarAsync()));
         }
 
-        var audit = await adminClient.GetFromJsonAsync<List<ApplicationAuditDto>>(
+        var audit = await adminClient.GetFromJsonAsync<PagedResultDto<ApplicationAuditDto>>(
             "/api/audit/application", Json);
-        Assert.Contains(audit!, e =>
+        Assert.Contains(audit!.Items, e =>
             e.Path.Contains($"/api/admin/users/{target.Id:D}/deactivate", StringComparison.Ordinal)
             && e.Method == "POST");
     }

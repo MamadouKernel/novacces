@@ -26,19 +26,20 @@ public static class DashboardEndpoints
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard")
             .RequireAuthorization(NovAccesPolicies.SecurityJournal);
 
-        group.MapGet("/journal", async (IScanLogRepository logs, int? limit, string? q, CancellationToken ct) =>
+        group.MapGet("/journal", async (
+            IScanLogRepository logs, int? page, int? pageSize, string? q, CancellationToken ct) =>
         {
-            var take = Math.Clamp(limit ?? 50, 1, 200);
-            var entries = await logs.GetRecentAsync(take, q, ct);
+            var (p, size) = PaginationQuery.Normalize(page, pageSize, defaultPageSize: 20, maxPageSize: 200);
+            var (entries, total) = await logs.GetPagedAsync(p, size, q, ct);
 
             var dto = entries.Select(e => new ScanJournalEntryDto(
                 e.Timestamp, e.VisitorName, e.AgentId, e.Direction.ToString(),
                 e.WasGranted, e.WasCheckOut, e.IsSecurityEvent, e.Detail)).ToList();
 
-            return Results.Ok(dto);
+            return Results.Ok(new PagedResultDto<ScanJournalEntryDto>(dto, p, size, total));
         })
         .WithName("ScanJournal")
-        .WithSummary("Derniers scans journalisés du site (recherche via 'q').");
+        .WithSummary("Scans journalisés du site, paginés (recherche via 'q').");
 
         group.MapGet("/on-site", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {

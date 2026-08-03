@@ -14,13 +14,17 @@ public static class VisitEndpoints
         var group = app.MapGroup("/api/visits").WithTags("Visits");
 
         // Liste des demandes de l'hôte connecté (REQ-F-09 : support de la révocation).
+        // Volume borné par nature (les visites d'UN hôte, pas du site entier) :
+        // chargé en une fois jusqu'au plafond, recherche/tri/pagination faits
+        // côté client sur cet ensemble — pas de pagination serveur nécessaire
+        // ici, à la différence du journal ou de l'audit (volumes eux non bornés).
         group.MapGet("/mine", async (
             ClaimsPrincipal user,
             IVisitRepository visits,
             int? limit,
             CancellationToken ct) =>
         {
-            var take = Math.Clamp(limit ?? 50, 1, 200);
+            var take = Math.Clamp(limit ?? 200, 1, 200);
             var mine = await visits.GetByHostAsync(user.HostIdentifier(), take, ct);
 
             var dto = mine.Select(v => new HostVisitDto(

@@ -52,7 +52,7 @@
         <table class="visits">
             <thead><tr><th>Site</th><th>Statut</th><th>Présents</th><th>Scans aujourd'hui</th><th></th></tr></thead>
             <tbody>
-                @foreach (var s in _overview)
+                @foreach (var s in PagedSites)
                 {
                     <tr>
                         <td><strong>@s.SiteId</strong></td>
@@ -103,6 +103,8 @@
             </tbody>
         </table>
         </div>
+        <Pagination Page="_sitesPage" PageSize="_sitesPageSize" TotalCount="_overview.Count"
+                    OnPageChanged="p => _sitesPage = p" />
         <p class="hint">Détail par poste et affluence : voir « Dashboard ». La réactivation d'un site désactivé est réservée au SuperAdmin.</p>
     }
 </section>
@@ -116,6 +118,10 @@
 
     private string? _actingSiteId;
     private string _deactivateReason = "";
+    private int _sitesPage = 1;
+    private const int _sitesPageSize = 20;
+    private IReadOnlyList<AdminSiteOverviewDto> PagedSites =>
+        _overview.Skip((_sitesPage - 1) * _sitesPageSize).Take(_sitesPageSize).ToList();
 
     protected override async Task OnInitializedAsync() => await RefreshAsync();
 

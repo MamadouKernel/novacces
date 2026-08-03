@@ -15,12 +15,12 @@ namespace NovAcces.Api.Endpoints;
 public static class AuditEndpoints
 {
     // Le journal global prend une ligne par requête API : il se compte vite en
-    // millions. Une absence de limite chargeait TOUTE la table en mémoire (le
-    // Take n'était appliqué que si « limit » était fourni) — un simple GET sans
-    // paramètre suffisait à faire tomber l'API. On borne donc par défaut, et le
-    // plafond reste franc : au-delà, c'est une extraction base, pas un endpoint.
-    private const int DefaultAuditPageSize = 200;
-    private const int MaxAuditPageSize = 5_000;
+    // millions. Pagination réelle (Skip/Take + Count) plutôt qu'un simple
+    // plafond « N plus récents » — sinon rien au-delà de la première page
+    // n'est jamais consultable depuis l'écran. Au-delà d'une page raisonnable,
+    // c'est une extraction base (voir l'export CSV, toujours plafonné large).
+    private const int DefaultAuditPageSize = 20;
+    private const int MaxAuditPageSize = 200;
     private const int MaxAuditCsvRows = 100_000;
 
     public static RouteGroupBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
@@ -30,27 +30,31 @@ public static class AuditEndpoints
 
         group.MapGet("/application", async (
             NovAccesIdentityDbContext db,
-            int? limit,
+            int? page,
+            int? pageSize,
             DateTimeOffset? from,
             DateTimeOffset? to,
             string? siteId,
             string? actor,
             CancellationToken ct) =>
         {
+            var (p, size) = PaginationQuery.Normalize(page, pageSize, DefaultAuditPageSize, MaxAuditPageSize);
             IQueryable<ApplicationAuditEntry> query = FilterApplicationAudit(db.ApplicationAudit.AsNoTracking(), from, to, siteId, actor);
             query = query.OrderByDescending(e => e.Timestamp);
-            query = query.Take(Math.Clamp(limit ?? DefaultAuditPageSize, 1, MaxAuditPageSize));
 
+            var total = await query.CountAsync(ct);
             var entries = await query
+                .Skip((p - 1) * size)
+                .Take(size)
                 .Select(e => new ApplicationAuditDto(
                     e.Id, e.Actor, e.Method, e.Path, e.StatusCode,
                     e.SiteId, e.IpAddress, e.Timestamp))
                 .ToListAsync(ct);
-            return Results.Ok(entries);
+            return Results.Ok(new PagedResultDto<ApplicationAuditDto>(entries, p, size, total));
         })
         .RequireAuthorization(NovAccesRoles.SuperAdmin)
         .WithName("ListApplicationAuditEntries")
-        .WithSummary("Journal global de toutes les requêtes API (SuperAdmin uniquement).");
+        .WithSummary("Journal global de toutes les requêtes API, paginé (SuperAdmin uniquement).");
 
         // Export STREAMÉ : les lignes sont écrites au fur et à mesure dans la
         // réponse, jamais accumulées dans une liste puis dans un StringBuilder
@@ -91,18 +95,19 @@ public static class AuditEndpoints
         .WithName("ExportApplicationAuditCsv")
         .WithSummary("Exporte la traçabilité API en CSV, en flux (SuperAdmin uniquement).");
 
-        group.MapGet("/", async (IAdminAuditLog audit, int? limit, CancellationToken ct) =>
+        group.MapGet("/", async (IAdminAuditLog audit, int? page, int? pageSize, CancellationToken ct) =>
         {
-            var entries = await audit.GetRecentAsync(Math.Clamp(limit ?? 100, 1, 500), ct);
+            var (p, size) = PaginationQuery.Normalize(page, pageSize, DefaultAuditPageSize, MaxAuditPageSize);
+            var (entries, total) = await audit.GetPagedAsync(p, size, ct);
             var dto = entries
                 .Select(e => new AdminAuditDto(
                     e.Id, e.Actor, e.Action.ToString(), e.TargetId, e.Detail, e.Timestamp))
                 .ToList();
-            return Results.Ok(dto);
+            return Results.Ok(new PagedResultDto<AdminAuditDto>(dto, p, size, total));
         })
         .RequireAuthorization(NovAccesPolicies.ManageExclusions)
         .WithName("ListAuditEntries")
-        .WithSummary("Journal d'audit des actions privilégiées du site (§8.5).");
+        .WithSummary("Journal d'audit des actions privilégiées du site, paginé (§8.5).");
 
         return group;
     }

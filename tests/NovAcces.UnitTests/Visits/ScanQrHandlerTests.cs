@@ -55,6 +55,8 @@ file sealed class FakeScanLogRepository : IScanLogRepository
     public Task AddAsync(ScanLogEntry entry, CancellationToken ct) { Entries.Add(entry); return Task.CompletedTask; }
     public Task<IReadOnlyCollection<ScanLogEntry>> GetRecentAsync(int limit, string? query, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
+    public Task<(IReadOnlyCollection<ScanLogEntry> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, string? query, CancellationToken ct)
+        => Task.FromResult<(IReadOnlyCollection<ScanLogEntry>, int)>((Entries.AsReadOnly(), Entries.Count));
     public Task<IReadOnlyCollection<ScanLogEntry>> GetSinceAsync(DateTimeOffset sinceUtc, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<ScanLogEntry>>(Entries.AsReadOnly());
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;

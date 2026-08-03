@@ -1,6 +1,7 @@
 @page "/admin"
 @layout AdminLayout
 @implements IAsyncDisposable
+@using NovAcces.Web.Components.Controls.Charts
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject IConfiguration Config
@@ -12,12 +13,37 @@
     <div>
         <h1>Dashboard</h1>
         <p class="muted">
-            Connecté : @Auth.DisplayName (Admin Sigasécurité) ·
+            Connecté : @Auth.DisplayName (@(IsSuperAdmin ? "SuperAdmin" : "Admin") Sigasécurité) ·
             <span class="dot @(_connected ? "dot-on" : "dot-off")"></span>
             @(_connected ? "Temps réel connecté" : "Hors ligne")
         </p>
     </div>
 </header>
+
+@* Bandeau de rôle — plus visible que le petit libellé de la barre de
+   navigation : le SuperAdmin gère les comptes à privilèges de tous les
+   Admin, l'Admin gère l'exploitation courante d'un ou plusieurs sites. La
+   distinction doit sauter aux yeux, pas être devinée. *@
+<div class="role-banner @(IsSuperAdmin ? "role-banner-super" : "role-banner-admin")">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        @if (IsSuperAdmin)
+        {
+            <path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.3 7.2 16.9l.9-5.4L4.2 7.7l5.4-.8z" />
+        }
+        else
+        {
+            <path d="M12 2l7 4v6c0 5-3.4 7.4-7 10-3.6-2.6-7-5-7-10V6z" />
+        }
+    </svg>
+    <div>
+        <strong>@(IsSuperAdmin ? "Vue SuperAdmin" : "Vue Admin")</strong>
+        <span>
+            @(IsSuperAdmin
+                ? "Accès complet : supervision de tous les sites et gestion des comptes à privilèges (Admin/SuperAdmin)."
+                : "Gestion opérationnelle des sites, des comptes Hôte/Sûreté et des terminaux.")
+        </span>
+    </div>
+</div>
 
 @if (_overview.Count > 0)
 {
@@ -89,7 +115,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var s in _overview)
+                    @foreach (var s in PagedOverview)
                     {
                         <tr>
                             <td><strong>@s.SiteId</strong></td>
@@ -113,6 +139,8 @@
                 </tbody>
             </table>
             </div>
+            <Pagination Page="_overviewPage" PageSize="_overviewPageSize" TotalCount="_overview.Count"
+                        OnPageChanged="p => _overviewPage = p" />
         }
     </section>
 
@@ -153,30 +181,64 @@
     </section>
 </div>
 
-@if (_overview.Count > 0 && _overview.Any(s => s.ScansToday > 0))
+@if (IsSuperAdmin)
 {
-    var maxScans = _overview.Max(s => s.ScansToday);
+    @* Contenu exclusif SuperAdmin — moindre privilège : un Admin gère son
+       exploitation, seul le SuperAdmin a besoin de voir l'ensemble des
+       comptes à privilèges (qui peut agir sur qui) pour les gouverner. *@
     <section class="card">
-        <h2>Affluence par site (scans aujourd'hui)</h2>
-        <div class="chart">
-            @foreach (var s in _overview.OrderByDescending(s => s.ScansToday))
-            {
-                <div class="chart-row">
-                    <span class="chart-label">@s.SiteId</span>
-                    <div class="chart-track">
-                        <div class="chart-fill @(s.ScansToday == maxScans ? "peak" : "")"
-                             style="width:@(maxScans > 0 ? (int)Math.Round(s.ScansToday * 100.0 / maxScans) : 0)%"></div>
-                    </div>
-                    <span class="chart-val">@s.ScansToday scans · @s.OnSite présents</span>
-                </div>
-            }
-        </div>
+        <h2>Comptes à privilèges (@PrivilegedUsers.Count)</h2>
+        <p class="hint" style="margin-top:0">Visible uniquement par le SuperAdmin — gestion des comptes Admin et SuperAdmin.</p>
+        @if (PrivilegedUsers.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun compte à privilèges.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Compte</th><th>Rôle</th><th>Double authentification</th><th>Statut</th></tr></thead>
+                <tbody>
+                    @foreach (var u in PagedPrivilegedUsers)
+                    {
+                        <tr>
+                            <td><strong>@u.DisplayName</strong><br /><span class="muted">@u.Email</span></td>
+                            <td>@(u.Roles.Contains(NovAccesRoles.SuperAdmin) ? "SuperAdmin" : "Admin")</td>
+                            <td>@(u.TwoFactorEnabled ? "✅ Activée" : "⬜ Non configurée")</td>
+                            <td>@(u.IsDeactivated ? "Désactivé" : "Actif")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <Pagination Page="_privPage" PageSize="_privPageSize" TotalCount="PrivilegedUsers.Count"
+                        OnPageChanged="p => _privPage = p" />
+        }
     </section>
 }
 
 <section class="card">
-    <h2>Tendance d'activité</h2>
-    <div class="filters" style="margin-bottom:.9rem">
+    <h2>Analyse &amp; tendances</h2>
+
+    <div class="chart-grid">
+        @if (_overview.Count > 0 && _overview.Any(s => s.ScansToday > 0))
+        {
+            <div class="chart-card">
+                <p class="eyebrow" style="margin-top:0">Affluence par site (scans aujourd'hui)</p>
+                <BarChart Data="AttendanceBySite" HeightPx="140" />
+            </div>
+        }
+
+        @if (_users.Count > 0)
+        {
+            <div class="chart-card chart-card-donut">
+                <p class="eyebrow" style="margin-top:0">Répartition des comptes par rôle</p>
+                <DonutChart Data="RoleDistribution" CenterValue="@_users.Count.ToString()" CenterLabel="comptes" />
+            </div>
+        }
+    </div>
+
+    <div class="filters" style="margin:1.4rem 0 .9rem">
         <button class="filter @(_trendDays == 7 ? "on" : "")" @onclick="() => SetTrendDaysAsync(7)">7 jours</button>
         <button class="filter @(_trendDays == 30 ? "on" : "")" @onclick="() => SetTrendDaysAsync(30)">30 jours</button>
     </div>
@@ -187,62 +249,32 @@
     }
     else
     {
-        var maxScans2 = Math.Max(1, _trends.Daily.Max(d => d.ScansTotal));
-        <p class="eyebrow" style="margin-top:0">Scans par jour</p>
-        <div class="hchart">
-            @foreach (var d in _trends.Daily)
-            {
-                <div class="hbar @(d.ScansTotal == maxScans2 ? "peak" : "")"
-                     style="height:@(Math.Max(2, (int)Math.Round(d.ScansTotal * 100.0 / maxScans2)))%"
-                     title="@d.Date.ToString("dd/MM") — @d.ScansTotal scan(s)"></div>
-            }
-        </div>
-        <div class="hchart-axis">
-            <span>@_trends.Daily.First().Date.ToString("dd/MM")</span>
-            <span>@_trends.Daily.Last().Date.ToString("dd/MM")</span>
+        <div class="chart-grid">
+            <div class="chart-card">
+                <p class="eyebrow" style="margin-top:0">Scans par jour</p>
+                <BarChart Data="ScansPerDay" HeightPx="130" MaxLabels="10" />
+            </div>
+
+            <div class="chart-card">
+                <p class="eyebrow" style="margin-top:0">Entrées / Sorties / Refus par jour</p>
+                <StackedBarChart Labels="TrendDayLabels" Series="EntryExitDenialSeries" HeightPx="130" MaxLabels="10" ShowLegend="false" />
+                <ul class="chartlegend">
+                    <li><span class="swatch" style="background:#0f8a3d"></span>Entrées accordées</li>
+                    <li><span class="swatch" style="background:#1b5e9e"></span>Sorties</li>
+                    <li><span class="swatch" style="background:#f5a300"></span>Refus</li>
+                </ul>
+            </div>
         </div>
 
-        <p class="eyebrow" style="margin-top:1.6rem">Entrées / Sorties / Refus par jour</p>
-        var maxStack = Math.Max(1, _trends.Daily.Max(d => d.EntriesGranted + d.Exits + d.Denied));
-        <div class="stack-chart">
-            @foreach (var d in _trends.Daily)
-            {
-                var total = d.EntriesGranted + d.Exits + d.Denied;
-                <div class="stack-bar" style="height:@(Math.Max(2, (int)Math.Round(total * 100.0 / maxStack)))%"
-                     title="@d.Date.ToString("dd/MM") — @d.EntriesGranted entrée(s), @d.Exits sortie(s), @d.Denied refus">
-                    @if (total > 0)
-                    {
-                        <div class="stack-seg seg-denied" style="height:@(d.Denied * 100.0 / total)%"></div>
-                        <div class="stack-seg seg-exit" style="height:@(d.Exits * 100.0 / total)%"></div>
-                        <div class="stack-seg seg-entry" style="height:@(d.EntriesGranted * 100.0 / total)%"></div>
-                    }
+        @if (_trends.BySite.Any(s => s.ScansTotal > 0))
+        {
+            <div class="chart-grid" style="margin-top:1.4rem">
+                <div class="chart-card chart-card-donut">
+                    <p class="eyebrow" style="margin-top:0">Répartition par site (@_trendDays derniers jours)</p>
+                    <DonutChart Data="SiteDistribution" ShowLegend="true" />
                 </div>
-            }
-        </div>
-        <div class="stack-legend">
-            <span><span class="sw bg-ok"></span>Entrées accordées</span>
-            <span><span class="sw bg-onsite"></span>Sorties</span>
-            <span><span class="sw bg-amber-500"></span>Refus</span>
-        </div>
-    }
-
-    @if (_trends is not null && _trends.BySite.Any(s => s.ScansTotal > 0))
-    {
-        var maxSite = _trends.BySite.Max(s => s.ScansTotal);
-        <p class="eyebrow" style="margin-top:1.6rem">Répartition par site (@_trendDays derniers jours)</p>
-        <div class="chart">
-            @foreach (var s in _trends.BySite)
-            {
-                <div class="chart-row">
-                    <span class="chart-label">@s.SiteId</span>
-                    <div class="chart-track">
-                        <div class="chart-fill @(s.ScansTotal == maxSite ? "peak" : "")"
-                             style="width:@(maxSite > 0 ? (int)Math.Round(s.ScansTotal * 100.0 / maxSite) : 0)%"></div>
-                    </div>
-                    <span class="chart-val">@s.ScansTotal scan(s)</span>
-                </div>
-            }
-        </div>
+            </div>
+        }
     }
 </section>
 
@@ -258,11 +290,30 @@
     private int _trendDays = 7;
     private AdminTrendsDto? _trends;
 
+    private int _overviewPage = 1;
+    private const int _overviewPageSize = 20;
+    private IReadOnlyList<AdminSiteOverviewDto> PagedOverview =>
+        _overview.Skip((_overviewPage - 1) * _overviewPageSize).Take(_overviewPageSize).ToList();
+
+    private int _privPage = 1;
+    private const int _privPageSize = 20;
+    private List<AdminUserDto> PrivilegedUsers =>
+        _users.Where(u => u.Roles.Contains(NovAccesRoles.Admin) || u.Roles.Contains(NovAccesRoles.SuperAdmin))
+              .OrderByDescending(u => u.Roles.Contains(NovAccesRoles.SuperAdmin))
+              .ThenBy(u => u.DisplayName)
+              .ToList();
+    private IReadOnlyList<AdminUserDto> PagedPrivilegedUsers =>
+        PrivilegedUsers.Skip((_privPage - 1) * _privPageSize).Take(_privPageSize).ToList();
+
     private HubConnection? _hub;
     private bool _connected;
 
     private sealed record Alert(string Severity, string Text, string LinkHref, string LinkLabel);
     private sealed record SetupStep(bool Done, string Title, string Description, string LinkHref, string LinkLabel);
+
+    // SuperAdmin hérite toujours du rôle Admin (voir IdentityStartup) : testé
+    // en premier, sinon un SuperAdmin s'afficherait comme simple Admin.
+    private bool IsSuperAdmin => Auth.IsInRole(NovAccesRoles.SuperAdmin);
 
     // Checklist calculée à partir des données déjà chargées (aucun appel API
     // supplémentaire) : reste visible tant que l'installation n'est pas
@@ -404,6 +455,53 @@
 
         return alerts;
     }
+
+    // ---- Séries pour les graphiques SVG (BarChart / StackedBarChart / DonutChart) ----
+
+    private static readonly string[] SitePalette =
+        { "#2f5c6d", "#f5a300", "#1b5e9e", "#0f8a3d", "#7a5200", "#4f7d8d", "#123649", "#7ca1ae" };
+
+    private List<ChartPoint> AttendanceBySite =>
+        _overview.OrderByDescending(s => s.ScansToday)
+            .Select(s => new ChartPoint(s.SiteId, s.ScansToday, Tooltip: $"{s.SiteId} : {s.ScansToday} scan(s), {s.OnSite} présent(s)"))
+            .ToList();
+
+    private List<ChartPoint> RoleDistribution
+    {
+        get
+        {
+            var superAdmins = _users.Count(u => u.Roles.Contains(NovAccesRoles.SuperAdmin));
+            var admins = _users.Count(u => u.Roles.Contains(NovAccesRoles.Admin) && !u.Roles.Contains(NovAccesRoles.SuperAdmin));
+            var surete = _users.Count(u => u.Roles.Contains(NovAccesRoles.Surete));
+            var hotes = _users.Count(u => u.Roles.Contains(NovAccesRoles.Hote));
+
+            return new()
+            {
+                new("Hôtes", hotes, "#2f5c6d"),
+                new("Sûreté", surete, "#1b5e9e"),
+                new("Admin", admins, "#f5a300"),
+                new("SuperAdmin", superAdmins, "#7a5200"),
+            };
+        }
+    }
+
+    private List<string> TrendDayLabels => _trends?.Daily.Select(d => d.Date.ToString("dd/MM")).ToList() ?? new();
+
+    private List<ChartPoint> ScansPerDay =>
+        _trends?.Daily.Select(d => new ChartPoint(d.Date.ToString("dd/MM"), d.ScansTotal,
+            Tooltip: $"{d.Date:dd/MM} — {d.ScansTotal} scan(s)")).ToList() ?? new();
+
+    private List<ChartSeries> EntryExitDenialSeries => new()
+    {
+        new("Entrées accordées", "#0f8a3d", _trends?.Daily.Select(d => (double)d.EntriesGranted).ToList() ?? new()),
+        new("Sorties", "#1b5e9e", _trends?.Daily.Select(d => (double)d.Exits).ToList() ?? new()),
+        new("Refus", "#f5a300", _trends?.Daily.Select(d => (double)d.Denied).ToList() ?? new()),
+    };
+
+    private List<ChartPoint> SiteDistribution =>
+        _trends?.BySite.OrderByDescending(s => s.ScansTotal)
+            .Select((s, i) => new ChartPoint(s.SiteId, s.ScansTotal, SitePalette[i % SitePalette.Length], $"{s.SiteId} : {s.ScansTotal} scan(s)"))
+            .ToList() ?? new();
 
     private static RenderFragment WarnIcon() => builder =>
         builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' width='16' height='16' fill='none' stroke='currentColor'

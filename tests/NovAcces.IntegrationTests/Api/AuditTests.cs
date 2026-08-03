@@ -41,9 +41,9 @@ public sealed class AuditTests
         var surete = await LoginNewUserAsync("Surete");
         var resp = await surete.GetAsync("/api/audit");
         resp.EnsureSuccessStatusCode();
-        var entries = await resp.Content.ReadFromJsonAsync<List<AdminAuditDto>>(Json);
+        var entries = await resp.Content.ReadFromJsonAsync<PagedResultDto<AdminAuditDto>>(Json);
 
-        Assert.Contains(entries!, e => e.Action == "VisitRevoked" && e.TargetId == visitId.ToString());
+        Assert.Contains(entries!.Items, e => e.Action == "VisitRevoked" && e.TargetId == visitId.ToString());
     }
 
     [SkippableFact]

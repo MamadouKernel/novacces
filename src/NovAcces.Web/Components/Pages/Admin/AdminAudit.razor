@@ -51,7 +51,8 @@
                 </tbody>
             </table>
             </div>
-            <p class="hint">@_siteAudit.Count entrée(s) — les 100 plus récentes.</p>
+            <Pagination Page="_siteAuditPage" PageSize="_siteAuditPageSize" TotalCount="_siteAuditTotal"
+                        OnPageChanged="ChangeSiteAuditPageAsync" />
         }
     }
 </section>
@@ -88,7 +89,9 @@
                 </tbody>
             </table>
             </div>
-            <p class="hint">@_appAudit.Count entrée(s) — les 200 plus récentes. Export CSV pour une extraction plus large.</p>
+            <Pagination Page="_appAuditPage" PageSize="_appAuditPageSize" TotalCount="_appAuditTotal"
+                        OnPageChanged="ChangeAppAuditPageAsync" />
+            <p class="hint">Export CSV pour une extraction plus large que la pagination à l'écran.</p>
         }
     </section>
 }
@@ -99,22 +102,53 @@
 
     private string _auditSite = "";
     private IReadOnlyList<AdminAuditDto> _siteAudit = Array.Empty<AdminAuditDto>();
+    private int _siteAuditPage = 1;
+    private const int _siteAuditPageSize = 20;
+    private int _siteAuditTotal;
+
     private IReadOnlyList<ApplicationAuditDto> _appAudit = Array.Empty<ApplicationAuditDto>();
+    private int _appAuditPage = 1;
+    private const int _appAuditPageSize = 20;
+    private int _appAuditTotal;
 
     protected override async Task OnInitializedAsync()
     {
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
         if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
         {
-            try { _appAudit = await Api.GetApplicationAuditAsync(); } catch { /* best-effort */ }
+            await ChangeAppAuditPageAsync(1);
         }
     }
 
-    private async Task RefreshSiteAuditAsync()
+    private async Task RefreshSiteAuditAsync() => await ChangeSiteAuditPageAsync(1);
+
+    private async Task ChangeSiteAuditPageAsync(int page)
     {
-        _siteAudit = Array.Empty<AdminAuditDto>();
-        if (string.IsNullOrEmpty(_auditSite)) return;
-        try { _siteAudit = await Api.GetAdminAuditAsync(_auditSite); }
+        _siteAuditPage = page;
+        if (string.IsNullOrEmpty(_auditSite))
+        {
+            _siteAudit = Array.Empty<AdminAuditDto>();
+            _siteAuditTotal = 0;
+            return;
+        }
+        try
+        {
+            var result = await Api.GetAdminAuditPagedAsync(_auditSite, page, _siteAuditPageSize);
+            _siteAudit = result.Items;
+            _siteAuditTotal = result.TotalCount;
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+    }
+
+    private async Task ChangeAppAuditPageAsync(int page)
+    {
+        _appAuditPage = page;
+        try
+        {
+            var result = await Api.GetApplicationAuditPagedAsync(page, _appAuditPageSize);
+            _appAudit = result.Items;
+            _appAuditTotal = result.TotalCount;
+        }
         catch { Toasts.Error("Service indisponible, réessayez."); }
     }
 

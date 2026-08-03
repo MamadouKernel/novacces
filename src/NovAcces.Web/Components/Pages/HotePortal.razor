@@ -156,20 +156,20 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         {
             <div class="toolbar">
                 <input class="search" placeholder="Rechercher un visiteur, une société, un motif…"
-                       @bind="_search" @bind:event="oninput" />
+                       @bind="_search" @bind:event="oninput" @bind:after="() => _visitsPage = 1" />
                 <div class="filters">
                     @foreach (var f in StatusFilters)
                     {
                         <button class="filter @(_statusFilter == f.Key ? "on" : "")"
-                                @onclick="() => _statusFilter = f.Key">
+                                @onclick="() => { _statusFilter = f.Key; _visitsPage = 1; }">
                             @f.Label <span class="count">@CountFor(f.Key)</span>
                         </button>
                     }
                 </div>
             </div>
 
-            var rows = FilteredVisits;
-            if (rows.Count == 0)
+            var allRows = FilteredVisits;
+            if (allRows.Count == 0)
             {
                 <div class="empty">
                     @EmptyIcon()
@@ -179,6 +179,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             }
             else
             {
+                var visitsPageCount = (int)Math.Ceiling(allRows.Count / (double)_visitsPageSize);
+                if (_visitsPage > visitsPageCount) { _visitsPage = visitsPageCount; }
+                var rows = allRows.Skip((_visitsPage - 1) * _visitsPageSize).Take(_visitsPageSize).ToList();
                 <div class="table-wrap">
                 <table class="visits">
                     <thead>
@@ -227,7 +230,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                     </tbody>
                 </table>
                 </div>
-                <p class="hint">@rows.Count demande(s) affichée(s) sur @_myVisits.Count.</p>
+                <Pagination Page="_visitsPage" PageSize="_visitsPageSize" TotalCount="allRows.Count"
+                            OnPageChanged="p => _visitsPage = p" />
             }
         }
     </section>
@@ -517,6 +521,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private string _statusFilter = "all";
     private string _sortKey = "created";
     private bool _sortAsc;
+    private int _visitsPage = 1;
+    private const int _visitsPageSize = 20;
 
     private static readonly (string Key, string Label)[] StatusFilters =
     {
@@ -527,7 +533,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
     private int CountFor(string key) =>
         key == "all" ? _myVisits.Count : _myVisits.Count(v => v.Status == key);
 
-    private void ResetFilters() { _search = ""; _statusFilter = "all"; }
+    private void ResetFilters() { _search = ""; _statusFilter = "all"; _visitsPage = 1; }
 
     private void SortBy(string key)
     {

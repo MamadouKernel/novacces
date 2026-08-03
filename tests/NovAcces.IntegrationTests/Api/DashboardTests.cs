@@ -128,11 +128,11 @@ public sealed class DashboardTests
         await CreateVisitAndCheckInAsync(unique);
 
         var surete = await LoginNewUserAsync("Surete");
-        var results = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
+        var results = await surete.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(
             $"/api/dashboard/journal?q={unique}", Json);
 
-        Assert.NotEmpty(results!);
-        Assert.All(results!, r => Assert.Contains(unique, r.VisitorName));
+        Assert.NotEmpty(results!.Items);
+        Assert.All(results.Items, r => Assert.Contains(unique, r.VisitorName));
     }
 
     /// <summary>
@@ -181,9 +181,9 @@ public sealed class DashboardTests
         Assert.DoesNotContain(onSite!, v => v.VisitorName == visitorName);
 
         // La sortie est bien journalisée, et attribuée à la sûreté.
-        var journal = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
-            $"/api/dashboard/journal?limit=200&q={visitorName}", Json);
-        Assert.Contains(journal!, e => e.WasCheckOut && e.Detail.Contains("manuellement"));
+        var journal = await surete.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?q={visitorName}", Json);
+        Assert.Contains(journal!.Items, e => e.WasCheckOut && e.Detail.Contains("manuellement"));
 
         // Deuxième appel : il n'est plus présent, donc conflit.
         var again = await surete.PostAsync($"/api/dashboard/on-site/{visitId}/check-out", null);
@@ -202,10 +202,10 @@ public sealed class DashboardTests
         await CreateVisitAndCheckInAsync(visitorName, company);
 
         var surete = await LoginNewUserAsync("Surete");
-        var byCompany = await surete.GetFromJsonAsync<List<ScanJournalEntryDto>>(
-            $"/api/dashboard/journal?limit=200&q={company}", Json);
+        var byCompany = await surete.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?q={company}", Json);
 
-        Assert.Contains(byCompany!, e => e.VisitorName == visitorName);
+        Assert.Contains(byCompany!.Items, e => e.VisitorName == visitorName);
     }
 
     // ---- Aides ----

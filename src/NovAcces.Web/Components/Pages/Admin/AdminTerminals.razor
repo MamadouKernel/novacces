@@ -56,7 +56,7 @@
     <table class="visits">
         <thead><tr><th>Libellé</th><th>Sites</th><th>Statut</th><th>Créé le</th><th></th></tr></thead>
         <tbody>
-            @foreach (var t in _terminals)
+            @foreach (var t in PagedTerminals)
             {
                 <tr>
                     <td><strong>@t.Label</strong></td>
@@ -79,11 +79,17 @@
         </tbody>
     </table>
     </div>
+    <Pagination Page="_terminalsPage" PageSize="_terminalsPageSize" TotalCount="_terminals.Count"
+                OnPageChanged="p => _terminalsPage = p" />
 </section>
 
 @code {
     private bool _busy;
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+    private int _terminalsPage = 1;
+    private const int _terminalsPageSize = 20;
+    private IReadOnlyList<TerminalSummaryDto> PagedTerminals =>
+        _terminals.Skip((_terminalsPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
 
     private sealed class NewTerminal { public string Label = ""; public HashSet<string> SiteIds = new(); }
     private readonly NewTerminal _newTerminal = new();

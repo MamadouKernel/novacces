@@ -43,13 +43,19 @@ public static class AuditEndpoints
             query = query.OrderByDescending(e => e.Timestamp);
 
             var total = await query.CountAsync(ct);
-            var entries = await query
+            var raw = await query
                 .Skip((p - 1) * size)
                 .Take(size)
-                .Select(e => new ApplicationAuditDto(
-                    e.Id, e.Actor, e.Method, e.Path, e.StatusCode,
-                    e.SiteId, e.IpAddress, e.Timestamp))
                 .ToListAsync(ct);
+
+            // Best-effort : un acteur non résolu (terminal/agent, "anonymous")
+            // garde son identifiant brut plutôt que de disparaître.
+            var names = await ActorDisplayNames.ResolveAsync(db, raw.Select(e => e.Actor), ct);
+            var entries = raw
+                .Select(e => new ApplicationAuditDto(
+                    e.Id, names.GetValueOrDefault(e.Actor, e.Actor), e.Method, e.Path, e.StatusCode,
+                    e.SiteId, e.IpAddress, e.Timestamp))
+                .ToList();
             return Results.Ok(new PagedResultDto<ApplicationAuditDto>(entries, p, size, total));
         })
         .RequireAuthorization(NovAccesRoles.SuperAdmin)
@@ -95,13 +101,15 @@ public static class AuditEndpoints
         .WithName("ExportApplicationAuditCsv")
         .WithSummary("Exporte la traçabilité API en CSV, en flux (SuperAdmin uniquement).");
 
-        group.MapGet("/", async (IAdminAuditLog audit, int? page, int? pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (
+            IAdminAuditLog audit, NovAccesIdentityDbContext identityDb, int? page, int? pageSize, CancellationToken ct) =>
         {
             var (p, size) = PaginationQuery.Normalize(page, pageSize, DefaultAuditPageSize, MaxAuditPageSize);
             var (entries, total) = await audit.GetPagedAsync(p, size, ct);
+            var names = await ActorDisplayNames.ResolveAsync(identityDb, entries.Select(e => e.Actor), ct);
             var dto = entries
                 .Select(e => new AdminAuditDto(
-                    e.Id, e.Actor, e.Action.ToString(), e.TargetId, e.Detail, e.Timestamp))
+                    e.Id, names.GetValueOrDefault(e.Actor, e.Actor), e.Action.ToString(), e.TargetId, e.Detail, e.Timestamp))
                 .ToList();
             return Results.Ok(new PagedResultDto<AdminAuditDto>(dto, p, size, total));
         })

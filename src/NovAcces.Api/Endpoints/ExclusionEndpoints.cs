@@ -3,6 +3,7 @@ using System.Security.Claims;
 using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
 using NovAcces.Domain.Enums;
+using NovAcces.Infrastructure.Identity;
 using NovAcces.Shared.Dtos;
 
 namespace NovAcces.Api.Endpoints;
@@ -19,10 +20,13 @@ public static class ExclusionEndpoints
         var group = app.MapGroup("/api/exclusions").WithTags("Exclusions")
             .RequireAuthorization(NovAccesPolicies.ManageExclusions);
 
-        group.MapGet("/", async (IExclusionListService exclusions, CancellationToken ct) =>
+        group.MapGet("/", async (IExclusionListService exclusions, NovAccesIdentityDbContext identityDb, CancellationToken ct) =>
         {
             var list = await exclusions.ListAsync(ct);
-            var dto = list.Select(e => new ExclusionDto(e.Id, e.DisplayName, e.Reason, e.AddedBy, e.CreatedAt)).ToList();
+            var names = await ActorDisplayNames.ResolveAsync(identityDb, list.Select(e => e.AddedBy), ct);
+            var dto = list
+                .Select(e => new ExclusionDto(e.Id, e.DisplayName, e.Reason, names.GetValueOrDefault(e.AddedBy, e.AddedBy), e.CreatedAt))
+                .ToList();
             return Results.Ok(dto);
         })
         .WithName("ListExclusions")

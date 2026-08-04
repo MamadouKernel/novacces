@@ -58,6 +58,48 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         </p>
     }
 
+    @* Vue « Aujourd'hui » : distingue les visiteurs déjà arrivés (même s'ils
+       sont repartis dans la journée) de ceux encore attendus, et signale
+       quand la fenêtre de validité du rendez-vous (-20/+15 min autour de
+       l'heure prévue — Visit.EvaluateWindow, la MÊME limite que l'agent au
+       poste) est déjà close : l'hôte sait alors que présenter le QR ne
+       fonctionnera plus, sans attendre un refus au poste. Seuls les
+       rendez-vous en mode Unique ont une date « du jour » à proprement
+       parler ; un accès 30 jours n'apparaît ici que le jour où il est
+       effectivement utilisé (arrivée constatée). *@
+    <section class="card">
+        <div class="today-head">
+            <h2>Aujourd'hui</h2>
+            @if (TodayLateCount > 0)
+            {
+                <span class="badge badge-expired">@TodayLateCount en retard</span>
+            }
+        </div>
+
+        @if (TodayRows.Count == 0)
+        {
+            <p class="muted">Aucun visiteur attendu ni arrivé aujourd'hui.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Visiteur</th><th>Société</th><th>Statut</th></tr></thead>
+                <tbody>
+                    @foreach (var v in TodayRows)
+                    {
+                        <tr class="@(TodayIsLate(v) ? "row-security" : "")">
+                            <td>@v.VisitorName</td>
+                            <td class="muted">@v.VisitorCompany</td>
+                            <td><span class="badge @TodayBadgeClass(v)">@TodayStatusLabel(v)</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    </section>
+
     @* Création d'une demande : en surcouche, comme dans la maquette. Le QR
        généré s'affiche dans la même surcouche, à côté du formulaire — l'hôte
        ne doit pas avoir à chercher où est passé le badge de son visiteur. *@
@@ -517,6 +559,54 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             .Where(v => v.Status == "Valid" && !v.IsOnSite && v.Mode == "Unique" && v.ScheduledAt.HasValue)
             .OrderBy(v => v.ScheduledAt)
             .FirstOrDefault();
+
+    // ── Vue « Aujourd'hui » ──
+    // Rendez-vous UNIQUE prévu aujourd'hui (arrivé ou non) UNION toute
+    // arrivée effective aujourd'hui (couvre aussi le mode 30 jours, qui n'a
+    // pas de date de rendez-vous unique à comparer au jour courant).
+    private static bool IsExpectedToday(HostVisitDto v) =>
+        v.Mode == "Unique" && v.Status != "Revoked" && v.ScheduledAt is { } s
+        && DateOnly.FromDateTime(s.LocalDateTime) == DateOnly.FromDateTime(DateTime.Now);
+
+    private static bool ArrivedToday(HostVisitDto v) =>
+        v.CheckedInAt is { } ci && DateOnly.FromDateTime(ci.LocalDateTime) == DateOnly.FromDateTime(DateTime.Now);
+
+    // Même fenêtre que Visit.EvaluateWindow (-20/+15 min autour du rendez-
+    // vous) : au-delà, le QR serait refusé "hors fenêtre" au poste — un
+    // repère réel, pas un seuil arbitraire choisi côté affichage.
+    private static bool TodayIsLate(HostVisitDto v) =>
+        !ArrivedToday(v) && v.ScheduledAt is { } s && DateTimeOffset.Now > s.AddMinutes(15);
+
+    private IReadOnlyList<HostVisitDto> TodayRows =>
+        _myVisits.Where(ArrivedToday).OrderByDescending(v => v.CheckedInAt)
+            .Concat(_myVisits.Where(v => IsExpectedToday(v) && !ArrivedToday(v)).OrderBy(v => v.ScheduledAt))
+            .ToList();
+
+    private int TodayLateCount => _myVisits.Count(TodayIsLate);
+
+    private static string TodayStatusLabel(HostVisitDto v)
+    {
+        if (ArrivedToday(v))
+        {
+            if (v.IsOnSite) return $"Sur site depuis {v.CheckedInAt!.Value.LocalDateTime:HH:mm}";
+            return v.CheckedOutAt is { } co
+                ? $"Reparti à {co.LocalDateTime:HH:mm} (arrivé {v.CheckedInAt!.Value.LocalDateTime:HH:mm})"
+                : $"Arrivé à {v.CheckedInAt!.Value.LocalDateTime:HH:mm}";
+        }
+
+        if (v.ScheduledAt is { } s)
+            return TodayIsLate(v)
+                ? $"Non arrivé — fenêtre close depuis {s.AddMinutes(15).LocalDateTime:HH:mm}"
+                : $"Attendu à {s.LocalDateTime:HH:mm}";
+
+        return "Attendu";
+    }
+
+    private static string TodayBadgeClass(HostVisitDto v)
+    {
+        if (ArrivedToday(v)) return v.IsOnSite ? "badge-onsite" : "badge-used";
+        return TodayIsLate(v) ? "badge-expired" : "badge-pending";
+    }
 
     // ── Liste intelligente « Mes demandes » : recherche + filtre + tri ──
     private string _search = "";

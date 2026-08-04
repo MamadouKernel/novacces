@@ -30,7 +30,7 @@ public static class VisitEndpoints
             var dto = mine.Select(v => new HostVisitDto(
                 v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), v.Status.ToString(),
                 v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CreatedAt,
-                v.VisitorPhone, v.VisitorEmail)).ToList();
+                v.VisitorPhone, v.VisitorEmail, v.CheckedInAt, v.CheckedOutAt)).ToList();
 
             return Results.Ok(dto);
         })

@@ -46,7 +46,12 @@ public sealed record HostVisitDto(
     bool IsOnSite,
     DateTimeOffset CreatedAt,
     string? VisitorPhone = null,
-    string? VisitorEmail = null);
+    string? VisitorEmail = null,
+    // Déjà visibles par l'hôte via /api/visits/{id}/history (mêmes données,
+    // moindre privilège inchangé) — exposées ici aussi pour que la vue « du
+    // jour » n'ait pas besoin d'un aller-retour par visite.
+    DateTimeOffset? CheckedInAt = null,
+    DateTimeOffset? CheckedOutAt = null);
 
 /// <summary>
 /// Correction des coordonnées d'une demande AVANT l'arrivée du visiteur

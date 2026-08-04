@@ -254,6 +254,10 @@
     @apply mb-4 rounded-md border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-ink2;
   }
 
+  /* ---- Vue « Aujourd'hui » (portail hôte) ---- */
+  .today-head { @apply mb-3 flex flex-wrap items-center justify-between gap-2; }
+  .today-head h2 { @apply m-0; }
+
   /* ---- Barre d'outils / recherche (listes intelligentes) ---- */
   .toolbar { @apply mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center; }
   .search {

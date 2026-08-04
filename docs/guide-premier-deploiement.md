@@ -164,6 +164,23 @@ minute au tout premier démarrage). Puis, depuis un navigateur :
 `SEED_ADMIN_PASSWORD` → changer le mot de passe et activer le 2FA
 immédiatement.
 
+## 8bis. Redéploiements suivants
+
+Pour tout déploiement ultérieur (nouveau code sur `main`), lancer depuis
+`/opt/sigasacces` :
+
+```bash
+./deploy.sh
+```
+
+Ce script enchaîne `git pull`, `docker compose up -d --build`, applique les
+migrations du schéma `identity`, **rejoue `provision-site` pour chaque site
+déjà provisionné** (idempotent — c'est ce qui applique les migrations EF du
+schéma tenant, ex. table `agents`), puis `grant-app-role`, et vérifie la
+santé des deux domaines à la fin. Ne pas rejouer les étapes 6-7 à la main :
+c'est exactement la séquence qu'un oubli manuel a cassée le 04/08/2026
+(colonne manquante en base, connexion impossible en production).
+
 ## 9. À ne pas oublier ensuite
 
 - [ ] Sauvegarde quotidienne chiffrée de Postgres (`docs/deploiement.md` §7) —

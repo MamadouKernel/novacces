@@ -19,6 +19,15 @@ docker compose up -d --build
 docker compose exec api dotnet NovAcces.Api.dll migrate   # 1re fois, puis après chaque migration EF
 ```
 
+**Pour tout redéploiement après le tout premier** (nouveau code poussé sur
+`main`), utiliser `./deploy.sh` depuis la racine du dépôt sur le VPS plutôt
+que de rejouer les commandes à la main : il enchaîne `git pull`, rebuild,
+`migrate` (schéma `identity`), puis rejoue `provision-site` pour CHAQUE site
+déjà provisionné (idempotent — applique les migrations EF du schéma tenant
+`agents`, etc.), et enfin `grant-app-role`. Ce script existe précisément
+parce qu'un oubli de cette séquence après déploiement a cassé la connexion
+en production le 04/08/2026 (colonne manquante — migration EF non rejouée).
+
 Le reste de ce document (durcissement, secrets, sauvegardes…) s'applique
 identiquement — Docker ne change que le mécanisme de packaging/exécution, pas
 les exigences de sécurité. L'option **systemd + `dotnet publish`** du §5

@@ -24,7 +24,8 @@ public sealed record ScanJournalEntryDto(
     bool WasGranted,
     bool WasCheckOut,
     bool IsSecurityEvent,
-    string Detail);
+    string Detail,
+    string AuthMethod = "Qr");
 
 /// <summary>
 /// Visiteur actuellement présent sur site (avec état de dépassement).

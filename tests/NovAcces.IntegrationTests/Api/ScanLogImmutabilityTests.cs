@@ -36,6 +36,14 @@ public sealed class ScanLogImmutabilityTests
         await Assert.ThrowsAsync<PostgresException>(() =>
             ExecuteAsync($"UPDATE {table} SET \"WasGranted\" = NOT \"WasGranted\" WHERE \"Id\" = {idLiteral}"));
 
+        // Bloqué : trafiquer la méthode d'authentification (ex. maquiller un
+        // scan par code de secours en scan QR) — le trigger append-only
+        // (agnostique des colonnes, to_jsonb(...) - 'VisitorName') couvre
+        // AuthMethod sans modification, mais on le vérifie explicitement
+        // plutôt que de le supposer, après l'ajout de cette colonne.
+        await Assert.ThrowsAsync<PostgresException>(() =>
+            ExecuteAsync($"UPDATE {table} SET \"AuthMethod\" = 1 WHERE \"Id\" = {idLiteral}"));
+
         // Bloqué : renommer vers une valeur arbitraire (≠ sentinel).
         await Assert.ThrowsAsync<PostgresException>(() =>
             ExecuteAsync($"UPDATE {table} SET \"VisitorName\" = 'Autre Nom' WHERE \"Id\" = {idLiteral}"));
@@ -59,7 +67,7 @@ public sealed class ScanLogImmutabilityTests
 
         var entry = ScanLogEntry.Create(
             Guid.NewGuid(), visitorName, "agent-test", CheckpointDirection.Entry,
-            ScanOutcome.Granted(), degradedMode: false, "Test immuabilité", when);
+            ScanOutcome.Granted(), degradedMode: false, "Test immuabilité", when, ScanAuthMethod.Qr);
         db.ScanLogs.Add(entry);
         await db.SaveChangesAsync();
         return entry.Id;

@@ -34,7 +34,7 @@ public static class DashboardEndpoints
 
             var dto = entries.Select(e => new ScanJournalEntryDto(
                 e.Timestamp, e.VisitorName, e.AgentId, e.Direction.ToString(),
-                e.WasGranted, e.WasCheckOut, e.IsSecurityEvent, e.Detail)).ToList();
+                e.WasGranted, e.WasCheckOut, e.IsSecurityEvent, e.Detail, e.AuthMethod.ToString())).ToList();
 
             return Results.Ok(new PagedResultDto<ScanJournalEntryDto>(dto, p, size, total));
         })
@@ -94,7 +94,7 @@ public static class DashboardEndpoints
                 + (outcome.OverstayMinutesAtCheckOut > 0
                     ? $" · dépassement +{outcome.OverstayMinutesAtCheckOut} min"
                     : string.Empty),
-                now), ct);
+                now, ScanAuthMethod.DashboardOverride), ct);
 
             await visits.SaveChangesAsync(ct);
 
@@ -195,7 +195,7 @@ public static class DashboardEndpoints
     private static string BuildCsv(IReadOnlyCollection<ScanLogEntry> entries)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Horodatage;Visiteur;Agent;Direction;Autorise;Sortie;EvenementSecurite;Detail");
+        sb.AppendLine("Horodatage;Visiteur;Agent;Direction;Autorise;Sortie;EvenementSecurite;Detail;MethodeAcces");
         foreach (var e in entries)
         {
             sb.Append(e.Timestamp.ToString("o", CultureInfo.InvariantCulture)).Append(';')
@@ -205,7 +205,8 @@ public static class DashboardEndpoints
               .Append(e.WasGranted ? "oui" : "non").Append(';')
               .Append(e.WasCheckOut ? "oui" : "non").Append(';')
               .Append(e.IsSecurityEvent ? "oui" : "non").Append(';')
-              .Append(Csv(e.Detail)).AppendLine();
+              .Append(Csv(e.Detail)).Append(';')
+              .Append(e.AuthMethod).AppendLine();
         }
         return sb.ToString();
     }

@@ -35,6 +35,17 @@ public sealed class VisitRepository : IVisitRepository
             .SingleOrDefaultAsync(ct);
     }
 
+    public async Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+
+        // Même verrou FOR UPDATE que GetForUpdateAsync, même raisonnement
+        // (REQ-SEC-03) — juste résolu par l'empreinte du code de secours.
+        return await _db.Visits
+            .FromSqlInterpolated($"SELECT * FROM visits WHERE \"ManualCodeHash\" = {manualCodeHash} FOR UPDATE")
+            .SingleOrDefaultAsync(ct);
+    }
+
     public async Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);

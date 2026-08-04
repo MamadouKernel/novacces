@@ -17,12 +17,19 @@ public sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
         builder.Property(v => v.HostUserId).HasMaxLength(100).IsRequired();
         builder.Property(v => v.VisitorPhone).HasMaxLength(30);
         builder.Property(v => v.VisitorEmail).HasMaxLength(200);
+        builder.Property(v => v.ManualCodeHash).HasMaxLength(64);
 
         // Contrainte d'unicité qui matérialise l'anti-rejeu au niveau base :
         // même en cas de bug applicatif, PostgreSQL refuserait un doublon
         // de jeton de visite. Le verrou pessimiste (GetForUpdateAsync) reste
         // la protection primaire ; ceci est la ceinture de sécurité.
         builder.HasIndex(v => v.VisitToken).IsUnique();
+
+        // Même raisonnement pour le code de secours, mais NULLABLE (une
+        // visite n'a pas forcément de code assigné) — index unique PARTIEL,
+        // qui ignore les NULL au lieu de n'autoriser qu'une seule visite
+        // sans code sur tout le site.
+        builder.HasIndex(v => v.ManualCodeHash).IsUnique().HasFilter("\"ManualCodeHash\" IS NOT NULL");
 
         // Champs utilisés pour la recherche/filtre côté sûreté et hôte.
         builder.HasIndex(v => v.HostUserId);

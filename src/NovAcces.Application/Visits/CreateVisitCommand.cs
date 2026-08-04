@@ -17,7 +17,7 @@ public sealed record CreateVisitCommand(
     string? VisitorEmail
 );
 
-public sealed record CreateVisitResult(Guid VisitId, string SignedQrPayload, DateTimeOffset ExpiresAt);
+public sealed record CreateVisitResult(Guid VisitId, string SignedQrPayload, DateTimeOffset ExpiresAt, string ManualCode);
 
 /// <summary>
 /// Création d'une demande de visite et génération du QR signé.
@@ -30,6 +30,7 @@ public sealed class CreateVisitHandler
     private readonly IQrSigningService _signing;
     private readonly IDateTimeProvider _clock;
     private readonly IExclusionListService _exclusionList;
+    private readonly IManualCodeService _manualCode;
     private readonly INotificationService _notifications;
     private readonly ILogger<CreateVisitHandler> _logger;
 
@@ -38,6 +39,7 @@ public sealed class CreateVisitHandler
         IQrSigningService signing,
         IDateTimeProvider clock,
         IExclusionListService exclusionList,
+        IManualCodeService manualCode,
         INotificationService notifications,
         ILogger<CreateVisitHandler> logger)
     {
@@ -45,6 +47,7 @@ public sealed class CreateVisitHandler
         _signing = signing;
         _clock = clock;
         _exclusionList = exclusionList;
+        _manualCode = manualCode;
         _notifications = notifications;
         _logger = logger;
     }
@@ -67,6 +70,9 @@ public sealed class CreateVisitHandler
 
         var signedPayload = _signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
 
+        var (rawCode, codeHash) = _manualCode.GenerateCode();
+        visit.AssignManualCode(codeHash);
+
         await _visits.AddAsync(visit, ct);
         await _visits.SaveChangesAsync(ct);
 
@@ -78,7 +84,7 @@ public sealed class CreateVisitHandler
             await _notifications.SendVisitInvitationAsync(
                 new VisitInvitationNotification(
                     visit.Id, visit.VisitorName, visit.VisitorEmail,
-                    signedPayload, visit.ScheduledAt, expiresAt),
+                    signedPayload, visit.ScheduledAt, expiresAt, rawCode),
                 ct);
         }
         catch (Exception ex)
@@ -91,7 +97,7 @@ public sealed class CreateVisitHandler
                 visit.Id);
         }
 
-        return new CreateVisitResult(visit.Id, signedPayload, expiresAt);
+        return new CreateVisitResult(visit.Id, signedPayload, expiresAt, rawCode);
     }
 }
 

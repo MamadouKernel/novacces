@@ -224,6 +224,11 @@
   .badge-name { @apply mt-3 text-lg font-bold leading-tight text-ink; }
   .badge-company { @apply text-sm text-muted; }
   .badge-valid { @apply mt-2 text-xs text-ink2; }
+  .badge-code {
+    @apply mt-3 rounded-lg border border-dashed border-line bg-paper px-3 py-2;
+  }
+  .badge-code-label { @apply block text-[0.65rem] uppercase tracking-[0.1em] text-muted; }
+  .badge-code-value { @apply font-mono text-base font-bold tracking-[0.15em] text-brand-700; }
   .badge-foot { @apply mt-3 border-t border-line pt-2 text-[0.7rem] text-muted; }
 
   /* ---- Indicateur temps réel ---- */

@@ -32,6 +32,9 @@ internal static class InvitationMessage
             "• Munissez-vous d'une pièce d'identité, qui pourra vous être demandée à l'entrée.",
             "• À présenter deux fois : à l'entrée ET à la sortie du site.",
             "",
+            "Le QR ne s'affiche pas ou ne scanne pas ? Donnez ce code de secours à l'agent au poste de contrôle :",
+            $"  {n.ManualCode}",
+            "",
             "Nous vous souhaitons une excellente visite.",
             "",
             "Cordialement,",
@@ -54,6 +57,7 @@ internal static class InvitationMessage
         var intro = Enc(IntroSentence(n));
         var org = Enc(b.OrganizationName);
         var expires = Enc(Format(n.ExpiresAt));
+        var manualCode = Enc(n.ManualCode);
 
         // Checklist en trois lignes, chacune avec une puce ronde ambre — un
         // <table> par ligne plutôt que flexbox/grid (non fiable dans les
@@ -93,10 +97,18 @@ internal static class InvitationMessage
             </td></tr>
           </table>
 
+          <!-- Code de secours (alternative au QR) -->
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin-top:20px;background:#ffffff;border:1px dashed #c9d2d8;border-radius:10px;"">
+            <tr><td style=""padding:16px 20px;"">
+              <p style=""margin:0 0 8px;font-size:12px;color:#6b7784;line-height:1.5;"">Le QR ne s'affiche pas ou ne scanne pas&nbsp;? Donnez ce code de secours à l'agent au poste de contrôle&nbsp;:</p>
+              <span style=""display:inline-block;padding:8px 16px;background:#0e2a3a;color:#ffffff;font-family:'Courier New',Courier,monospace;font-size:19px;font-weight:700;letter-spacing:2px;border-radius:6px;"">{manualCode}</span>
+            </td></tr>
+          </table>
+
           <!-- Points clés -->
-          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin-top:24px;"">
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin-top:20px;"">
             {ChecklistRow("Validité", $"jusqu'au {expires}.")}
-            {ChecklistRow("Strictement personnel", "ce QR Code ne doit pas être partagé ni transféré.")}
+            {ChecklistRow("Strictement personnel", "ce QR Code ainsi que le code de secours sont personnels : merci de ne pas les partager au-delà de ce qui est nécessaire pour accéder au site.")}
             {ChecklistRow("Pièce d'identité", "à prévoir, elle pourra vous être demandée à l'entrée.")}
           </table>
 

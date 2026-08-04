@@ -25,6 +25,7 @@ file sealed class FakeVisitRepository : IVisitRepository
 {
     public Visit? AddedVisit { get; private set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
+    public Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) { AddedVisit = visit; return Task.CompletedTask; }
@@ -52,6 +53,12 @@ file sealed class FakeExclusionListService : IExclusionListService
     public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
     public Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct)
         => Task.FromResult<ExclusionEntryView?>(null);
+}
+
+file sealed class FakeManualCodeService : IManualCodeService
+{
+    public (string RawCode, string CodeHash) GenerateCode() => ("ABCD-2345", "fake-hash");
+    public string ComputeHash(string rawCode) => "fake-hash";
 }
 
 file sealed class FakeNotificationService : INotificationService
@@ -83,7 +90,7 @@ public class CreateVisitHandlerTests
         var notifications = new FakeNotificationService();
         var handler = new CreateVisitHandler(
             visits, new FakeSigningService(), clock, new FakeExclusionListService(),
-            notifications, NullLogger<CreateVisitHandler>.Instance);
+            new FakeManualCodeService(), notifications, NullLogger<CreateVisitHandler>.Instance);
 
         var command = new CreateVisitCommand(
             "Jean Visiteur", "ACME SARL", "Livraison", "host-1",
@@ -95,6 +102,13 @@ public class CreateVisitHandlerTests
         Assert.Equal("signed-payload", notifications.LastNotification!.SignedQrPayload);
         Assert.Equal("Jean Visiteur", notifications.LastNotification.VisitorName);
         Assert.Equal(result.SignedQrPayload, notifications.LastNotification.SignedQrPayload);
+
+        // Le code brut renvoyé (email + réponse HTTP) est distinct de son
+        // empreinte persistée — seule cette dernière est stockée sur la visite.
+        Assert.Equal("ABCD-2345", result.ManualCode);
+        Assert.Equal("ABCD-2345", notifications.LastNotification.ManualCode);
+        Assert.Equal("fake-hash", visits.AddedVisit!.ManualCodeHash);
+        Assert.NotEqual(result.ManualCode, visits.AddedVisit.ManualCodeHash);
     }
 
     [Fact]
@@ -108,7 +122,7 @@ public class CreateVisitHandlerTests
         var notifications = new FakeNotificationService { ThrowOnSend = true };
         var handler = new CreateVisitHandler(
             visits, new FakeSigningService(), clock, new FakeExclusionListService(),
-            notifications, NullLogger<CreateVisitHandler>.Instance);
+            new FakeManualCodeService(), notifications, NullLogger<CreateVisitHandler>.Instance);
 
         var command = new CreateVisitCommand(
             "Jean Visiteur", "ACME SARL", "Livraison", "host-1",

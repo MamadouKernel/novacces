@@ -133,7 +133,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             else
             {
                 <VisitBadge SiteId="@Auth.SiteId" VisitorName="@_lastVisitorName" VisitorCompany="@_lastVisitorCompany"
-                            SignedQrPayload="@_result.SignedQrPayload" ExpiresAt="@_result.ExpiresAt" VisitId="@_result.VisitId" />
+                            SignedQrPayload="@_result.SignedQrPayload" ExpiresAt="@_result.ExpiresAt" VisitId="@_result.VisitId"
+                            ManualCode="@_result.ManualCode" />
             }
         </section>
     </div>
@@ -254,6 +255,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 <div class="modal-b">
                     <VisitBadge SiteId="@Auth.SiteId" VisitorName="@_viewedQrVisitorName" VisitorCompany="@_viewedQrCompany"
                                 SignedQrPayload="@qr.SignedQrPayload" ExpiresAt="@qr.ExpiresAt" VisitId="@qr.VisitId" />
+                    <p class="hint">Le code de secours n'est pas réaffichable ici : il figure dans l'email d'invitation d'origine (ou du dernier renvoi).</p>
                 </div>
             </div>
         </div>

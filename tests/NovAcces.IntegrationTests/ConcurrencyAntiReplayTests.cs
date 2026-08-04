@@ -81,4 +81,62 @@ public sealed class ConcurrencyAntiReplayTests
             return outcome;
         });
     }
+
+    /// <summary>
+    /// Même garantie, chemin code de secours (§9 du plan « code d'accès de
+    /// secours ») : ScanExecutionCore est PARTAGÉ par les deux handlers, donc
+    /// cette garantie devrait « venir gratuitement » — vérifié explicitement
+    /// puisque c'est le cœur de la garantie de sûreté, pas une supposition.
+    /// </summary>
+    [SkippableFact]
+    public async Task ConcurrentEntryScans_OfSameManualCode_GrantExactlyOne()
+    {
+        Skip.IfNot(_fixture.DatabaseAvailable, _fixture.SkipReason);
+
+        var now = DateTimeOffset.UtcNow;
+        const string codeHash = "concurrency-test-hash";
+        await using (var seed = _fixture.CreateContext(PostgresTenantFixture.TenantA))
+        {
+            var visit = Visit.Create(
+                "Visiteur Concurrent Code", "ACME", "Test anti-rejeu", "host-it",
+                AccessMode.Unique, now, 60, null, null, isExcluded: false, now);
+            visit.AssignManualCode(codeHash);
+            seed.Visits.Add(visit);
+            await seed.SaveChangesAsync();
+        }
+
+        const int concurrency = 4;
+        var attempts = Enumerable.Range(0, concurrency)
+            .Select(_ => Task.Run(() => AttemptEntryByManualCodeAsync(codeHash, now)))
+            .ToArray();
+
+        var outcomes = await Task.WhenAll(attempts);
+
+        var granted = outcomes.Count(o => o.IsGranted);
+        Assert.Equal(1, granted);
+
+        await using var check = _fixture.CreateContext(PostgresTenantFixture.TenantA);
+        var stored = await check.Visits.AsNoTracking().SingleAsync(v => v.ManualCodeHash == codeHash);
+        Assert.True(stored.IsOnSite);
+    }
+
+    private async Task<ScanOutcome> AttemptEntryByManualCodeAsync(string codeHash, DateTimeOffset now)
+    {
+        await using var ctx = _fixture.CreateContext(PostgresTenantFixture.TenantA);
+        var uow = new UnitOfWork(ctx);
+        var repo = new VisitRepository(ctx);
+
+        return await uow.ExecuteInTransactionAsync(async ct =>
+        {
+            var visit = await repo.GetForUpdateByManualCodeHashAsync(codeHash, ct);
+            Assert.NotNull(visit);
+
+            var outcome = visit!.Scan(CheckpointDirection.Entry, true, now, isOnExclusionList: false);
+
+            await Task.Delay(100, ct);
+
+            await repo.SaveChangesAsync(ct);
+            return outcome;
+        });
+    }
 }

@@ -26,6 +26,7 @@ public sealed class UpdateVisitHandler
 {
     private readonly IVisitRepository _visits;
     private readonly IQrSigningService _signing;
+    private readonly IManualCodeService _manualCode;
     private readonly INotificationService _notifications;
     private readonly IAdminAuditLog _audit;
     private readonly ILogger<UpdateVisitHandler> _logger;
@@ -33,12 +34,14 @@ public sealed class UpdateVisitHandler
     public UpdateVisitHandler(
         IVisitRepository visits,
         IQrSigningService signing,
+        IManualCodeService manualCode,
         INotificationService notifications,
         IAdminAuditLog audit,
         ILogger<UpdateVisitHandler> logger)
     {
         _visits = visits;
         _signing = signing;
+        _manualCode = manualCode;
         _notifications = notifications;
         _audit = audit;
         _logger = logger;
@@ -75,16 +78,29 @@ public sealed class UpdateVisitHandler
             return new UpdateVisitResult(false, ex.Message);
         }
 
+        // L'email a changé : le message déjà envoyé (s'il y en a eu un) est
+        // parti à la mauvaise adresse. Le renvoi émet un NOUVEAU code de
+        // secours (l'ancien, non recouvrable depuis son empreinte, devient
+        // silencieusement invalide — même limite que TerminalDirectory pour
+        // une clé API) : on le génère avant la sauvegarde pour qu'un seul
+        // SaveChangesAsync couvre coordonnées + code.
+        var willResend = emailChanged && !string.IsNullOrWhiteSpace(visit.VisitorEmail);
+        string? rawCode = null;
+        if (willResend)
+        {
+            var (newRawCode, newCodeHash) = _manualCode.GenerateCode();
+            visit.AssignManualCode(newCodeHash);
+            rawCode = newRawCode;
+        }
+
         await _visits.SaveChangesAsync(ct);
 
         await _audit.RecordAsync(
             AdminAuditAction.VisitUpdated, command.RequestedByHostId, command.VisitId.ToString(),
             $"Coordonnées corrigées pour la visite {command.VisitId}.", ct);
 
-        // L'email a changé : le message déjà envoyé (s'il y en a eu un) est
-        // parti à la mauvaise adresse — on renvoie le QR à la nouvelle, best-effort.
         var invitationResent = false;
-        if (emailChanged && !string.IsNullOrWhiteSpace(visit.VisitorEmail))
+        if (willResend)
         {
             try
             {
@@ -92,7 +108,7 @@ public sealed class UpdateVisitHandler
                 var signedPayload = _signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
                 await _notifications.SendVisitInvitationAsync(
                     new VisitInvitationNotification(
-                        visit.Id, visit.VisitorName, visit.VisitorEmail, signedPayload, visit.ScheduledAt, expiresAt),
+                        visit.Id, visit.VisitorName, visit.VisitorEmail, signedPayload, visit.ScheduledAt, expiresAt, rawCode!),
                     ct);
                 invitationResent = true;
             }

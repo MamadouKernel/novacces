@@ -80,7 +80,7 @@ public static class VisitEndpoints
             {
                 var result = await handler.HandleAsync(command, ct);
                 await events.BroadcastVisitCreatedAsync(result.VisitId, request.VisitorName, clock.UtcNow, ct);
-                return Results.Ok(new CreateVisitResponseDto(result.VisitId, result.SignedQrPayload, result.ExpiresAt));
+                return Results.Ok(new CreateVisitResponseDto(result.VisitId, result.SignedQrPayload, result.ExpiresAt, result.ManualCode));
             }
             catch (DuplicateActiveVisitException ex)
             {
@@ -141,7 +141,7 @@ public static class VisitEndpoints
                     var result = await handler.HandleAsync(command, ct);
                     await events.BroadcastVisitCreatedAsync(result.VisitId, name, clock.UtcNow, ct);
                     items.Add(new BulkCreateVisitItemDto(
-                        name, true, result.VisitId, result.SignedQrPayload, result.ExpiresAt, null));
+                        name, true, result.VisitId, result.SignedQrPayload, result.ExpiresAt, null, result.ManualCode));
                 }
                 catch (DuplicateActiveVisitException)
                 {
@@ -253,6 +253,11 @@ public static class VisitEndpoints
                     statusCode: StatusCodes.Status409Conflict);
 
             var signedPayload = signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
+            // ManualCode omis : seule son empreinte est persistée (comme un
+            // hash de mot de passe), le code brut n'est donc pas recouvrable
+            // ici — seuls POST /api/visits et le renvoi sur changement
+            // d'email (UpdateVisitHandler) peuvent le montrer, juste après
+            // en avoir généré un nouveau.
             return Results.Ok(new CreateVisitResponseDto(visit.Id, signedPayload, expiresAt));
         })
         .RequireAuthorization(NovAccesPolicies.DashboardApi)

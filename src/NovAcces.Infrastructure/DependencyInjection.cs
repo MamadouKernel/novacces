@@ -92,6 +92,7 @@ public static class DependencyInjection
 
         services.Configure<QrSigningOptions>(configuration.GetSection("QrSigning"));
         services.AddSingleton<IQrSigningService, Es256QrSigningService>();
+        services.AddSingleton<IManualCodeService, ManualCodeService>();
 
         // --- Notifications (REQ-F-03) : email uniquement (WhatsApp abandonné,
         // décision M. Kodjo du 01/08/2026 — voir docs/accord-commercial.md) ---
@@ -101,6 +102,7 @@ public static class DependencyInjection
 
         // --- Cas d'usage (Application) ---
         services.AddScoped<ScanQrHandler>();
+        services.AddScoped<ScanManualCodeHandler>();
         services.AddScoped<CreateVisitHandler>();
         services.AddScoped<UpdateVisitHandler>();
         services.AddScoped<RevokeVisitHandler>();

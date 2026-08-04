@@ -13,6 +13,13 @@
     <div class="badge-name">@VisitorName</div>
     <div class="badge-company">@VisitorCompany</div>
     <div class="badge-valid">Valide jusqu'au @ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
+    @if (!string.IsNullOrWhiteSpace(ManualCode))
+    {
+        <div class="badge-code">
+            <span class="badge-code-label">Code de secours</span>
+            <span class="badge-code-value">@ManualCode</span>
+        </div>
+    }
     <div class="badge-foot">Présentez ce badge au poste de contrôle · Sigasécurité</div>
 </div>
 
@@ -30,6 +37,11 @@
     [Parameter, EditorRequired] public string SignedQrPayload { get; set; } = "";
     [Parameter, EditorRequired] public DateTimeOffset ExpiresAt { get; set; }
     [Parameter, EditorRequired] public Guid VisitId { get; set; }
+
+    // Absent lors d'une réémission de QR (« Voir QR ») : seule l'empreinte du
+    // code est persistée, le code brut n'est donc affiché qu'à la création
+    // ou au renvoi sur changement d'email — jamais recalculable après coup.
+    [Parameter] public string? ManualCode { get; set; }
 
     private async Task PrintAsync()
     {

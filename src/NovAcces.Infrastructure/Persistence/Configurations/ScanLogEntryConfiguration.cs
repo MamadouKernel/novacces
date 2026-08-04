@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NovAcces.Domain.Entities;
+using NovAcces.Domain.Enums;
 
 namespace NovAcces.Infrastructure.Persistence.Configurations;
 
@@ -15,6 +16,10 @@ public sealed class ScanLogEntryConfiguration : IEntityTypeConfiguration<ScanLog
         builder.Property(e => e.CheckpointId).HasMaxLength(100);
         builder.Property(e => e.AgentId).HasMaxLength(100).IsRequired();
         builder.Property(e => e.Detail).HasMaxLength(1000).IsRequired();
+
+        // Backfill de l'historique : tous les scans antérieurs à cette
+        // colonne étaient forcément des scans QR (seul mode existant alors).
+        builder.Property(e => e.AuthMethod).HasDefaultValue(ScanAuthMethod.Qr);
 
         builder.HasIndex(e => e.Timestamp);
         builder.HasIndex(e => e.IsSecurityEvent);

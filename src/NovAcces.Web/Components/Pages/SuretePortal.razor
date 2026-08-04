@@ -163,7 +163,7 @@ else if (CanViewDashboard)
             <h2>Résultats de recherche</h2>
             <div class="table-wrap">
             <table class="visits">
-                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Détail</th></tr></thead>
+                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Accès</th><th>Détail</th></tr></thead>
                 <tbody>
                     @foreach (var r in _searchResults)
                     {
@@ -171,6 +171,7 @@ else if (CanViewDashboard)
                             <td class="muted">@r.Timestamp.LocalDateTime.ToString("dd/MM HH:mm:ss")</td>
                             <td>@r.VisitorName</td>
                             <td class="muted">@r.AgentId</td>
+                            <td class="muted">@AuthMethodLabel(r.AuthMethod)</td>
                             <td class="muted" style="white-space:normal">@r.Detail</td>
                         </tr>
                     }
@@ -673,6 +674,13 @@ else if (CanViewDashboard)
         }
         catch { /* best-effort */ }
     }
+
+    private static string AuthMethodLabel(string authMethod) => authMethod switch
+    {
+        "ManualCode" => "Code de secours",
+        "DashboardOverride" => "Manuel (dashboard)",
+        _ => "QR",
+    };
 
     private static string VerdictFrom(ScanJournalEntryDto j) =>
         j switch

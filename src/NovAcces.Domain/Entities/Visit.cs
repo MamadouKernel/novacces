@@ -60,6 +60,13 @@ public class Visit
     public int OverstayLevel { get; private set; }
     public DateTimeOffset? LastOverstayAlertAt { get; private set; }
 
+    /// <summary>
+    /// Empreinte du code de secours saisissable manuellement (alternative au
+    /// QR — voir Scan()). Jamais le code en clair : comme pour une clé API
+    /// de terminal, seule l'empreinte est persistée (voir IManualCodeService).
+    /// </summary>
+    public string? ManualCodeHash { get; private set; }
+
     private Visit() { } // EF Core
 
     public static Visit Create(
@@ -247,6 +254,22 @@ public class Visit
         return minutes > 0 ? (int)minutes : 0;
     }
 
+    /// <summary>
+    /// Attribue (ou renouvelle) le code de secours saisissable manuellement.
+    /// Contrairement au VisitToken, ce code PEUT être régénéré : il n'est pas
+    /// récupérable depuis son empreinte (comme une clé API de terminal), donc
+    /// un renvoi d'invitation après correction ne peut pas réafficher
+    /// l'ancien — il en émet un nouveau, ce qui invalide silencieusement le
+    /// précédent (voir UpdateVisitHandler).
+    /// </summary>
+    public void AssignManualCode(string manualCodeHash)
+    {
+        if (string.IsNullOrWhiteSpace(manualCodeHash))
+            throw new DomainException("Le code de secours doit avoir une empreinte valide.");
+
+        ManualCodeHash = manualCodeHash;
+    }
+
     /// <summary>Révocation manuelle par l'hôte ou la sûreté (REQ-F-09), possible à tout moment.</summary>
     public void Revoke(string revokedBy, DateTimeOffset now)
     {
@@ -326,7 +349,10 @@ public enum ScanDenialReason
     TooEarly,
     TooLate,
     NonBusinessDay,
-    InvalidSignature
+    InvalidSignature,
+
+    /// <summary>Code de secours introuvable ou mal saisi — distinct d'InvalidSignature (jamais un QR forgé/altéré).</summary>
+    InvalidManualCode
 }
 
 /// <summary>Résultat d'un scan — jamais d'exception pour un refus métier normal.</summary>

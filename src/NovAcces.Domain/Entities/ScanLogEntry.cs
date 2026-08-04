@@ -25,11 +25,15 @@ public sealed class ScanLogEntry
     public string Detail { get; private set; } = default!;
     public DateTimeOffset Timestamp { get; private set; }
 
+    /// <summary>Moyen d'authentification du scan (QR / code de secours / sortie manuelle sûreté).</summary>
+    public ScanAuthMethod AuthMethod { get; private set; }
+
     private ScanLogEntry() { } // EF Core
 
     public static ScanLogEntry Create(
         Guid visitId, string visitorName, string agentId, CheckpointDirection direction,
-        ScanOutcome outcome, bool degradedMode, string detail, DateTimeOffset now, string? checkpointId = null)
+        ScanOutcome outcome, bool degradedMode, string detail, DateTimeOffset now,
+        ScanAuthMethod authMethod, string? checkpointId = null)
     {
         return new ScanLogEntry
         {
@@ -46,7 +50,8 @@ public sealed class ScanLogEntry
             RecordedInDegradedMode = degradedMode,
             OverstayMinutes = outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null,
             Detail = detail,
-            Timestamp = now
+            Timestamp = now,
+            AuthMethod = authMethod
         };
     }
 }

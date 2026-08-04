@@ -62,6 +62,7 @@ public sealed record VisitInvitationNotification(
     string? VisitorEmail,
     string SignedQrPayload,
     DateTimeOffset? ScheduledAt,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string ManualCode);
 
 public sealed record PasswordResetNotification(string Email, string DisplayName, string ResetLink);

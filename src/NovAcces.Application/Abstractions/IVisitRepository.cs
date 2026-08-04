@@ -14,6 +14,13 @@ public interface IVisitRepository
     /// </summary>
     Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct);
 
+    /// <summary>
+    /// Même verrou pessimiste que <see cref="GetForUpdateAsync"/>, mais résolu
+    /// par l'empreinte du code de secours plutôt que par le VisitToken —
+    /// alternative au QR (voir Visit.ManualCodeHash).
+    /// </summary>
+    Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct);
+
     Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct);
 
     /// <summary>Lecture par jeton de visite, SANS verrou (confrontation de resync).</summary>

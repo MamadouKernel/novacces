@@ -10,7 +10,7 @@ public sealed record CreateVisitRequestDto(
     string? VisitorPhone,
     string? VisitorEmail);
 
-public sealed record CreateVisitResponseDto(Guid VisitId, string SignedQrPayload, DateTimeOffset ExpiresAt);
+public sealed record CreateVisitResponseDto(Guid VisitId, string SignedQrPayload, DateTimeOffset ExpiresAt, string? ManualCode = null);
 
 // ---- Création groupée (invitation d'un groupe de visiteurs en une fois) ----
 
@@ -24,7 +24,8 @@ public sealed record BulkCreateVisitItemDto(
     Guid? VisitId,
     string? SignedQrPayload,
     DateTimeOffset? ExpiresAt,
-    string? Error);
+    string? Error,
+    string? ManualCode = null);
 
 /// <summary>Synthèse d'une création groupée.</summary>
 public sealed record BulkCreateVisitsResponseDto(

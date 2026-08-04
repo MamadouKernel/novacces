@@ -99,7 +99,7 @@ public sealed class RetentionTests
 
         var entry = ScanLogEntry.Create(
             Guid.NewGuid(), visitorName, "agent-test", CheckpointDirection.Entry,
-            ScanOutcome.Granted(), degradedMode: false, "Test rétention", when);
+            ScanOutcome.Granted(), degradedMode: false, "Test rétention", when, ScanAuthMethod.Qr);
         db.ScanLogs.Add(entry);
         await db.SaveChangesAsync();
         return entry.Id;

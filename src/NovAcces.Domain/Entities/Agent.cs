@@ -24,6 +24,18 @@ public sealed class Agent
     /// <summary>Un agent désactivé ne peut plus prendre de poste (départ, suspension).</summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// Suppression logique (§ Archivés) : distincte de <see cref="IsActive"/>.
+    /// Un agent désactivé reste visible et réactivable ; un agent supprimé
+    /// disparaît des listes normales mais la ligne reste en base (traçabilité
+    /// — les journaux de scan référencent le matricule en texte, pas une clé
+    /// étrangère, donc rien ne dépend de la présence de cette ligne). Son
+    /// matricule redevient disponible pour un NOUVEL agent (voir l'index
+    /// unique partiel dans AgentConfiguration).
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; private set; }
+    public string? DeletedBy { get; private set; }
+
     /// <summary>Nombre d'échecs PIN depuis la dernière authentification réussie.</summary>
     public int FailedPinAttempts { get; private set; }
 
@@ -83,5 +95,19 @@ public sealed class Agent
     {
         IsActive = true;
         ResetPinFailures();
+    }
+
+    /// <summary>
+    /// Suppression logique : n'est permise que sur un agent déjà désactivé
+    /// (discipline en deux temps, comme la réaffectation) — un agent encore
+    /// actif doit d'abord être désactivé, jamais supprimé d'un coup.
+    /// </summary>
+    public void Delete(DateTimeOffset now, string actor)
+    {
+        if (IsActive)
+            throw new InvalidOperationException("Désactivez l'agent avant de le supprimer.");
+
+        DeletedAt = now;
+        DeletedBy = actor;
     }
 }

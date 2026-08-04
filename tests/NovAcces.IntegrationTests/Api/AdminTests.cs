@@ -353,6 +353,391 @@ public sealed class AdminTests
     }
 
     /// <summary>
+    /// Suppression (archivage) d'un agent : disparaît de la liste normale,
+    /// apparaît dans les archivés, refusée tant que l'agent est actif, et son
+    /// matricule redevient réutilisable pour un NOUVEL agent.
+    /// </summary>
+    [SkippableFact]
+    public async Task DeleteAgent_RequiresDeactivationFirst_ThenArchivesAndFreesMatricule()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var matricule = $"AG-{Guid.NewGuid():N}".Substring(0, 12);
+
+        var create = await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test Suppression", "1234"));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+
+        // Refusé tant que l'agent est encore actif (discipline en deux temps).
+        var deleteWhileActive = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/delete", null);
+        Assert.Equal(HttpStatusCode.Conflict, deleteWhileActive.StatusCode);
+
+        var deactivate = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/deactivate", null);
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+        var delete = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/delete", null);
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        // Disparu de la liste normale...
+        var listed = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+        Assert.DoesNotContain(listed!, a => a.Matricule == matricule);
+
+        // ...mais visible dans les archivés, avec qui/quand.
+        var archived = await admin.GetFromJsonAsync<List<ArchivedAgentSummaryDto>>(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/archived", Json);
+        // DeletedBy porte l'identifiant technique de l'acteur (sub du JWT,
+        // voir ClaimsPrincipal.HostIdentifier()), pas son email.
+        var archivedEntry = Assert.Single(archived!, a => a.Matricule == matricule);
+        Assert.False(string.IsNullOrWhiteSpace(archivedEntry.DeletedBy));
+
+        // Redondant : un matricule déjà supprimé ne peut pas l'être une seconde fois.
+        var deleteAgain = await admin.PostAsync(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/delete", null);
+        Assert.Equal(HttpStatusCode.NotFound, deleteAgain.StatusCode);
+
+        // Le matricule est réutilisable pour un NOUVEL agent sur le même site.
+        var recreate = await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test Suppression (reprise)", "5678"));
+        Assert.Equal(HttpStatusCode.OK, recreate.StatusCode);
+
+        var listedAfterRecreate = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+            $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+        Assert.True(listedAfterRecreate!.Single(a => a.Matricule == matricule).IsActive);
+    }
+
+    /// <summary>
+    /// L'archive des agents est réservée au SuperAdmin — un Admin ordinaire
+    /// peut créer/désactiver/supprimer des agents mais pas consulter l'archive.
+    /// </summary>
+    [SkippableFact]
+    public async Task ArchivedAgentsEndpoint_IsForbiddenForPlainAdmin()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await NewUserClientAsync("Admin");
+        var forbidden = await admin.GetAsync($"/api/admin/agents/{NovAccesApiFactory.TestSite}/archived");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
+    /// <summary>
+    /// Un même matricule ne doit JAMAIS être actif sur deux sites en même
+    /// temps (traçabilité individuelle des scans, §8.5) — ni par création
+    /// directe, ni par réactivation directe sur le second site.
+    /// </summary>
+    [SkippableFact]
+    public async Task CreateOrReactivateAgent_BlockedIfMatriculeActiveOnAnotherSite()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var otherSite = $"agx{Guid.NewGuid():N}".Substring(0, 20);
+        var admin = await AdminClientAsync();
+        var matricule = $"AG-{Guid.NewGuid():N}".Substring(0, 12);
+
+        try
+        {
+            var provision = await admin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(otherSite));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            var create = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test Croisé", "1234"));
+            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+
+            // Création directe du même matricule sur l'autre site : refusée.
+            var crossCreate = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(otherSite, matricule, "Agent Test Croisé", "5678"));
+            Assert.Equal(HttpStatusCode.Conflict, crossCreate.StatusCode);
+            var crossCreateBody = await crossCreate.Content.ReadAsStringAsync();
+            Assert.Contains(NovAccesApiFactory.TestSite, crossCreateBody, StringComparison.OrdinalIgnoreCase);
+
+            var listedOtherSite = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+                $"/api/admin/agents/{otherSite}", Json);
+            Assert.DoesNotContain(listedOtherSite!, a => a.Matricule == matricule);
+
+            // Même refus en passant par une réactivation directe : on
+            // construit un historique réaliste (le matricule a existé,
+            // inactif, sur otherSite AVANT d'être repris sur TestSite) pour
+            // que la réactivation trouve bien un enregistrement local — le
+            // garde-fou cross-site doit refuser malgré tout.
+            var deactivateOnSource = await admin.PostAsync(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/deactivate", null);
+            Assert.Equal(HttpStatusCode.OK, deactivateOnSource.StatusCode);
+
+            var createOnOther = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(otherSite, matricule, "Agent Test Croisé", "5678"));
+            Assert.Equal(HttpStatusCode.OK, createOnOther.StatusCode);
+
+            var deactivateOnOther = await admin.PostAsync(
+                $"/api/admin/agents/{otherSite}/{matricule}/deactivate", null);
+            Assert.Equal(HttpStatusCode.OK, deactivateOnOther.StatusCode);
+
+            var reclaimSource = await admin.PostAsync(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/reactivate", null);
+            Assert.Equal(HttpStatusCode.OK, reclaimSource.StatusCode);
+
+            // Le matricule est maintenant actif sur TestSite ET existe
+            // (inactif) sur otherSite : le réactiver là-bas doit être refusé.
+            var crossReactivate = await admin.PostAsync(
+                $"/api/admin/agents/{otherSite}/{matricule}/reactivate", null);
+            Assert.Equal(HttpStatusCode.Conflict, crossReactivate.StatusCode);
+
+            var listedOtherSiteAfter = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+                $"/api/admin/agents/{otherSite}", Json);
+            Assert.False(listedOtherSiteAfter!.Single(a => a.Matricule == matricule).IsActive);
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{otherSite}");
+        }
+    }
+
+    /// <summary>
+    /// Réaffectation atomique : l'agent quitte la source et apparaît actif
+    /// sur la cible, jamais actif aux deux endroits, même si un problème
+    /// survient après la désactivation de la source (compensation).
+    /// </summary>
+    [SkippableFact]
+    public async Task ReassignAgent_MovesAtomically_NeverActiveOnBothSites()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var targetSite = $"agy{Guid.NewGuid():N}".Substring(0, 20);
+        var admin = await AdminClientAsync();
+        var matricule = $"AG-{Guid.NewGuid():N}".Substring(0, 12);
+
+        try
+        {
+            var provision = await admin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(targetSite));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            var create = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test Réaffectation", "1234"));
+            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+
+            // Cas nominal : réaffectation réussie.
+            var reassign = await admin.PostAsJsonAsync(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule}/reassign",
+                new ReassignAgentRequestDto(targetSite, "5678"));
+            Assert.Equal(HttpStatusCode.OK, reassign.StatusCode);
+
+            var listedSource = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+            Assert.False(listedSource!.Single(a => a.Matricule == matricule).IsActive);
+
+            var listedTarget = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+                $"/api/admin/agents/{targetSite}", Json);
+            Assert.True(listedTarget!.Single(a => a.Matricule == matricule).IsActive);
+
+            // Cas d'échec (compensation) : un second matricule, déjà présent
+            // (même inactif) sur la cible, fait échouer AddAsync côté cible
+            // (unicité par site) APRÈS que la source a déjà été désactivée.
+            // La source doit alors être réactivée automatiquement — jamais
+            // bloquée nulle part par accident.
+            var matricule2 = $"AG-{Guid.NewGuid():N}".Substring(0, 12);
+
+            var seedOnTarget = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(targetSite, matricule2, "Agent Test Collision", "1111"));
+            Assert.Equal(HttpStatusCode.OK, seedOnTarget.StatusCode);
+            var deactivateSeed = await admin.PostAsync(
+                $"/api/admin/agents/{targetSite}/{matricule2}/deactivate", null);
+            Assert.Equal(HttpStatusCode.OK, deactivateSeed.StatusCode);
+
+            var createOnSource = await admin.PostAsJsonAsync("/api/admin/agents",
+                new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule2, "Agent Test Collision", "2222"));
+            Assert.Equal(HttpStatusCode.OK, createOnSource.StatusCode);
+
+            var conflictingReassign = await admin.PostAsJsonAsync(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}/{matricule2}/reassign",
+                new ReassignAgentRequestDto(targetSite, "9999"));
+            Assert.Equal(HttpStatusCode.Conflict, conflictingReassign.StatusCode);
+
+            var listedSourceAfterFailure = await admin.GetFromJsonAsync<List<AgentSummaryDto>>(
+                $"/api/admin/agents/{NovAccesApiFactory.TestSite}", Json);
+            Assert.True(listedSourceAfterFailure!.Single(a => a.Matricule == matricule2).IsActive,
+                "La source doit être réactivée (compensée) puisque la création sur la cible a échoué.");
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{targetSite}");
+        }
+    }
+
+    /// <summary>
+    /// Suppression (archivage) d'un compte : un Admin ordinaire (pas
+    /// seulement SuperAdmin) peut supprimer un compte qu'il gère, mais seul
+    /// le SuperAdmin peut consulter l'archive. Refusé tant que le compte est
+    /// actif ; l'email redevient disponible pour un nouveau compte.
+    /// </summary>
+    [SkippableFact]
+    public async Task DeleteAccount_ByPlainAdmin_ArchivedListRestrictedToSuperAdmin_ThenFreesEmail()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var superAdmin = await AdminClientAsync();
+        var admin = await NewUserClientAsync("Admin");
+        const string password = "Test!Passw0rd2026";
+        var email = $"hote-delete-{Guid.NewGuid():N}@sicopa.local";
+
+        var register = await admin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(email, password, "Hôte À Supprimer", "Hote", NovAccesApiFactory.TestSite));
+        Assert.Equal(HttpStatusCode.OK, register.StatusCode);
+        var userId = Assert.Single(
+            (await admin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json))!,
+            u => u.Email == email).Id;
+
+        // Refusé tant que le compte est actif.
+        var deleteWhileActive = await admin.PostAsync($"/api/admin/users/{userId}/delete", null);
+        Assert.Equal(HttpStatusCode.Conflict, deleteWhileActive.StatusCode);
+
+        var deactivate = await admin.PostAsJsonAsync(
+            $"/api/admin/users/{userId}/deactivate", new DeactivateUserRequestDto("Test suppression"));
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+        // Un Admin ordinaire peut supprimer (pas réservé au SuperAdmin).
+        var delete = await admin.PostAsync($"/api/admin/users/{userId}/delete", null);
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var listed = await admin.GetFromJsonAsync<List<AdminUserDto>>("/api/admin/users", Json);
+        Assert.DoesNotContain(listed!, u => u.Id == userId);
+
+        // L'archive, elle, est réservée au SuperAdmin.
+        var forbiddenArchive = await admin.GetAsync("/api/admin/users/archived");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenArchive.StatusCode);
+
+        var archived = await superAdmin.GetFromJsonAsync<List<ArchivedAccountSummaryDto>>(
+            "/api/admin/users/archived", Json);
+        var archivedEntry = Assert.Single(archived!, u => u.Id == userId);
+        Assert.False(string.IsNullOrWhiteSpace(archivedEntry.DeletedBy));
+
+        // L'email redevient disponible pour un nouveau compte.
+        var recreate = await admin.PostAsJsonAsync("/api/auth/register",
+            new RegisterUserRequestDto(email, password, "Hôte (repris)", "Hote", NovAccesApiFactory.TestSite));
+        Assert.Equal(HttpStatusCode.OK, recreate.StatusCode);
+    }
+
+    /// <summary>
+    /// Suppression (archivage) d'un site : un Admin ordinaire peut supprimer,
+    /// seul le SuperAdmin consulte l'archive. Contrairement à un agent ou un
+    /// compte, l'identifiant reste réservé pour toujours — reprovisionner ne
+    /// le fait PAS réapparaître dans la vue consolidée.
+    /// </summary>
+    [SkippableFact]
+    public async Task DeleteSite_ByPlainAdmin_RemovedFromOverview_IdentifierNeverReusable()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var siteId = $"delsite{Guid.NewGuid():N}".Substring(0, 20);
+        var superAdmin = await AdminClientAsync();
+        var admin = await NewUserClientAsync("Admin");
+
+        try
+        {
+            var provision = await admin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+            Assert.Equal(HttpStatusCode.OK, provision.StatusCode);
+
+            var deleteWhileActive = await admin.PostAsync($"/api/admin/sites/{siteId}/delete", null);
+            Assert.Equal(HttpStatusCode.Conflict, deleteWhileActive.StatusCode);
+
+            var deactivate = await admin.PostAsJsonAsync(
+                $"/api/admin/sites/{siteId}/deactivate", new DeactivateSiteRequestDto("Test suppression site"));
+            Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+
+            var delete = await admin.PostAsync($"/api/admin/sites/{siteId}/delete", null);
+            Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+            var overview = await admin.GetFromJsonAsync<List<AdminSiteOverviewDto>>("/api/admin/overview", Json);
+            Assert.DoesNotContain(overview!, s => s.SiteId == siteId);
+
+            var forbiddenArchive = await admin.GetAsync("/api/admin/sites/archived");
+            Assert.Equal(HttpStatusCode.Forbidden, forbiddenArchive.StatusCode);
+
+            var archived = await superAdmin.GetFromJsonAsync<List<ArchivedSiteSummaryDto>>(
+                "/api/admin/sites/archived", Json);
+            var archivedEntry = Assert.Single(archived!, s => s.SiteId == siteId);
+            Assert.Equal("Test suppression site", archivedEntry.DeactivationReason);
+
+            // Reprovisionner le même identifiant ne le fait PAS réapparaître :
+            // le schéma existe déjà (idempotent), mais la ligne de registre
+            // reste supprimée, jamais réactivée silencieusement.
+            var reprovision = await admin.PostAsJsonAsync("/api/admin/sites", new ProvisionSiteRequestDto(siteId));
+            Assert.Equal(HttpStatusCode.OK, reprovision.StatusCode);
+
+            var overviewAfterReprovision = await admin.GetFromJsonAsync<List<AdminSiteOverviewDto>>("/api/admin/overview", Json);
+            Assert.DoesNotContain(overviewAfterReprovision!, s => s.SiteId == siteId);
+        }
+        finally
+        {
+            await DropSchemaAsync($"site_{siteId}");
+        }
+    }
+
+    /// <summary>
+    /// Suppression (archivage) d'un terminal : refusée tant qu'il est actif,
+    /// réservée à l'archive SuperAdmin pour la consultation, et son device
+    /// physique redevient réenrôlable comme un NOUVEAU terminal une fois
+    /// supprimé.
+    /// </summary>
+    [SkippableFact]
+    public async Task DeleteTerminal_RequiresRevocationFirst_ArchivedListRestrictedToSuperAdmin_ThenFreesDevice()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var superAdmin = await AdminClientAsync();
+        var admin = await NewUserClientAsync("Admin");
+
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"Del-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        Assert.NotNull(created);
+
+        var ticketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        using var deviceKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var deviceId = Guid.NewGuid().ToString("D");
+        var activation = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            EnrollmentRequest(deviceKey, TicketFromQr(ticket!.QrPayload), deviceId));
+        Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
+
+        // Refusé tant que le terminal est actif.
+        var deleteWhileActive = await admin.PostAsync($"/api/admin/terminals/{created.Id}/delete", null);
+        Assert.Equal(HttpStatusCode.Conflict, deleteWhileActive.StatusCode);
+
+        var revoke = await admin.PostAsync($"/api/admin/terminals/{created.Id}/revoke", null);
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+
+        var delete = await admin.PostAsync($"/api/admin/terminals/{created.Id}/delete", null);
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        var listed = await admin.GetFromJsonAsync<List<TerminalSummaryDto>>("/api/admin/terminals", Json);
+        Assert.DoesNotContain(listed!, t => t.Id == created.Id);
+
+        var forbiddenArchive = await admin.GetAsync("/api/admin/terminals/archived");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenArchive.StatusCode);
+
+        var archived = await superAdmin.GetFromJsonAsync<List<ArchivedTerminalSummaryDto>>(
+            "/api/admin/terminals/archived", Json);
+        var archivedEntry = Assert.Single(archived!, t => t.Id == created.Id);
+        Assert.False(string.IsNullOrWhiteSpace(archivedEntry.DeletedBy));
+
+        // Le device physique est réenrôlable sur un NOUVEAU terminal.
+        var create2 = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"Del2-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created2 = await create2.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        var ticketResponse2 = await admin.PostAsync($"/api/admin/terminals/{created2!.Id}/enrollment-ticket", null);
+        var ticket2 = await ticketResponse2.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        using var deviceKey2 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var activation2 = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            EnrollmentRequest(deviceKey2, TicketFromQr(ticket2!.QrPayload), deviceId));
+        Assert.Equal(HttpStatusCode.OK, activation2.StatusCode);
+    }
+
+    /// <summary>
     /// Désactiver un site coupe l'accès (403, message explicite) SANS toucher
     /// aux données, pour tous les comptes rattachés — pas seulement les
     /// nouveaux. La réactivation reste réservée au SuperAdmin, comme pour un

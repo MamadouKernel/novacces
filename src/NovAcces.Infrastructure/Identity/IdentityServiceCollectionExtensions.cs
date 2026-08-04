@@ -32,6 +32,7 @@ public static class IdentityServiceCollectionExtensions
         services.AddScoped<ITerminalDirectory, TerminalDirectory>();
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
         services.AddScoped<IApplicationAuditLog, ApplicationAuditLog>();
+        services.AddScoped<IAgentRegistry, AgentRegistry>();
 
         return services.AddIdentityCore<ApplicationUser>(options =>
             {

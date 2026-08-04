@@ -18,6 +18,18 @@ public sealed class SiteRegistration
     public string? DeactivatedBy { get; private set; }
     public string? DeactivationReason { get; private set; }
 
+    /// <summary>
+    /// Suppression logique (archivage) : distincte de <see cref="IsActive"/>.
+    /// CONTRAIREMENT à Agent.Matricule ou ApplicationUser.Email, le SiteId
+    /// n'est PAS réutilisable après suppression — le schéma PostgreSQL
+    /// « site_&lt;id&gt; » et ses données ne sont JAMAIS détruits par cette
+    /// action (voir TenantProvisioningService), donc reprovisionner le même
+    /// identifiant reconnecterait silencieusement à d'anciennes données. Le
+    /// site disparaît seulement des listes (voir /api/admin/overview).
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; private set; }
+    public string? DeletedBy { get; private set; }
+
     private SiteRegistration() { }
 
     public static SiteRegistration Create(string siteId, DateTimeOffset now) => new()
@@ -41,5 +53,18 @@ public sealed class SiteRegistration
         DeactivatedAt = null;
         DeactivatedBy = null;
         DeactivationReason = null;
+    }
+
+    /// <summary>
+    /// Suppression logique : n'est permise que sur un site déjà désactivé
+    /// (discipline en deux temps, comme pour un agent ou un compte).
+    /// </summary>
+    public void Delete(DateTimeOffset now, string actor)
+    {
+        if (IsActive)
+            throw new InvalidOperationException("Désactivez le site avant de le supprimer.");
+
+        DeletedAt = now;
+        DeletedBy = actor;
     }
 }

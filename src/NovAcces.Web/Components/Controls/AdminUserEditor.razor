@@ -66,7 +66,11 @@
             <div class="eyebrow">Statut du compte</div>
             @if (User.IsDeactivated)
             {
-                <button class="btn-primary" style="max-width:220px" @onclick="ReactivateAsync" disabled="@_busy">Réactiver</button>
+                <div style="display:flex;gap:.5rem">
+                    <button class="btn-primary" style="max-width:220px" @onclick="ReactivateAsync" disabled="@_busy">Réactiver</button>
+                    <button class="btn-danger" @onclick="DeleteAsync" disabled="@_busy">Supprimer ce compte</button>
+                </div>
+                <p class="hint" style="margin-top:.4rem">Le compte disparaît des listes, mais reste conservé pour la traçabilité. Son email redevient disponible pour un nouveau compte.</p>
             }
             else if (!_confirmingDeactivate)
             {
@@ -206,6 +210,24 @@
                 await OnSaved.InvokeAsync();
             }
             else { _statusMsg = error ?? "Réactivation refusée."; }
+        }
+        catch { _statusMsg = "Service indisponible, réessayez."; }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        _statusMsg = null;
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteUserAsync(User.Id);
+            if (ok)
+            {
+                Toasts.Success("Compte supprimé (archivé).");
+                await OnSaved.InvokeAsync();
+            }
+            else { _statusMsg = error ?? "Suppression refusée."; }
         }
         catch { _statusMsg = "Service indisponible, réessayez."; }
         finally { _busy = false; }

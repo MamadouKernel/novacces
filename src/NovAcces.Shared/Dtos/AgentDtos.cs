@@ -66,6 +66,17 @@ public sealed record CreateAgentRequestDto(string SiteId, string Matricule, stri
 /// <summary>Agent listé dans la console d'administration (sans le PIN).</summary>
 public sealed record AgentSummaryDto(string Matricule, string DisplayName, bool IsActive = true);
 
+/// <summary>Agent supprimé (archivé), pour la consultation en lecture seule.</summary>
+public sealed record ArchivedAgentSummaryDto(
+    string Matricule, string DisplayName, DateTimeOffset DeletedAt, string? DeletedBy);
+
+/// <summary>
+/// Réaffectation atomique d'un agent vers un autre site (nouveau PIN sur la
+/// cible) : le serveur désactive la source avant de créer la cible, avec
+/// compensation automatique en cas d'échec — jamais actif aux deux endroits.
+/// </summary>
+public sealed record ReassignAgentRequestDto(string TargetSiteId, string Pin);
+
 /// <summary>
 /// Un scan effectué hors ligne, remonté à la resynchronisation. Porte le verdict
 /// local (VerdictCode) et le marqueur d'événement de sécurité, pour que le

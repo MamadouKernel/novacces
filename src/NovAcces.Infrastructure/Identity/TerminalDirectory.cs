@@ -48,6 +48,7 @@ public sealed class TerminalDirectory : ITerminalDirectory
 
     public async Task<IReadOnlyList<TerminalSummary>> ListAsync(CancellationToken ct) =>
         await _db.Terminals
+            .Where(t => t.DeletedAt == null)
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new TerminalSummary(t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled))
             .ToListAsync(ct);
@@ -68,6 +69,24 @@ public sealed class TerminalDirectory : ITerminalDirectory
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    public async Task<bool> DeleteAsync(Guid id, string actor, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == id && t.DeletedAt == null, ct);
+        if (terminal is null)
+            return false;
+
+        terminal.Delete(DateTimeOffset.UtcNow, actor);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<ArchivedTerminalSummary>> ListArchivedAsync(CancellationToken ct) =>
+        await _db.Terminals
+            .Where(t => t.DeletedAt != null)
+            .OrderByDescending(t => t.DeletedAt)
+            .Select(t => new ArchivedTerminalSummary(t.Id, t.Label, t.SiteIds, t.DeletedAt!.Value, t.DeletedBy))
+            .ToListAsync(ct);
 
     public async Task<TerminalEnrollmentTicket?> CreateEnrollmentTicketAsync(
         Guid terminalId, string createdBy, TimeSpan lifetime, CancellationToken ct)

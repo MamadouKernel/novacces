@@ -2,6 +2,7 @@
 @layout AdminLayout
 @implements IDisposable
 @inject NovAccesApiClient Api
+@inject AuthState Auth
 @inject ToastService Toasts
 @inject AdminLiveUpdates Live
 
@@ -76,8 +77,40 @@
         <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_terminals.Count(t => t.IsActive && t.IsEnrolled)</span></button>
         <button class="filter @(_statusFilter == "pending" ? "on" : "")" @onclick='() => SetStatusFilter("pending")'>En attente <span class="count">@_terminals.Count(t => t.IsActive && !t.IsEnrolled)</span></button>
         <button class="filter @(_statusFilter == "revoked" ? "on" : "")" @onclick='() => SetStatusFilter("revoked")'>Révoqués <span class="count">@_terminals.Count(t => !t.IsActive)</span></button>
+        @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+        {
+            <button class="filter @(_statusFilter == "archived" ? "on" : "")" @onclick='() => SetStatusFilter("archived")'>Archivés <span class="count">@_archivedTerminals.Count</span></button>
+        }
     </div>
 
+    @if (_statusFilter == "archived")
+    {
+        <p class="hint">Terminaux supprimés : conservés en base pour la traçabilité, lecture seule — l'appareil physique est réenrôlable comme un nouveau terminal.</p>
+        <div class="table-wrap">
+        <table class="visits">
+            <thead><tr><th>Libellé</th><th>Sites</th><th>Supprimé le</th><th>Par</th></tr></thead>
+            <tbody>
+                @foreach (var t in PagedArchivedTerminals)
+                {
+                    <tr>
+                        <td><strong>@t.Label</strong></td>
+                        <td class="muted">@string.Join(", ", t.SiteIds)</td>
+                        <td>@t.DeletedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="muted">@(t.DeletedBy ?? "—")</td>
+                    </tr>
+                }
+                @if (FilteredArchivedTerminals.Count == 0)
+                {
+                    <tr><td colspan="4" class="muted">Aucun terminal archivé.</td></tr>
+                }
+            </tbody>
+        </table>
+        </div>
+        <Pagination Page="_archivedPage" PageSize="_terminalsPageSize" TotalCount="FilteredArchivedTerminals.Count"
+                    OnPageChanged="p => _archivedPage = p" />
+    }
+    else
+    {
     <div class="table-wrap">
     <table class="visits">
         <thead><tr>
@@ -101,6 +134,10 @@
                             <button class="btn-danger" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
                             <button class="btn-ghost" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">Nouveau QR</button>
                         }
+                        else
+                        {
+                            <button class="btn-danger" @onclick="() => DeleteTerminalAsync(t.Id)" disabled="@_busy">Supprimer</button>
+                        }
                     </td>
                 </tr>
             }
@@ -113,6 +150,7 @@
     </div>
     <Pagination Page="_terminalsPage" PageSize="_terminalsPageSize" TotalCount="FilteredTerminals.Count"
                 OnPageChanged="p => _terminalsPage = p" />
+    }
 </section>
 
 @code {
@@ -147,6 +185,16 @@
     private IReadOnlyList<TerminalSummaryDto> PagedTerminals =>
         SortedTerminals.Skip((_terminalsPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
 
+    private List<ArchivedTerminalSummaryDto> FilteredArchivedTerminals =>
+        _archivedTerminals
+            .Where(t => string.IsNullOrWhiteSpace(_search)
+                || t.Label.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || t.SiteIds.Any(s => s.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+    private IReadOnlyList<ArchivedTerminalSummaryDto> PagedArchivedTerminals =>
+        FilteredArchivedTerminals.Skip((_archivedPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
+
     private void SortBy(string column)
     {
         if (_sortColumn == column) _sortAscending = !_sortAscending;
@@ -158,6 +206,7 @@
     {
         _statusFilter = filter;
         _terminalsPage = 1;
+        _archivedPage = 1;
     }
 
     private sealed class NewTerminal { public string Label = ""; public HashSet<string> SiteIds = new(); }
@@ -165,6 +214,8 @@
     private bool _multiSite;
     private string _singleSiteId = "";
     private IReadOnlyList<TerminalSummaryDto> _terminals = Array.Empty<TerminalSummaryDto>();
+    private IReadOnlyList<ArchivedTerminalSummaryDto> _archivedTerminals = Array.Empty<ArchivedTerminalSummaryDto>();
+    private int _archivedPage = 1;
     private string? _terminalMsg; private bool _terminalOk;
     private EnrollmentTicketResponseDto? _lastEnrollmentTicket;
 
@@ -181,6 +232,12 @@
         // pour l'enrôlement d'un NOUVEAU terminal.
         try { _overview = (await Api.GetSiteOverviewAsync()).Where(s => s.IsActive).ToList(); } catch { /* best-effort */ }
         try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
+        // Réservé au SuperAdmin côté API (403 sinon) — inutile d'appeler
+        // l'endpoint pour un Admin ordinaire.
+        if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+        {
+            try { _archivedTerminals = await Api.GetArchivedTerminalsAsync(); } catch { /* best-effort */ }
+        }
     }
 
     private void OnEntityChanged(string kind)
@@ -189,6 +246,10 @@
         _ = InvokeAsync(async () =>
         {
             try { _terminals = await Api.GetTerminalsAsync(); } catch { /* best-effort */ }
+            if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+            {
+                try { _archivedTerminals = await Api.GetArchivedTerminalsAsync(); } catch { /* best-effort */ }
+            }
             StateHasChanged();
         });
     }
@@ -300,6 +361,23 @@
                 await RefreshAsync();
             }
             else { Toasts.Error(error ?? "Révocation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteTerminalAsync(Guid id)
+    {
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteTerminalAsync(id);
+            if (ok)
+            {
+                Toasts.Success("Terminal supprimé (archivé).");
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Suppression refusée."); }
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

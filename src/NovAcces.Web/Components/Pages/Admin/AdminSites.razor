@@ -56,8 +56,36 @@
             <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous <span class="count">@_overview.Count</span></button>
             <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_overview.Count(s => s.IsActive)</span></button>
             <button class="filter @(_statusFilter == "inactive" ? "on" : "")" @onclick='() => SetStatusFilter("inactive")'>Désactivés <span class="count">@_overview.Count(s => !s.IsActive)</span></button>
+            @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+            {
+                <button class="filter @(_statusFilter == "archived" ? "on" : "")" @onclick='() => SetStatusFilter("archived")'>Archivés <span class="count">@_archivedSites.Count</span></button>
+            }
         </div>
-        @if (FilteredSites.Count == 0)
+        @if (_statusFilter == "archived")
+        {
+            <p class="hint">Sites supprimés : le schéma et les données restent intacts, lecture seule — l'identifiant reste réservé (jamais réutilisable).</p>
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Site</th><th>Supprimé le</th><th>Par</th><th>Motif de désactivation</th></tr></thead>
+                <tbody>
+                    @foreach (var s in _archivedSites)
+                    {
+                        <tr>
+                            <td><strong>@s.SiteId</strong></td>
+                            <td>@s.DeletedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="muted">@(s.DeletedBy ?? "—")</td>
+                            <td class="muted">@(s.DeactivationReason ?? "—")</td>
+                        </tr>
+                    }
+                    @if (_archivedSites.Count == 0)
+                    {
+                        <tr><td colspan="4" class="muted">Aucun site archivé.</td></tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+        else if (FilteredSites.Count == 0)
         {
             <div class="empty">@EmptyIcon()<p>Aucun site ne correspond à ce filtre.</p></div>
         }
@@ -117,6 +145,7 @@
                                     <button class="btn-ghost" @onclick="() => _actingSiteId = s.SiteId" disabled="@_busy">Réactiver</button>
                                 }
                                 <button class="btn-ghost" @onclick="() => ExportAsync(s.SiteId)" disabled="@_busy">Exporter</button>
+                                <button class="btn-danger" @onclick="() => DeleteAsync(s.SiteId)" disabled="@_busy">Supprimer</button>
                             }
                         </td>
                     </tr>
@@ -137,6 +166,7 @@
     private string SiteSlugValue => SiteSlug.From(_siteInput);
     private string? _siteMsg; private bool _siteOk;
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+    private IReadOnlyList<ArchivedSiteSummaryDto> _archivedSites = Array.Empty<ArchivedSiteSummaryDto>();
 
     private string? _actingSiteId;
     private string _deactivateReason = "";
@@ -189,6 +219,12 @@
     private async Task RefreshAsync()
     {
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+        // Réservé au SuperAdmin côté API (403 sinon) — inutile d'appeler
+        // l'endpoint pour un Admin ordinaire.
+        if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+        {
+            try { _archivedSites = await Api.GetArchivedSitesAsync(); } catch { /* best-effort */ }
+        }
     }
 
     private void OnEntityChanged(string kind)
@@ -294,6 +330,23 @@
                 await RefreshAsync();
             }
             else { Toasts.Error(error ?? "Réactivation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync(string siteId)
+    {
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteSiteAsync(siteId);
+            if (ok)
+            {
+                Toasts.Success($"Site « {siteId} » supprimé (archivé).");
+                await RefreshAsync();
+            }
+            else { Toasts.Error(error ?? "Suppression refusée."); }
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

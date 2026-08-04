@@ -78,8 +78,38 @@
             <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous statuts <span class="count">@_users.Count</span></button>
             <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_users.Count(u => !u.IsDeactivated)</span></button>
             <button class="filter @(_statusFilter == "inactive" ? "on" : "")" @onclick='() => SetStatusFilter("inactive")'>Désactivés <span class="count">@_users.Count(u => u.IsDeactivated)</span></button>
+            @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+            {
+                <button class="filter @(_statusFilter == "archived" ? "on" : "")" @onclick='() => SetStatusFilter("archived")'>Archivés <span class="count">@_archivedUsers.Count</span></button>
+            }
         </div>
 
+        @if (_statusFilter == "archived")
+        {
+            <p class="hint">Comptes supprimés : conservés en base pour la traçabilité, lecture seule — leur email est réutilisable pour un nouveau compte.</p>
+            <div class="table-wrap">
+            <table class="visits">
+                <thead><tr><th>Email</th><th>Nom</th><th>Supprimé le</th><th>Par</th></tr></thead>
+                <tbody>
+                    @foreach (var u in _archivedUsers)
+                    {
+                        <tr>
+                            <td>@u.Email</td>
+                            <td class="muted">@u.DisplayName</td>
+                            <td>@u.DeletedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="muted">@(u.DeletedBy ?? "—")</td>
+                        </tr>
+                    }
+                    @if (_archivedUsers.Count == 0)
+                    {
+                        <tr><td colspan="4" class="muted">Aucun compte archivé.</td></tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+        else
+        {
         var urows = FilteredUsers;
         if (urows.Count == 0)
         {
@@ -133,6 +163,7 @@
             <Pagination Page="_usersPage" PageSize="_usersPageSize" TotalCount="urows.Count"
                         OnPageChanged="p => _usersPage = p" />
         }
+        }
     }
 </section>
 
@@ -159,6 +190,7 @@
     private string? _userMsg; private bool _userOk;
 
     private IReadOnlyList<AdminUserDto> _users = Array.Empty<AdminUserDto>();
+    private IReadOnlyList<ArchivedAccountSummaryDto> _archivedUsers = Array.Empty<ArchivedAccountSummaryDto>();
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
 
     private string _userSearch = "";
@@ -188,6 +220,12 @@
         // pour un NOUVEAU rattachement — celui-ci reste géré (édition, désactivation)
         // pour les comptes déjà existants dessus.
         try { _overview = (await Api.GetSiteOverviewAsync()).Where(s => s.IsActive).ToList(); } catch { /* best-effort */ }
+        // Réservé au SuperAdmin côté API (403 sinon) — inutile d'appeler
+        // l'endpoint pour un Admin ordinaire.
+        if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+        {
+            try { _archivedUsers = await Api.GetArchivedUsersAsync(); } catch { /* best-effort */ }
+        }
     }
 
     private void OnEntityChanged(string kind)
@@ -196,6 +234,10 @@
         _ = InvokeAsync(async () =>
         {
             try { _users = await Api.GetUsersAsync(); } catch { /* best-effort */ }
+            if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
+            {
+                try { _archivedUsers = await Api.GetArchivedUsersAsync(); } catch { /* best-effort */ }
+            }
             StateHasChanged();
         });
     }

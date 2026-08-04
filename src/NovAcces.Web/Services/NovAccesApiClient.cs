@@ -309,6 +309,20 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Supprime (archive) un compte déjà désactivé — email réutilisable ensuite.</summary>
+    public async Task<(bool Success, string? Error)> DeleteUserAsync(Guid id)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/admin/users/{id}/delete", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Liste les comptes supprimés (archivés), en lecture seule (SuperAdmin uniquement).</summary>
+    public async Task<IReadOnlyList<ArchivedAccountSummaryDto>> GetArchivedUsersAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<ArchivedAccountSummaryDto>>("/api/admin/users/archived");
+        return result ?? new List<ArchivedAccountSummaryDto>();
+    }
+
     /// <summary>Modifie l'email, le nom, le rôle et le site d'un compte.</summary>
     public async Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, string email, string displayName, string role, string? siteId)
     {
@@ -450,6 +464,20 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>Supprime (archive) un site déjà désactivé — identifiant non réutilisable, schéma/données intacts.</summary>
+    public async Task<(bool Success, string? Error)> DeleteSiteAsync(string siteId)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/admin/sites/{siteId}/delete", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Liste les sites supprimés (archivés), en lecture seule (SuperAdmin uniquement).</summary>
+    public async Task<IReadOnlyList<ArchivedSiteSummaryDto>> GetArchivedSitesAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<ArchivedSiteSummaryDto>>("/api/admin/sites/archived");
+        return result ?? new List<ArchivedSiteSummaryDto>();
+    }
+
     /// <summary>
     /// Exporte les données d'un site (visites, journal, audit) en CSV zippé.
     /// Retourne les octets bruts du ZIP — à l'appelant de déclencher le
@@ -492,6 +520,39 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>
+    /// Supprime (archive) un agent déjà désactivé : disparaît des listes
+    /// normales, la ligne reste en base, son matricule redevient réutilisable.
+    /// </summary>
+    public async Task<(bool Success, string? Error)> DeleteAgentAsync(string siteId, string matricule)
+    {
+        var response = await CreateClient(true).PostAsync(
+            $"/api/admin/agents/{Uri.EscapeDataString(siteId)}/{Uri.EscapeDataString(matricule)}/delete", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Liste les agents supprimés (archivés) d'un site, en lecture seule.</summary>
+    public async Task<IReadOnlyList<ArchivedAgentSummaryDto>> GetArchivedAgentsAsync(string siteId)
+    {
+        var result = await CreateClient(true)
+            .GetFromJsonAsync<List<ArchivedAgentSummaryDto>>($"/api/admin/agents/{siteId}/archived");
+        return result ?? new List<ArchivedAgentSummaryDto>();
+    }
+
+    /// <summary>
+    /// Réaffecte un agent vers un autre site en un seul appel atomique côté
+    /// serveur (désactive la source avant de créer la cible, avec
+    /// compensation automatique si la création échoue).
+    /// </summary>
+    public async Task<(bool Success, string? Error)> ReassignAgentAsync(
+        string siteId, string matricule, string targetSiteId, string pin)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            $"/api/admin/agents/{Uri.EscapeDataString(siteId)}/{Uri.EscapeDataString(matricule)}/reassign",
+            new ReassignAgentRequestDto(targetSiteId, pin));
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>Liste les terminaux enrôlés (jamais leur clé).</summary>
     public async Task<IReadOnlyList<TerminalSummaryDto>> GetTerminalsAsync()
     {
@@ -524,6 +585,20 @@ public sealed class NovAccesApiClient
     {
         var response = await CreateClient(true).PostAsync($"/api/admin/terminals/{id}/revoke", null);
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Supprime (archive) un terminal déjà révoqué — device réutilisable ensuite.</summary>
+    public async Task<(bool Success, string? Error)> DeleteTerminalAsync(Guid id)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/admin/terminals/{id}/delete", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Liste les terminaux supprimés (archivés), en lecture seule (SuperAdmin uniquement).</summary>
+    public async Task<IReadOnlyList<ArchivedTerminalSummaryDto>> GetArchivedTerminalsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<ArchivedTerminalSummaryDto>>("/api/admin/terminals/archived");
+        return result ?? new List<ArchivedTerminalSummaryDto>();
     }
 
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response)

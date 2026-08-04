@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NovAcces.Infrastructure.Identity;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NovAcces.Infrastructure.Identity.Migrations
 {
     [DbContext(typeof(NovAccesIdentityDbContext))]
-    partial class NovAccesIdentityDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260804052551_AddAgentRegistry")]
+    partial class AddAgentRegistry
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -235,13 +238,6 @@ namespace NovAcces.Infrastructure.Identity.Migrations
                     b.Property<DateTimeOffset?>("DeactivatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -302,8 +298,7 @@ namespace NovAcces.Infrastructure.Identity.Migrations
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
-                        .HasDatabaseName("UserNameIndex")
-                        .HasFilter("\"DeletedAt\" IS NULL");
+                        .HasDatabaseName("UserNameIndex");
 
                     b.ToTable("AspNetUsers", "identity");
                 });
@@ -375,13 +370,6 @@ namespace NovAcces.Infrastructure.Identity.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -408,13 +396,6 @@ namespace NovAcces.Infrastructure.Identity.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("DeviceInstanceId")
                         .HasMaxLength(200)
@@ -448,8 +429,7 @@ namespace NovAcces.Infrastructure.Identity.Migrations
                         .IsUnique();
 
                     b.HasIndex("DeviceInstanceId")
-                        .IsUnique()
-                        .HasFilter("\"DeletedAt\" IS NULL");
+                        .IsUnique();
 
                     b.ToTable("terminals", "identity");
                 });

@@ -41,16 +41,23 @@ public static class AdminEndpoints
                 .Where(s => sites.Select(x => x.SiteId).Contains(s.SiteId))
                 .ToDictionaryAsync(s => s.SiteId, s => s, StringComparer.OrdinalIgnoreCase, ct);
 
-            var dto = sites.Select(s =>
-            {
-                registrations.TryGetValue(s.SiteId, out var reg);
-                return new AdminSiteOverviewDto(
-                    s.SiteId, s.OnSite, s.ScansToday,
-                    s.TerminalsEnrolled, s.TerminalsActive, s.DegradedScansToday,
-                    IsActive: reg?.IsActive ?? true,
-                    DeactivatedAt: reg?.DeactivatedAt,
-                    DeactivationReason: reg?.DeactivationReason);
-            }).ToList();
+            // Un site supprimé (archivé) disparaît de CETTE vue — donc de tous
+            // les sélecteurs de site de la console (Comptes/Agents/Terminaux),
+            // qui la réutilisent tous. Le schéma et les données ne sont jamais
+            // touchés (voir SiteRegistration.DeletedAt) ; seul un SuperAdmin
+            // peut encore le consulter via /sites/archived.
+            var dto = sites
+                .Where(s => !(registrations.TryGetValue(s.SiteId, out var r) && r.DeletedAt is not null))
+                .Select(s =>
+                {
+                    registrations.TryGetValue(s.SiteId, out var reg);
+                    return new AdminSiteOverviewDto(
+                        s.SiteId, s.OnSite, s.ScansToday,
+                        s.TerminalsEnrolled, s.TerminalsActive, s.DegradedScansToday,
+                        IsActive: reg?.IsActive ?? true,
+                        DeactivatedAt: reg?.DeactivatedAt,
+                        DeactivationReason: reg?.DeactivationReason);
+                }).ToList();
             return Results.Ok(dto);
         })
         .WithName("AdminOverview")
@@ -448,6 +455,80 @@ public static class AdminEndpoints
         .WithName("AdminResetUserPassword")
         .WithSummary("Réinitialise le mot de passe d'un compte (Admin/SuperAdmin selon hiérarchie).");
 
+        // Suppression logique (archivage) : n'agit que sur un compte déjà
+        // désactivé (discipline en deux temps, comme pour un agent). Même
+        // hiérarchie que la désactivation (CanManageAccount/CanActOnOwnAccount).
+        group.MapPost("/users/{id:guid}/delete", async (
+            Guid id,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            IDateTimeProvider clock,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
+            CancellationToken ct) =>
+        {
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var target = await users.FindByIdAsync(id.ToString());
+            if (target is null)
+                return Results.NotFound(new { error = "Compte introuvable." });
+
+            var targetRoles = await users.GetRolesAsync(target);
+            if (!NovAccesAuthorizationMatrix.CanManageAccount(caller, targetRoles))
+                return Results.Json(
+                    new { error = "Votre rôle ne permet pas de supprimer ce compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (target.Id == actor.Id && !NovAccesAuthorizationMatrix.CanActOnOwnAccount(caller))
+                return Results.Json(
+                    new { error = "Vous ne pouvez pas supprimer votre propre compte." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (!target.IsDeactivated)
+                return Results.Conflict(new { error = "Désactivez le compte avant de le supprimer." });
+
+            target.Delete(clock.UtcNow, actor.Id.ToString());
+            var updated = await users.UpdateAsync(target);
+            if (!updated.Succeeded)
+                return Results.BadRequest(new
+                {
+                    error = "Suppression refusée.",
+                    details = updated.Errors.Select(e => e.Description)
+                });
+
+            if (!string.IsNullOrWhiteSpace(target.SiteId) && CurrentTenant.IsValidSiteId(target.SiteId))
+            {
+                tenant.Resolve(target.SiteId);
+                await audit.RecordAsync(AdminAuditAction.AccountDeleted, actor.Id.ToString(),
+                    target.Id.ToString(), "Compte supprimé (archivé).", ct);
+            }
+
+            await activity.NotifyEntityChangedAsync("accounts", ct);
+
+            return Results.Ok(new { message = "Compte supprimé (archivé).", userId = target.Id });
+        })
+        .WithName("AdminDeleteUser")
+        .WithSummary("Supprime (archive) un compte déjà désactivé — email réutilisable ensuite.");
+
+        group.MapGet("/users/archived", async (
+            NovAccesIdentityDbContext identityDb,
+            CancellationToken ct) =>
+        {
+            var archived = await identityDb.Users
+                .IgnoreQueryFilters()
+                .Where(u => u.DeletedAt != null)
+                .OrderByDescending(u => u.DeletedAt)
+                .Select(u => new ArchivedAccountSummaryDto(u.Id, u.Email!, u.DisplayName, u.DeletedAt!.Value, u.DeletedBy))
+                .ToListAsync(ct);
+            return Results.Ok(archived);
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminListArchivedUsers")
+        .WithSummary("Liste les comptes supprimés (archivés), en lecture seule (SuperAdmin uniquement).");
+
         // Provisionnement d'un site depuis la console : désormais possible en HTTP
         // car protégé par le rôle Admin (auth en place). Le service reste aussi
         // disponible en CLI pour l'exploitation (dotnet run -- provision-site).
@@ -598,6 +679,64 @@ public static class AdminEndpoints
         .RequireAuthorization(NovAccesRoles.SuperAdmin)
         .WithName("AdminReactivateSite")
         .WithSummary("Réactive un site désactivé (SuperAdmin uniquement).");
+
+        // Suppression logique (archivage) : n'agit que sur un site déjà
+        // désactivé (discipline en deux temps). Contrairement à un agent ou
+        // un compte, le SiteId N'EST PAS réutilisable ensuite (voir
+        // SiteRegistration.Delete) — le schéma et les données restent intacts,
+        // seule la visibilité dans les listes change.
+        group.MapPost("/sites/{siteId}/delete", async (
+            string siteId,
+            ClaimsPrincipal caller,
+            UserManager<ApplicationUser> users,
+            NovAccesIdentityDbContext identityDb,
+            ISiteCatalog sites,
+            IDateTimeProvider clock,
+            CurrentTenant tenant,
+            IAdminAuditLog audit,
+            IAdminActivityBroadcaster activity,
+            CancellationToken ct) =>
+        {
+            siteId = siteId.Trim().ToLowerInvariant();
+
+            if (!await sites.ExistsAsync(siteId, ct))
+                return Results.NotFound(new { error = "Site introuvable ou non provisionné." });
+
+            var actor = await users.GetUserAsync(caller);
+            if (actor is null)
+                return Results.Unauthorized();
+
+            var registration = await identityDb.Sites.FindAsync(new object?[] { siteId }, ct);
+            if (registration is null || registration.IsActive)
+                return Results.Conflict(new { error = "Désactivez le site avant de le supprimer." });
+
+            registration.Delete(clock.UtcNow, actor.Id.ToString());
+            await identityDb.SaveChangesAsync(ct);
+
+            tenant.Resolve(siteId);
+            await audit.RecordAsync(
+                AdminAuditAction.SiteDeleted, actor.Id.ToString(), siteId, "Site supprimé (archivé).", ct);
+
+            await activity.NotifyEntityChangedAsync("sites", ct);
+
+            return Results.Ok(new { message = "Site supprimé (archivé).", siteId });
+        })
+        .WithName("AdminDeleteSite")
+        .WithSummary("Supprime (archive) un site déjà désactivé — l'identifiant reste réservé, schéma et données intacts.");
+
+        group.MapGet("/sites/archived", async (NovAccesIdentityDbContext identityDb, CancellationToken ct) =>
+        {
+            var archived = await identityDb.Sites
+                .Where(s => s.DeletedAt != null)
+                .OrderByDescending(s => s.DeletedAt)
+                .Select(s => new ArchivedSiteSummaryDto(
+                    s.SiteId, s.DeletedAt!.Value, s.DeletedBy, s.DeactivationReason))
+                .ToListAsync(ct);
+            return Results.Ok(archived);
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminListArchivedSites")
+        .WithSummary("Liste les sites supprimés (archivés), en lecture seule (SuperAdmin uniquement).");
 
         // Export complet d'un site (visites, journal des scans, audit
         // d'administration) — à la demande, en formats ouverts (CSV zippé),
@@ -812,7 +951,19 @@ public static class AdminEndpoints
             var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
             var activity = scope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
 
-            var reactivated = await agents.ReactivateAsync(matricule, ct);
+            bool reactivated;
+            try
+            {
+                reactivated = await agents.ReactivateAsync(matricule, ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Même garde-fou qu'à la création : un retour sur ce site ne
+                // doit pas laisser le matricule actif ailleurs en même temps
+                // (voir IAgentRegistry, appelé par AgentDirectory).
+                return Results.Conflict(new { error = ex.Message });
+            }
+
             if (!reactivated)
                 return Results.NotFound(new { error = $"Agent {matricule} introuvable sur le site {siteId}." });
 
@@ -824,6 +975,151 @@ public static class AdminEndpoints
         })
         .WithName("AdminReactivateAgent")
         .WithSummary("Réactive un agent sur un site qu'il avait quitté (retour d'affectation).");
+
+        // Suppression logique (archivage) : n'agit que sur un agent déjà
+        // désactivé (discipline en deux temps, comme la réaffectation). La
+        // ligne reste en base pour la traçabilité ; le matricule redevient
+        // disponible pour un nouvel agent (index unique partiel, voir
+        // AgentConfiguration).
+        group.MapPost("/agents/{siteId}/{matricule}/delete", async (
+            string siteId,
+            string matricule,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+            var audit = scope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var activity = scope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
+
+            bool deleted;
+            try
+            {
+                deleted = await agents.DeleteAsync(matricule, user.HostIdentifier(), ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
+
+            if (!deleted)
+                return Results.NotFound(new { error = $"Agent {matricule} introuvable sur le site {siteId}." });
+
+            await audit.RecordAsync(AdminAuditAction.AgentDeleted, user.HostIdentifier(), matricule,
+                $"Suppression (archivage) de l'agent {matricule} sur le site {siteId}.", ct);
+            await activity.NotifyEntityChangedAsync("agents", ct);
+
+            return Results.Ok(new { message = $"Agent {matricule} supprimé sur le site {siteId}." });
+        })
+        .WithName("AdminDeleteAgent")
+        .WithSummary("Supprime (archive) un agent déjà désactivé — matricule réutilisable ensuite.");
+
+        group.MapGet("/agents/{siteId}/archived", async (
+            string siteId,
+            IServiceScopeFactory scopeFactory,
+            CancellationToken ct) =>
+        {
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+
+            using var scope = scopeFactory.CreateScope();
+            scope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var agents = scope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+
+            var list = await agents.ListArchivedAsync(ct);
+            return Results.Ok(list
+                .Select(a => new ArchivedAgentSummaryDto(a.Matricule, a.DisplayName, a.DeletedAt, a.DeletedBy))
+                .ToList());
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminListArchivedAgents")
+        .WithSummary("Liste les agents supprimés (archivés) d'un site, en lecture seule (SuperAdmin uniquement).");
+
+        // Réaffectation : désactive d'abord la source, puis crée sur la cible.
+        // La garantie « jamais actif aux deux endroits » vient de la
+        // contrainte d'unicité du registre global (IAgentRegistry, appelé par
+        // AgentDirectory) — pas d'une vérification applicative racée. En cas
+        // d'échec de la création sur la cible, on compense en réactivant la
+        // source : le pire cas est un agent bloqué partout le temps de la
+        // compensation, jamais actif aux deux endroits à la fois.
+        group.MapPost("/agents/{siteId}/{matricule}/reassign", async (
+            string siteId,
+            string matricule,
+            ReassignAgentRequestDto request,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            var targetSiteId = request.TargetSiteId?.Trim().ToLowerInvariant();
+            var pin = request.Pin?.Trim();
+
+            if (!CurrentTenant.IsValidSiteId(siteId))
+                return Results.BadRequest(new { error = "Identifiant de site invalide." });
+            if (!CurrentTenant.IsValidSiteId(targetSiteId))
+                return Results.BadRequest(new { error = "Identifiant de site cible invalide." });
+            if (string.Equals(siteId, targetSiteId, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = "Le site cible doit être différent du site source." });
+            if (string.IsNullOrWhiteSpace(pin) || pin.Length is < 4 or > 8 || !pin.All(char.IsDigit))
+                return Results.BadRequest(new { error = "PIN numérique de 4 à 8 chiffres requis." });
+
+            using var sourceScope = scopeFactory.CreateScope();
+            sourceScope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(siteId);
+            var sourceAgents = sourceScope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+            var sourceAudit = sourceScope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var sourceActivity = sourceScope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
+
+            var existing = (await sourceAgents.ListAsync(ct)).FirstOrDefault(a => a.Matricule == matricule);
+            if (existing is null || !existing.IsActive)
+                return Results.NotFound(new { error = $"Agent {matricule} introuvable ou déjà inactif sur le site {siteId}." });
+            var displayName = existing.DisplayName;
+
+            var deactivated = await sourceAgents.DeactivateAsync(matricule, ct);
+            if (!deactivated)
+                return Results.Conflict(new { error = "Échec de la désactivation sur le site source, réaffectation annulée." });
+
+            await sourceAudit.RecordAsync(AdminAuditAction.AgentDeactivated, user.HostIdentifier(), matricule,
+                $"Désactivation de l'agent {matricule} sur le site {siteId} (réaffectation vers {targetSiteId}).", ct);
+
+            using var targetScope = scopeFactory.CreateScope();
+            targetScope.ServiceProvider.GetRequiredService<CurrentTenant>().Resolve(targetSiteId!);
+            var targetAgents = targetScope.ServiceProvider.GetRequiredService<IAgentDirectory>();
+
+            try
+            {
+                await targetAgents.AddAsync(matricule, displayName, pin!, ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Compensation : la désactivation source est déjà committée,
+                // on la réactive pour ne pas laisser l'agent bloqué partout.
+                await sourceAgents.ReactivateAsync(matricule, ct);
+                await sourceAudit.RecordAsync(AdminAuditAction.AgentReactivated, user.HostIdentifier(), matricule,
+                    $"Réactivation automatique de l'agent {matricule} sur {siteId} : échec de création sur {targetSiteId} ({ex.Message}).", ct);
+                await sourceActivity.NotifyEntityChangedAsync("agents", ct);
+                return Results.Conflict(new
+                {
+                    error = $"Création sur « {targetSiteId} » refusée : {ex.Message} " +
+                             $"L'agent reste actif sur « {siteId} »."
+                });
+            }
+
+            var targetAudit = targetScope.ServiceProvider.GetRequiredService<IAdminAuditLog>();
+            var targetActivity = targetScope.ServiceProvider.GetRequiredService<IAdminActivityBroadcaster>();
+            await targetAudit.RecordAsync(AdminAuditAction.AgentCreated, user.HostIdentifier(), matricule,
+                $"Création de l'agent « {displayName} » (matricule {matricule}) sur {targetSiteId} (réaffecté depuis {siteId}).", ct);
+
+            await sourceActivity.NotifyEntityChangedAsync("agents", ct);
+            await targetActivity.NotifyEntityChangedAsync("agents", ct);
+
+            return Results.Ok(new { message = $"Agent {matricule} réaffecté de « {siteId} » vers « {targetSiteId} »." });
+        })
+        .WithName("AdminReassignAgent")
+        .WithSummary("Réaffecte un agent vers un autre site de façon atomique (désactive la source avant de créer la cible, avec compensation si la création échoue).");
 
         // --- Terminaux (enrôlement) ---
         // Contrairement aux agents, un terminal ne vit dans le schéma d'AUCUN
@@ -960,6 +1256,48 @@ public static class AdminEndpoints
         })
         .WithName("AdminRevokeTerminal")
         .WithSummary("Révoque un terminal (clé désactivée, historique conservé).");
+
+        // Suppression logique (archivage) : n'agit que sur un terminal déjà
+        // révoqué (discipline en deux temps). Le device redevient réenrôlable
+        // comme un NOUVEAU terminal (voir index unique partiel sur
+        // DeviceInstanceId, NovAccesIdentityDbContext).
+        group.MapPost("/terminals/{id:guid}/delete", async (
+            Guid id,
+            ITerminalDirectory terminals,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            IAdminActivityBroadcaster activity,
+            CancellationToken ct) =>
+        {
+            var before = await terminals.ListAsync(ct);
+            var target = before.FirstOrDefault(t => t.Id == id);
+            if (target is null)
+                return Results.NotFound(new { error = "Terminal introuvable." });
+
+            if (target.IsActive)
+                return Results.Conflict(new { error = "Révoquez le terminal avant de le supprimer." });
+
+            await terminals.DeleteAsync(id, user.HostIdentifier(), ct);
+
+            await RecordOnEachSiteAsync(scopeFactory, target.SiteIds,
+                AdminAuditAction.TerminalDeleted, user.HostIdentifier(), id.ToString(),
+                $"Terminal « {target.Label} » supprimé (archivé).", ct);
+            await activity.NotifyEntityChangedAsync("terminals", ct);
+
+            return Results.Ok(new { message = "Terminal supprimé (archivé)." });
+        })
+        .WithName("AdminDeleteTerminal")
+        .WithSummary("Supprime (archive) un terminal déjà révoqué — device réutilisable ensuite.");
+
+        group.MapGet("/terminals/archived", async (ITerminalDirectory terminals, CancellationToken ct) =>
+        {
+            var list = await terminals.ListArchivedAsync(ct);
+            return Results.Ok(list.Select(t =>
+                new ArchivedTerminalSummaryDto(t.Id, t.Label, t.SiteIds, t.DeletedAt, t.DeletedBy)).ToList());
+        })
+        .RequireAuthorization(NovAccesRoles.SuperAdmin)
+        .WithName("AdminListArchivedTerminals")
+        .WithSummary("Liste les terminaux supprimés (archivés), en lecture seule (SuperAdmin uniquement).");
 
         return group;
     }

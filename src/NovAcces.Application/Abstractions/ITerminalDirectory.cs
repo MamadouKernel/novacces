@@ -7,6 +7,10 @@ public sealed record TerminalIdentity(Guid Id, string Label, IReadOnlyList<strin
 public sealed record TerminalSummary(
     Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt, bool IsEnrolled = false);
 
+/// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule.</summary>
+public sealed record ArchivedTerminalSummary(
+    Guid Id, string Label, IReadOnlyList<string> SiteIds, DateTimeOffset DeletedAt, string? DeletedBy);
+
 /// <summary>Ticket brut remis une seule fois à la console d'administration.</summary>
 public sealed record TerminalEnrollmentTicket(
     Guid TerminalId,
@@ -40,6 +44,17 @@ public interface ITerminalDirectory
     Task<IReadOnlyList<TerminalSummary>> ListAsync(CancellationToken ct);
 
     Task<bool> RevokeAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Suppression logique (archivage) d'un terminal déjà révoqué. Retourne
+    /// false si introuvable (ou déjà supprimé). Lève
+    /// <see cref="InvalidOperationException"/> si le terminal est encore actif
+    /// (révoquer d'abord).
+    /// </summary>
+    Task<bool> DeleteAsync(Guid id, string actor, CancellationToken ct);
+
+    /// <summary>Liste les terminaux supprimés (archivés), en lecture seule, pour l'administration.</summary>
+    Task<IReadOnlyList<ArchivedTerminalSummary>> ListArchivedAsync(CancellationToken ct);
 
     /// <summary>Crée un ticket d'enrôlement temporaire, à usage unique.</summary>
     Task<TerminalEnrollmentTicket?> CreateEnrollmentTicketAsync(

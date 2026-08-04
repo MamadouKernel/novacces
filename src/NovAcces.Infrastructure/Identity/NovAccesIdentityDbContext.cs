@@ -27,6 +27,7 @@ public sealed class NovAccesIdentityDbContext
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<ApplicationAuditEntry> ApplicationAudit => Set<ApplicationAuditEntry>();
     public DbSet<SiteRegistration> Sites => Set<SiteRegistration>();
+    public DbSet<AgentRegistryEntry> AgentRegistry => Set<AgentRegistryEntry>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -37,7 +38,22 @@ public sealed class NovAccesIdentityDbContext
         builder.Entity<ApplicationUser>(u =>
         {
             u.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            u.Property(x => x.DeletedBy).HasMaxLength(200);
             u.HasIndex(x => x.IsDeactivated);
+
+            // L'unicité de UserName/Email (« UserNameIndex », posée par la
+            // classe de base Identity juste au-dessus) ne doit porter que sur
+            // les comptes NON supprimés : un compte archivé garde sa ligne
+            // pour la traçabilité, mais son email redevient réutilisable pour
+            // un NOUVEAU compte (même principe que Agent.Matricule).
+            u.HasIndex(x => x.NormalizedUserName).IsUnique().HasFilter("\"DeletedAt\" IS NULL");
+
+            // Masque les comptes supprimés de TOUTES les requêtes LINQ par
+            // défaut — y compris celles internes à UserManager/UserStore
+            // (FindByEmailAsync, GetUsersInRoleAsync…), qu'on ne peut pas
+            // filtrer au cas par cas. La liste des archivés (SuperAdmin)
+            // utilise explicitement IgnoreQueryFilters().
+            u.HasQueryFilter(x => x.DeletedAt == null);
         });
 
         builder.Entity<Terminal>(t =>
@@ -54,8 +70,12 @@ public sealed class NovAccesIdentityDbContext
             t.Property(x => x.SiteIds).HasColumnType("text[]");
             t.Property(x => x.DeviceInstanceId).HasMaxLength(200);
             t.Property(x => x.DevicePublicKeyPem).HasMaxLength(12000);
-            t.HasIndex(x => x.DeviceInstanceId).IsUnique();
+            t.Property(x => x.DeletedBy).HasMaxLength(200);
 
+            // Unique parmi les terminaux NON supprimés seulement : un appareil
+            // physique dont le terminal a été archivé peut être réenrôlé comme
+            // un NOUVEAU terminal (même principe que Agent.Matricule).
+            t.HasIndex(x => x.DeviceInstanceId).IsUnique().HasFilter("\"DeletedAt\" IS NULL");
         });
         builder.Entity<TerminalEnrollmentTicketEntity>(t =>
         {
@@ -100,7 +120,16 @@ public sealed class NovAccesIdentityDbContext
             s.Property(x => x.SiteId).HasMaxLength(40);
             s.Property(x => x.DeactivatedBy).HasMaxLength(200);
             s.Property(x => x.DeactivationReason).HasMaxLength(500);
+            s.Property(x => x.DeletedBy).HasMaxLength(200);
             s.HasIndex(x => x.IsActive);
+        });
+        builder.Entity<AgentRegistryEntry>(a =>
+        {
+            a.ToTable("agent_registry");
+            a.HasKey(x => x.Matricule);
+            a.Property(x => x.Matricule).HasMaxLength(80);
+            a.Property(x => x.SiteId).HasMaxLength(40).IsRequired();
+            a.HasIndex(x => x.SiteId);
         });
     }
 }

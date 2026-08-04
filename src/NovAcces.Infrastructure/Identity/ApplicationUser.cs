@@ -29,6 +29,17 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     public bool IsDeactivated { get; private set; }
     public DateTimeOffset? DeactivatedAt { get; private set; }
 
+    /// <summary>
+    /// Suppression logique (archivage) : distincte de <see cref="IsDeactivated"/>.
+    /// Un compte désactivé reste visible et réactivable ; un compte supprimé
+    /// disparaît des listes normales (filtre de requête global, voir
+    /// NovAccesIdentityDbContext) mais la ligne reste en base pour la
+    /// traçabilité. Son email/identifiant redevient disponible pour un
+    /// NOUVEAU compte (index unique partiel sur NormalizedUserName).
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; private set; }
+    public string? DeletedBy { get; private set; }
+
     public void Deactivate(DateTimeOffset now)
     {
         IsDeactivated = true;
@@ -43,5 +54,18 @@ public sealed class ApplicationUser : IdentityUser<Guid>
         IsDeactivated = false;
         DeactivatedAt = null;
         LockoutEnd = null;
+    }
+
+    /// <summary>
+    /// Suppression logique : n'est permise que sur un compte déjà désactivé
+    /// (discipline en deux temps, comme pour un agent).
+    /// </summary>
+    public void Delete(DateTimeOffset now, string actor)
+    {
+        if (!IsDeactivated)
+            throw new InvalidOperationException("Désactivez le compte avant de le supprimer.");
+
+        DeletedAt = now;
+        DeletedBy = actor;
     }
 }

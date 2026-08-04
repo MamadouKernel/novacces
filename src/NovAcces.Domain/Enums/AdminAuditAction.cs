@@ -25,6 +25,9 @@ public enum AdminAuditAction
     /// <summary>Réactivation d'un agent sur un site qu'il avait quitté (retour d'affectation).</summary>
     AgentReactivated,
 
+    /// <summary>Suppression logique (archivage) d'un agent déjà désactivé — matricule libéré pour réutilisation.</summary>
+    AgentDeleted,
+
     /// <summary>Enrôlement d'un terminal (clé API générée pour un ou plusieurs sites).</summary>
     TerminalCreated,
 
@@ -52,6 +55,9 @@ public enum AdminAuditAction
     /// <summary>Réinitialisation forcée du mot de passe d'un compte par un administrateur.</summary>
     AccountPasswordReset,
 
+    /// <summary>Suppression logique (archivage) d'un compte déjà désactivé — email réutilisable ensuite.</summary>
+    AccountDeleted,
+
     /// <summary>
     /// Sortie d'un visiteur enregistrée manuellement par la sûreté, sans scan
     /// au poste (§7). Action privilégiée : elle clôt un cycle et éteint les
@@ -69,5 +75,15 @@ public enum AdminAuditAction
     SiteDeactivated,
 
     /// <summary>Réactivation d'un site désactivé (SuperAdmin uniquement).</summary>
-    SiteReactivated
+    SiteReactivated,
+
+    /// <summary>
+    /// Suppression logique (archivage) d'un site déjà désactivé. Contrairement
+    /// à un agent ou un compte, l'identifiant N'EST PAS réutilisable : le
+    /// schéma et les données du site ne sont jamais détruits par cette action.
+    /// </summary>
+    SiteDeleted,
+
+    /// <summary>Suppression logique (archivage) d'un terminal déjà révoqué — device réutilisable ensuite.</summary>
+    TerminalDeleted
 }

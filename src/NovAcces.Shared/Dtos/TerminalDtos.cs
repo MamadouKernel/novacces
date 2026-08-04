@@ -18,6 +18,10 @@ public sealed record CreateTerminalResponseDto(Guid Id, string Label)
 public sealed record TerminalSummaryDto(
     Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt, bool IsEnrolled = false);
 
+/// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule (SuperAdmin).</summary>
+public sealed record ArchivedTerminalSummaryDto(
+    Guid Id, string Label, IReadOnlyList<string> SiteIds, DateTimeOffset DeletedAt, string? DeletedBy);
+
 /// <summary>
 /// Ticket temporaire affiché par la console d'administration sous forme de QR.
 /// Le ticket brut n'est jamais stocké par l'API : seul son hash est conservé.

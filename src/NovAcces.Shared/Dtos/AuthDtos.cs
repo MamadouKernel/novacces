@@ -117,6 +117,10 @@ public sealed record AdminUserDto(
     Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, string? SiteId, bool TwoFactorEnabled,
     bool IsDeactivated = false);
 
+/// <summary>Compte supprimé (archivé), pour la consultation en lecture seule (SuperAdmin).</summary>
+public sealed record ArchivedAccountSummaryDto(
+    Guid Id, string Email, string DisplayName, DateTimeOffset DeletedAt, string? DeletedBy);
+
 /// <summary>Provisionnement d'un site (schéma + modèle + journal append-only).</summary>
 public sealed record ProvisionSiteRequestDto(string SiteId);
 
@@ -153,6 +157,13 @@ public sealed record AdminSiteOverviewDto(
 
 /// <summary>Désactivation d'un site (contrat non reconduit) : motif obligatoire, comme pour un compte.</summary>
 public sealed record DeactivateSiteRequestDto(string Reason);
+
+/// <summary>
+/// Site supprimé (archivé), pour la consultation en lecture seule (SuperAdmin).
+/// L'identifiant reste réservé (non réutilisable) — schéma et données intacts.
+/// </summary>
+public sealed record ArchivedSiteSummaryDto(
+    string SiteId, DateTimeOffset DeletedAt, string? DeletedBy, string? DeactivationReason);
 
 /// <summary>Point d'une courbe journalière, tous sites confondus (dashboard Admin).</summary>
 public sealed record DailyTrendPointDto(

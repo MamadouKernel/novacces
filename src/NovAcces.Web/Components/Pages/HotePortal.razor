@@ -642,7 +642,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         if (match.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = match.PlannedDurationMinutes;
     }
 
-    // Ré-invitation : pré-remplit le formulaire à partir d'une demande close.
+    // Ré-invitation : pré-remplit le formulaire à partir d'une demande close
+    // et ouvre la fenêtre — sans _showForm = true, les champs étaient bien
+    // renseignés mais rien ne s'affichait à l'écran.
     private void ReInvite(HostVisitDto v)
     {
         _form.VisitorName = v.VisitorName;
@@ -651,6 +653,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         if (v.PlannedDurationMinutes > 0) _form.PlannedDurationMinutes = v.PlannedDurationMinutes;
         _result = null;
         _error = null;
+        _showForm = true;
     }
 
     private async Task<bool> RevokeAsync(Guid visitId)

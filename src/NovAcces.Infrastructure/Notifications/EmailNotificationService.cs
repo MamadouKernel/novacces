@@ -123,6 +123,8 @@ public sealed class EmailNotificationService : INotificationService
                 IsBodyHtml = false,
             };
             message.To.Add(notification.Host.Email!);
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
+                HostEventMessage.Html(notification, _branding), null, MediaTypeNames.Text.Html));
 
             using var client = new SmtpClient(_smtp.Host, _smtp.Port)
             {
@@ -164,6 +166,8 @@ public sealed class EmailNotificationService : INotificationService
                 IsBodyHtml = false,
             };
             message.To.Add(notification.Email);
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
+                PasswordResetMessage.Html(notification, _branding), null, MediaTypeNames.Text.Html));
 
             using var client = new SmtpClient(_smtp.Host, _smtp.Port)
             {

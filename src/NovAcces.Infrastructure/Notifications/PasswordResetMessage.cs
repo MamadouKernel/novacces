@@ -26,4 +26,32 @@ internal static class PasswordResetMessage
             + "votre mot de passe actuel reste valide et rien ne change."
             + signature;
     }
+
+    /// <summary>Email HTML soigné, aux couleurs de la marque — bouton plutôt qu'un lien nu.</summary>
+    public static string Html(PasswordResetNotification n, NotificationBrandingOptions branding)
+    {
+        var name = EmailLayout.Enc(n.DisplayName);
+
+        var body = $@"
+          <p style=""margin:0 0 14px;font-size:17px;color:#10161d;"">Bonjour {name},</p>
+          <p style=""margin:0 0 26px;font-size:15px;line-height:1.6;color:#3c4854;"">
+            Une réinitialisation de votre mot de passe a été demandée pour ce compte.
+            Cliquez sur le bouton ci-dessous pour en choisir un nouveau.
+          </p>
+
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0""><tr><td align=""center"" style=""padding:6px 0 24px;"">
+            {EmailLayout.Button(n.ResetLink, "Choisir un nouveau mot de passe")}
+          </td></tr></table>
+
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#fbfaf6;border:1px solid #e4e1d6;border-radius:10px;"">
+            <tr><td style=""padding:14px 16px;font-size:13px;line-height:1.6;color:#6b7784;"">
+              Si vous n'êtes pas à l'origine de cette demande, ignorez cet email — votre mot
+              de passe actuel reste valide et rien ne change.
+            </td></tr>
+          </table>";
+
+        return EmailLayout.Wrap(
+            "Réinitialisez votre mot de passe en un clic.",
+            "Sécurité du compte", body, branding, branding.SupportContact);
+    }
 }

@@ -1,0 +1,4 @@
+# Scripts shell exécutés sur le VPS (Linux) : toujours LF, jamais CRLF,
+# quel que soit l'OS qui édite/committe (une fin de ligne Windows casse le
+# script sur le serveur — "bad interpreter" ou erreurs de parsing bash).
+*.sh text eol=lf

@@ -61,6 +61,18 @@ file sealed class FakeManualCodeService : IManualCodeService
     public string ComputeHash(string rawCode) => "fake-hash";
 }
 
+file sealed class FakeCurrentTenant : ICurrentTenant
+{
+    public string SiteId { get; init; } = "sicopa";
+    public string SchemaName => $"site_{SiteId}";
+    public bool IsResolved => true;
+}
+
+file sealed class FakeSiteDisplayNameProvider : ISiteDisplayNameProvider
+{
+    public string GetLabel(string siteId) => "SICOPA — Terminal portuaire";
+}
+
 file sealed class FakeNotificationService : INotificationService
 {
     public VisitInvitationNotification? LastNotification { get; private set; }
@@ -90,7 +102,8 @@ public class CreateVisitHandlerTests
         var notifications = new FakeNotificationService();
         var handler = new CreateVisitHandler(
             visits, new FakeSigningService(), clock, new FakeExclusionListService(),
-            new FakeManualCodeService(), notifications, NullLogger<CreateVisitHandler>.Instance);
+            new FakeManualCodeService(), notifications, new FakeCurrentTenant(), new FakeSiteDisplayNameProvider(),
+            NullLogger<CreateVisitHandler>.Instance);
 
         var command = new CreateVisitCommand(
             "Jean Visiteur", "ACME SARL", "Livraison", "host-1",
@@ -102,6 +115,12 @@ public class CreateVisitHandlerTests
         Assert.Equal("signed-payload", notifications.LastNotification!.SignedQrPayload);
         Assert.Equal("Jean Visiteur", notifications.LastNotification.VisitorName);
         Assert.Equal(result.SignedQrPayload, notifications.LastNotification.SignedQrPayload);
+
+        // Le nom du site (billet enrichi, audit du 05/08/2026) doit être
+        // résolu via ISiteDisplayNameProvider et joint à la notification.
+        Assert.Equal("SICOPA — Terminal portuaire", notifications.LastNotification.SiteLabel);
+        Assert.Equal("ACME SARL", notifications.LastNotification.VisitorCompany);
+        Assert.Equal("Livraison", notifications.LastNotification.Motif);
 
         // Le code brut renvoyé (email + réponse HTTP) est distinct de son
         // empreinte persistée — seule cette dernière est stockée sur la visite.
@@ -122,7 +141,8 @@ public class CreateVisitHandlerTests
         var notifications = new FakeNotificationService { ThrowOnSend = true };
         var handler = new CreateVisitHandler(
             visits, new FakeSigningService(), clock, new FakeExclusionListService(),
-            new FakeManualCodeService(), notifications, NullLogger<CreateVisitHandler>.Instance);
+            new FakeManualCodeService(), notifications, new FakeCurrentTenant(), new FakeSiteDisplayNameProvider(),
+            NullLogger<CreateVisitHandler>.Instance);
 
         var command = new CreateVisitCommand(
             "Jean Visiteur", "ACME SARL", "Livraison", "host-1",

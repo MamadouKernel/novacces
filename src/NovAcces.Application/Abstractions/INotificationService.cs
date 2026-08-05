@@ -63,6 +63,10 @@ public sealed record VisitInvitationNotification(
     string SignedQrPayload,
     DateTimeOffset? ScheduledAt,
     DateTimeOffset ExpiresAt,
-    string ManualCode);
+    string ManualCode,
+    /// <summary>Nom lisible du site où le rendez-vous a lieu (voir ISiteDisplayNameProvider).</summary>
+    string SiteLabel = "",
+    string VisitorCompany = "",
+    string Motif = "");
 
 public sealed record PasswordResetNotification(string Email, string DisplayName, string ResetLink);

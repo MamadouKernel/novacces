@@ -14,7 +14,9 @@ namespace NovAcces.Infrastructure.Notifications;
 internal static class InvitationMessage
 {
     public static string Subject(VisitInvitationNotification n) =>
-        $"Votre QR Code d'accès visiteur — présentez-le au poste de contrôle";
+        string.IsNullOrWhiteSpace(n.SiteLabel)
+            ? "Votre QR Code d'accès visiteur — présentez-le au poste de contrôle"
+            : $"Votre QR Code d'accès visiteur — {n.SiteLabel}";
 
     /// <summary>Version texte (base commune de l'email, sans HTML).</summary>
     public static string PlainText(VisitInvitationNotification n, NotificationBrandingOptions b)
@@ -25,6 +27,19 @@ internal static class InvitationMessage
             "",
             IntroSentence(n),
             "",
+        };
+
+        if (!string.IsNullOrWhiteSpace(n.SiteLabel))
+            lines.Add($"• Site : {n.SiteLabel}");
+        if (!string.IsNullOrWhiteSpace(n.VisitorCompany))
+            lines.Add($"• Société : {n.VisitorCompany}");
+        if (!string.IsNullOrWhiteSpace(n.Motif))
+            lines.Add($"• Motif : {n.Motif}");
+        if (lines[^1] != "")
+            lines.Add("");
+
+        lines.AddRange(new[]
+        {
             "Vous trouverez votre QR Code d'accès personnel en pièce jointe (et ci-dessous s'il s'affiche). Présentez-le au poste de contrôle à votre arrivée, ainsi qu'à votre départ.",
             "",
             $"• Validité : jusqu'au {Format(n.ExpiresAt)}.",
@@ -39,7 +54,7 @@ internal static class InvitationMessage
             "",
             "Cordialement,",
             $"{b.OrganizationName} — Contrôle des accès",
-        };
+        });
 
         if (!string.IsNullOrWhiteSpace(b.SupportContact))
             lines.Add($"Une question ? {b.SupportContact}");
@@ -58,6 +73,10 @@ internal static class InvitationMessage
         var org = Enc(b.OrganizationName);
         var expires = Enc(Format(n.ExpiresAt));
         var manualCode = Enc(n.ManualCode);
+        var siteLabel = Enc(string.IsNullOrWhiteSpace(n.SiteLabel) ? "—" : n.SiteLabel);
+        var rendezVous = Enc(n.ScheduledAt is { } s ? Format(s) : "Accès 30 jours ouvrés");
+        var company = Enc(n.VisitorCompany);
+        var motif = Enc(n.Motif);
 
         // Checklist en trois lignes, chacune avec une puce ronde ambre — un
         // <table> par ligne plutôt que flexbox/grid (non fiable dans les
@@ -76,13 +95,43 @@ internal static class InvitationMessage
               </tr></table>
             </td></tr>";
 
+        // Une cellule de la grille d'informations du billet (libellé en petites
+        // capitales au-dessus de la valeur) — même idiome que le reste : table,
+        // pas de flexbox, pour rester fiable sous Outlook desktop.
+        string InfoCell(string label, string value, bool divider) => $@"
+              <td width=""50%"" valign=""top"" style=""padding:0 0 4px {(divider ? "14px" : "0")};{(divider ? "border-left:1px solid #e4e1d6;padding-left:14px;" : "")}"">
+                <p style=""margin:0 0 3px;font-size:10.5px;font-weight:700;letter-spacing:.8px;color:#9a9d8f;text-transform:uppercase;"">{label}</p>
+                <p style=""margin:0;font-size:15px;font-weight:600;color:#0e2a3a;line-height:1.3;"">{value}</p>
+              </td>";
+
+        var infoGrid = $@"
+            <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0""><tr>
+              {InfoCell("Site", siteLabel, false)}
+              {InfoCell("Rendez-vous", rendezVous, true)}
+            </tr></table>";
+
+        // Société/motif : quasi toujours renseignés (champs obligatoires à la
+        // création), mais gardés défensifs — un email déjà en circulation avant
+        // l'introduction de ces champs ne doit pas afficher une ligne vide.
+        var hasSecondRow = !string.IsNullOrWhiteSpace(n.VisitorCompany) || !string.IsNullOrWhiteSpace(n.Motif);
+        var infoGridRow2 = !hasSecondRow ? "" : $@"
+            <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin-top:14px;""><tr>
+              {InfoCell("Société", string.IsNullOrWhiteSpace(n.VisitorCompany) ? "—" : company, false)}
+              {InfoCell("Motif", string.IsNullOrWhiteSpace(n.Motif) ? "—" : motif, true)}
+            </tr></table>";
+
         var body = $@"
           <p style=""margin:0 0 14px;font-size:17px;color:#10161d;"">Bonjour {name},</p>
           <p style=""margin:0 0 26px;font-size:15px;line-height:1.6;color:#3c4854;"">{intro}</p>
 
-          <!-- Carte QR façon billet -->
-          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#fbfaf6;border:1px solid #e4e1d6;border-radius:12px;"">
-            <tr><td align=""center"" style=""padding:22px 20px 8px;"">
+          <!-- Carte façon billet d'embarquement : infos du rendez-vous, puis QR sous la perforation -->
+          <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#fbfaf6;border:1px solid #e4e1d6;border-radius:12px;overflow:hidden;"">
+            <tr><td style=""padding:20px 20px 18px;"">
+              {infoGrid}
+              {infoGridRow2}
+            </td></tr>
+            <tr><td style=""border-top:1px dashed #d5d1c2;line-height:0;font-size:0;"">&nbsp;</td></tr>
+            <tr><td align=""center"" style=""padding:18px 20px 8px;"">
               {EmailLayout.Pill("À présenter au poste de contrôle", "#0e2a3a", "#f5a300")}
             </td></tr>
             <tr><td align=""center"" style=""padding:16px 20px;"">
@@ -92,7 +141,7 @@ internal static class InvitationMessage
                 </td>
               </tr></table>
             </td></tr>
-            <tr><td align=""center"" style=""padding:0 20px 20px;border-bottom:1px dashed #d5d1c2;"">
+            <tr><td align=""center"" style=""padding:0 20px 20px;"">
               <p style=""margin:0;font-size:12px;color:#8a8f7e;"">Valable à l'entrée et à la sortie du site</p>
             </td></tr>
           </table>
@@ -121,10 +170,13 @@ internal static class InvitationMessage
             "Invitation visiteur", body, b, b.SupportContact);
     }
 
-    private static string IntroSentence(VisitInvitationNotification n) =>
-        n.ScheduledAt is { } s
-            ? $"Nous avons le plaisir de vous confirmer votre accès pour le rendez-vous du {Format(s)}."
-            : "Nous avons le plaisir de vous confirmer votre accès visiteur, valable pendant 30 jours ouvrés.";
+    private static string IntroSentence(VisitInvitationNotification n)
+    {
+        var site = string.IsNullOrWhiteSpace(n.SiteLabel) ? "" : $" sur le site {n.SiteLabel}";
+        return n.ScheduledAt is { } s
+            ? $"Nous avons le plaisir de vous confirmer votre accès{site} pour le rendez-vous du {Format(s)}."
+            : $"Nous avons le plaisir de vous confirmer votre accès visiteur{site}, valable pendant 30 jours ouvrés.";
+    }
 
     private static string Format(DateTimeOffset dt) => dt.ToString("dddd d MMMM yyyy 'à' HH'h'mm",
         System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));

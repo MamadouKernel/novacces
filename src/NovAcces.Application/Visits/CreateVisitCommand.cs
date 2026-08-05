@@ -32,6 +32,8 @@ public sealed class CreateVisitHandler
     private readonly IExclusionListService _exclusionList;
     private readonly IManualCodeService _manualCode;
     private readonly INotificationService _notifications;
+    private readonly ICurrentTenant _tenant;
+    private readonly ISiteDisplayNameProvider _siteNames;
     private readonly ILogger<CreateVisitHandler> _logger;
 
     public CreateVisitHandler(
@@ -41,6 +43,8 @@ public sealed class CreateVisitHandler
         IExclusionListService exclusionList,
         IManualCodeService manualCode,
         INotificationService notifications,
+        ICurrentTenant tenant,
+        ISiteDisplayNameProvider siteNames,
         ILogger<CreateVisitHandler> logger)
     {
         _visits = visits;
@@ -49,6 +53,8 @@ public sealed class CreateVisitHandler
         _exclusionList = exclusionList;
         _manualCode = manualCode;
         _notifications = notifications;
+        _tenant = tenant;
+        _siteNames = siteNames;
         _logger = logger;
     }
 
@@ -84,7 +90,8 @@ public sealed class CreateVisitHandler
             await _notifications.SendVisitInvitationAsync(
                 new VisitInvitationNotification(
                     visit.Id, visit.VisitorName, visit.VisitorEmail,
-                    signedPayload, visit.ScheduledAt, expiresAt, rawCode),
+                    signedPayload, visit.ScheduledAt, expiresAt, rawCode,
+                    _siteNames.GetLabel(_tenant.SiteId), visit.VisitorCompany, visit.Motif),
                 ct);
         }
         catch (Exception ex)

@@ -29,6 +29,8 @@ public sealed class UpdateVisitHandler
     private readonly IManualCodeService _manualCode;
     private readonly INotificationService _notifications;
     private readonly IAdminAuditLog _audit;
+    private readonly ICurrentTenant _tenant;
+    private readonly ISiteDisplayNameProvider _siteNames;
     private readonly ILogger<UpdateVisitHandler> _logger;
 
     public UpdateVisitHandler(
@@ -37,6 +39,8 @@ public sealed class UpdateVisitHandler
         IManualCodeService manualCode,
         INotificationService notifications,
         IAdminAuditLog audit,
+        ICurrentTenant tenant,
+        ISiteDisplayNameProvider siteNames,
         ILogger<UpdateVisitHandler> logger)
     {
         _visits = visits;
@@ -44,6 +48,8 @@ public sealed class UpdateVisitHandler
         _manualCode = manualCode;
         _notifications = notifications;
         _audit = audit;
+        _tenant = tenant;
+        _siteNames = siteNames;
         _logger = logger;
     }
 
@@ -108,7 +114,8 @@ public sealed class UpdateVisitHandler
                 var signedPayload = _signing.SignVisitToken(visit.Id, visit.VisitToken, expiresAt);
                 await _notifications.SendVisitInvitationAsync(
                     new VisitInvitationNotification(
-                        visit.Id, visit.VisitorName, visit.VisitorEmail, signedPayload, visit.ScheduledAt, expiresAt, rawCode!),
+                        visit.Id, visit.VisitorName, visit.VisitorEmail, signedPayload, visit.ScheduledAt, expiresAt, rawCode!,
+                        _siteNames.GetLabel(_tenant.SiteId), visit.VisitorCompany, visit.Motif),
                     ct);
                 invitationResent = true;
             }

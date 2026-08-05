@@ -92,6 +92,10 @@ public static class DependencyInjection
         services.Configure<DatabaseBackupOptions>(configuration.GetSection("DatabaseBackup"));
         services.AddSingleton<IDatabaseBackupService, PgDumpDatabaseBackupService>();
 
+        // Libellé lisible d'un site (invitations visiteur, §Q ticket enrichi
+        // du 05/08/2026) — même convention de configuration que /site/config.
+        services.AddSingleton<ISiteDisplayNameProvider, ConfigurationSiteDisplayNameProvider>();
+
         // Vue consolidée multi-sites (§10).
         services.AddScoped<ISiteOverviewService, SiteOverviewService>();
         services.AddScoped<ISiteTrendsService, SiteTrendsService>();

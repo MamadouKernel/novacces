@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddSingleton<IDatabaseBackupService, PgDumpDatabaseBackupService>();
         services.AddScoped<IDatabaseHealthService, PostgresDatabaseHealthService>();
         services.AddScoped<IDatabaseQueryService, PostgresReadOnlyQueryService>();
+        services.AddScoped<ISiteDataResetService, Identity.SiteDataResetService>();
 
         // Libellé lisible d'un site (invitations visiteur, §Q ticket enrichi
         // du 05/08/2026) — même convention de configuration que /site/config.

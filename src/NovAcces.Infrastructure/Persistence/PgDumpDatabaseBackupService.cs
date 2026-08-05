@@ -59,7 +59,7 @@ public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
         // TenantProvisioningService) : une sauvegarde complète bénéficie de
         // la visibilité la plus large sur le schéma, pas seulement celle du
         // rôle applicatif restreint.
-        _connectionString = configuration.GetConnectionString("PostgresOwner");
+        _connectionString = configuration.GetConnectionString("PostgresOwner") ?? "";
         if (string.IsNullOrWhiteSpace(_connectionString))
             _connectionString = configuration.GetConnectionString("Postgres")
                 ?? throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.");

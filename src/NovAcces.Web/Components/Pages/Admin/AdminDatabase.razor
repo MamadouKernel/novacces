@@ -145,11 +145,17 @@ else
         finally { _downloading.Remove(fileName); }
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    // Écrit en if/else plutôt qu'en switch à motifs relationnels : un bras
+    // de switch commençant par "<" piège le parseur Razor dans un bloc
+    // @code, qui le confond avec le début d'une balise HTML (RZ1006/RZ9980
+    // à la compilation — découvert au déploiement du 05/08/2026, absent en
+    // build local, présent en Release/Docker : ne pas réintroduire ce motif
+    // dans un fichier .razor).
+    private static string FormatSize(long bytes)
     {
-        < 1024 => $"{bytes} o",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.#} Ko",
-        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} Mo",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} Go",
-    };
+        if (bytes < 1024) return $"{bytes} o";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} Ko";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.#} Mo";
+        return $"{bytes / (1024.0 * 1024 * 1024):0.##} Go";
+    }
 }

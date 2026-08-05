@@ -24,8 +24,18 @@ fi
 # Charge les variables de .env (POSTGRES_USER, DOMAIN, API_DOMAIN…) dans ce
 # script — docker compose les lit déjà lui-même pour le docker-compose.yml,
 # mais ce script en a aussi besoin directement (psql, curl de vérification).
+#
+# PAS de `source .env` : bash l'interpréterait comme du code shell, donc une
+# valeur avec un espace non protégé par des guillemets (ex. un nom d'affichage
+# "Mamadou Konate") casse le script ("command not found") ou, pire, exécute
+# silencieusement un mot du milieu de la valeur comme une commande. Lecture
+# ligne à ligne à la place : chaque valeur est prise telle quelle, espaces
+# compris, sans jamais être interprétée par le shell.
 set -a
-source .env
+while IFS='=' read -r key value; do
+    case "$key" in ''|'#'*) continue ;; esac
+    export "$key=$value"
+done < .env
 set +a
 
 echo "==> git pull (échoue si le dépôt local a divergé, plutôt qu'un merge silencieux)"

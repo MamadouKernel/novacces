@@ -302,6 +302,40 @@ if (args.Length >= 1 && args[0] == "reset-site-data")
     return 0;
 }
 
+// --- Commande d'administration hors-ligne : remise à zéro COMPLÈTE ---
+//   dotnet NovAcces.Api.dll reset-database --confirm SUPPRIMER-TOUT-SAUF-SUPERADMIN
+// Déprovisionne TOUS les sites (DROP des schémas, pas de re-provisionnement)
+// et supprime TOUS les comptes sauf ceux portant le rôle SuperAdmin — voir
+// ISiteDataResetService.ResetEntireDatabaseAsync pour le détail exact du
+// périmètre. L'action la plus destructrice de toute l'application :
+// volontairement CLI uniquement, jamais un endpoint HTTP, confirmée par une
+// phrase fixe (pas un identifiant à retrouver) pour qu'un copier-coller
+// négligent ne puisse jamais la déclencher par accident.
+if (args.Length >= 1 && args[0] == "reset-database")
+{
+    const string confirmPhrase = "SUPPRIMER-TOUT-SAUF-SUPERADMIN";
+    if (args.Length < 3 || args[1] != "--confirm" || args[2] != confirmPhrase)
+    {
+        Console.Error.WriteLine($"Usage : dotnet NovAcces.Api.dll reset-database --confirm {confirmPhrase}");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("ATTENTION : remise à zéro COMPLÈTE de la base. Déprovisionne TOUS les");
+        Console.Error.WriteLine("sites (visites, scans, exclusions, audit — schémas supprimés, pas");
+        Console.Error.WriteLine("recréés) et supprime TOUS les comptes SAUF les SuperAdmin. Terminaux,");
+        Console.Error.WriteLine("tickets, sessions et registre d'agents entièrement vidés. Irréversible —");
+        Console.Error.WriteLine("pensez à une sauvegarde préalable (voir la console SuperAdmin).");
+        return 1;
+    }
+
+    using var scope = app.Services.CreateScope();
+    var reset = scope.ServiceProvider.GetRequiredService<ISiteDataResetService>();
+
+    Console.WriteLine("Remise à zéro complète de la base en cours...");
+    await reset.ResetEntireDatabaseAsync(default);
+
+    Console.WriteLine("Base réinitialisée : tous les sites déprovisionnés, seuls les comptes SuperAdmin subsistent.");
+    return 0;
+}
+
 // --- Commande d'administration hors-ligne : migrations + amorçage initial ---
 //   dotnet NovAcces.Api.dll migrate
 // Applique les migrations EF (idempotentes) et amorce rôles + compte Admin

@@ -21,4 +21,19 @@ namespace NovAcces.Application.Abstractions;
 public interface ISiteDataResetService
 {
     Task ResetSiteAsync(string siteId, CancellationToken ct);
+
+    /// <summary>
+    /// Remise à zéro COMPLÈTE de la base : déprovisionne TOUS les sites (DROP,
+    /// pas de re-provisionnement — contrairement à <see cref="ResetSiteAsync"/>,
+    /// aucun site ne doit survivre) et supprime tous les comptes SAUF ceux
+    /// portant le rôle SuperAdmin. Terminaux, tickets d'enrôlement, sessions
+    /// et registre d'agents sont vidés intégralement (plus aucun site pour
+    /// les rattacher). Les définitions de rôles elles-mêmes ne sont jamais
+    /// touchées.
+    ///
+    /// CLI uniquement (Program.cs, "reset-database"), jamais un endpoint HTTP
+    /// — action la plus destructrice de toute l'application, réservée à une
+    /// remise à zéro délibérée avant une mise en production réelle.
+    /// </summary>
+    Task ResetEntireDatabaseAsync(CancellationToken ct);
 }

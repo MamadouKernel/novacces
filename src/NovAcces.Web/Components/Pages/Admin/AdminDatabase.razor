@@ -50,6 +50,13 @@ else
 
     <section class="card">
         <h2>Sauvegardes existantes</h2>
+        <p class="hint">
+            Le fichier téléchargé (<span class="mono">.dump</span>) est un format binaire
+            PostgreSQL — il ne s'ouvre pas en double-cliquant dessus (aucun logiciel ne
+            l'affichera). Conservez-le tel quel comme copie de sécurité ; il ne redevient
+            utile qu'avec <span class="mono">pg_restore</span>, via la commande de
+            restauration ci-dessous, exécutée sur le serveur.
+        </p>
         @if (_loading)
         {
             <p class="muted">Chargement…</p>

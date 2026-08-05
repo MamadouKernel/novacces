@@ -57,6 +57,10 @@ services:
       # chaque recréation du conteneur invalide les jetons en cours
       # (réinitialisation de mot de passe, confirmation d'email).
       - api_keys:/app/keys
+      # Sauvegardes de base (SuperAdmin, IDatabaseBackupService) : sans ce
+      # volume, une sauvegarde disparaîtrait au prochain redéploiement au
+      # lieu de survivre à la recréation du conteneur.
+      - database_backups:/app/backups
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -113,3 +117,4 @@ volumes:
   caddy_config:
   api_keys:
   web_keys:
+  database_backups:

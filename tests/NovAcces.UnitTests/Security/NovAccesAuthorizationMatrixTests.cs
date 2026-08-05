@@ -71,4 +71,21 @@ public sealed class NovAccesAuthorizationMatrixTests
 
         Assert.True(NovAccesAuthorizationMatrix.CanActOnOwnAccount(superAdmin));
     }
+
+    // Miroir UI de la policy serveur SecurityJournal (audit du 05/08/2026,
+    // finding F3) : Surete, Admin ET SuperAdmin doivent voir le dashboard.
+    [Theory]
+    [InlineData(NovAccesRoles.Surete)]
+    [InlineData(NovAccesRoles.Admin)]
+    [InlineData(NovAccesRoles.SuperAdmin)]
+    public void CanViewSecurityJournal_AllowsSecurityAdminAndSuperAdmin(string role)
+    {
+        Assert.True(NovAccesAuthorizationMatrix.CanViewSecurityJournal(new[] { role }));
+    }
+
+    [Fact]
+    public void CanViewSecurityJournal_DeniesHote()
+    {
+        Assert.False(NovAccesAuthorizationMatrix.CanViewSecurityJournal(new[] { NovAccesRoles.Hote }));
+    }
 }

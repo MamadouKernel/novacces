@@ -215,3 +215,8 @@ public sealed record RetentionRunResultDto(
     int ApplicationAuditPurged = 0, int RefreshSessionsPurged = 0);
 
 public sealed record SitePurgeDto(string SiteId, int VisitsPurged, int ScanLogsAnonymized);
+
+// ---- Sauvegarde de la base de données (§8.5, SuperAdmin uniquement) ----
+
+/// <summary>Sauvegarde présente sur disque, telle qu'affichée dans la console SuperAdmin.</summary>
+public sealed record DatabaseBackupDto(string FileName, long SizeBytes, DateTimeOffset CreatedAt);

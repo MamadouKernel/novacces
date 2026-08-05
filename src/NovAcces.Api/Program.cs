@@ -332,6 +332,7 @@ app.MapAuditEndpoints();
 app.MapAgentEndpoints().RequireRateLimiting("sensitive");
 app.MapDeviceEnrollmentEndpoints();
 app.MapAdminEndpoints();
+app.MapDatabaseAdminEndpoints().RequireRateLimiting("sensitive");
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization(NovAccesPolicies.Dashboard);
 app.MapHub<ScanEventsHub>("/hubs/scan-events").RequireAuthorization(NovAccesPolicies.AgentEvents);
 app.MapAgentContractEndpoints();

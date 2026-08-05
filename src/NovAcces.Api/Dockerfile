@@ -26,8 +26,22 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
 # curl : uniquement pour le HEALTHCHECK ci-dessous (image aspnet ne l'inclut pas).
+# postgresql-client-16 : fournit pg_dump, utilisé par IDatabaseBackupService
+# pour les sauvegardes déclenchées par le SuperAdmin — version alignée sur
+# "postgres:16-alpine" du docker-compose (pg_dump doit être de version >= au
+# serveur qu'il sauvegarde). Le dépôt PGDG est nécessaire : Debian bookworm
+# ("mcr.microsoft.com/dotnet/aspnet:8.0") ne fournit pas nativement la
+# version 16 du client.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl gnupg lsb-release \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y gnupg lsb-release \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --create-home --shell /usr/sbin/nologin novacces
@@ -35,7 +49,7 @@ COPY --from=build /app/publish .
 # Répertoire des clés DataProtection : monté en volume nommé (docker-compose)
 # pour survivre à la recréation du conteneur — sans quoi chaque redéploiement
 # invalide les jetons en cours (réinitialisation de mot de passe, etc.).
-RUN mkdir -p /app/keys
+RUN mkdir -p /app/keys /app/backups
 RUN chown -R novacces:novacces /app
 USER novacces
 

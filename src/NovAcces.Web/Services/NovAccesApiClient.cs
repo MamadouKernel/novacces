@@ -489,6 +489,35 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
     }
 
+    // ---- Sauvegarde de base (SuperAdmin uniquement, §8.5) ----
+
+    /// <summary>Déclenche une sauvegarde immédiate de la base complète. Null si refusée (409/500).</summary>
+    public async Task<DatabaseBackupDto?> CreateDatabaseBackupAsync()
+    {
+        var response = await CreateClient(true).PostAsync("/api/admin/database/backups", null);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<DatabaseBackupDto>()
+            : null;
+    }
+
+    /// <summary>Liste les sauvegardes existantes, les plus récentes d'abord.</summary>
+    public async Task<IReadOnlyList<DatabaseBackupDto>> GetDatabaseBackupsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<DatabaseBackupDto>>("/api/admin/database/backups");
+        return result ?? new List<DatabaseBackupDto>();
+    }
+
+    /// <summary>
+    /// Télécharge une sauvegarde. Retourne les octets bruts — à l'appelant de
+    /// déclencher le téléchargement via JS interop (novaccesDownloadBase64),
+    /// même mécanisme que ExportSiteAsync.
+    /// </summary>
+    public async Task<byte[]?> DownloadDatabaseBackupAsync(string fileName)
+    {
+        var response = await CreateClient(true).GetAsync($"/api/admin/database/backups/{Uri.EscapeDataString(fileName)}/download");
+        return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
+    }
+
     /// <summary>Liste les agents (matricule + nom) d'un site.</summary>
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(string siteId)
     {

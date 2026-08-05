@@ -86,6 +86,12 @@ public static class DependencyInjection
         services.Configure<Retention.RetentionOptions>(configuration.GetSection("Retention"));
         services.AddSingleton<IDataRetentionService, Retention.DataRetentionService>();
 
+        // Sauvegarde complète de la base (SuperAdmin, §8.5) — audit du
+        // 05/08/2026. Singleton : le sémaphore anti-concurrence n'a de sens
+        // que partagé pour toute l'application, pas par requête.
+        services.Configure<DatabaseBackupOptions>(configuration.GetSection("DatabaseBackup"));
+        services.AddSingleton<IDatabaseBackupService, PgDumpDatabaseBackupService>();
+
         // Vue consolidée multi-sites (§10).
         services.AddScoped<ISiteOverviewService, SiteOverviewService>();
         services.AddScoped<ISiteTrendsService, SiteTrendsService>();

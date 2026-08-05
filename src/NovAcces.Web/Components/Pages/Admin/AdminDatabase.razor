@@ -1,0 +1,155 @@
+@page "/admin/base-de-donnees"
+@layout AdminLayout
+@implements IDisposable
+@inject NovAccesApiClient Api
+@inject ToastService Toasts
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>SigasAcces — Administration · Base de données</PageTitle>
+
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (!Auth.IsInRole(NovAccesRoles.SuperAdmin))
+{
+    @* Garde d'affichage en plus de la policy serveur (SuperAdmin), pour
+       qu'un Admin ordinaire ne voie même pas cet écran se remplir de 403
+       (défense en profondeur, audit du 05/08/2026, finding F2). *@
+    <p class="error" style="padding:2rem">Réservé au SuperAdmin.</p>
+}
+else
+{
+    <header class="portal-header">
+        <div>
+            <h1>Base de données</h1>
+            <p class="muted">Sauvegarde complète (tous les sites) — réservée au SuperAdmin.</p>
+        </div>
+    </header>
+
+    <section class="card">
+        <h2>Sauvegarder maintenant</h2>
+        <p class="muted">
+            Sauvegarde binaire complète (pg_dump, format compressé) de la base entière —
+            tous les sites de tous les clients de Sigasécurité en un seul fichier.
+            Les @MaxKeptLabel plus récentes sont conservées, les plus anciennes sont
+            supprimées automatiquement.
+        </p>
+        <p class="hint">
+            Ne restaure rien depuis le portail : la restauration écrase la base en
+            cours et n'est volontairement pas exposée ici — contactez Mamadou en cas
+            de besoin réel de restauration.
+        </p>
+        <button class="btn-primary" @onclick="CreateBackupAsync" disabled="@_busy">
+            @(_busy ? "Sauvegarde en cours…" : "Sauvegarder maintenant")
+        </button>
+    </section>
+
+    <section class="card">
+        <h2>Sauvegardes existantes</h2>
+        @if (_loading)
+        {
+            <p class="muted">Chargement…</p>
+        }
+        else if (_backups.Count == 0)
+        {
+            <p class="muted">Aucune sauvegarde pour l'instant.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="visits">
+                    <thead><tr><th>Fichier</th><th>Taille</th><th>Créée le</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var b in _backups)
+                        {
+                            <tr>
+                                <td><span class="mono">@b.FileName</span></td>
+                                <td>@FormatSize(b.SizeBytes)</td>
+                                <td>@b.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>
+                                    <button class="btn-ghost" @onclick="() => DownloadAsync(b.FileName)" disabled="@_downloading.Contains(b.FileName)">
+                                        @(_downloading.Contains(b.FileName) ? "Téléchargement…" : "Télécharger")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private const int MaxKept = 14; // miroir informatif de DatabaseBackup:MaxBackupsToKeep (appsettings)
+    private static string MaxKeptLabel => MaxKept.ToString();
+
+    private bool _loading = true;
+    private bool _busy;
+    private IReadOnlyList<DatabaseBackupDto> _backups = Array.Empty<DatabaseBackupDto>();
+    private readonly HashSet<string> _downloading = new();
+
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Auth.Initialized) return;
+        if (!Auth.IsInRole(NovAccesRoles.SuperAdmin)) return;
+        await LoadAsync();
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _backups = await Api.GetDatabaseBackupsAsync(); }
+        catch { Toasts.Error("Impossible de charger les sauvegardes."); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var backup = await Api.CreateDatabaseBackupAsync();
+            if (backup is null)
+            {
+                Toasts.Error("Sauvegarde refusée (déjà en cours, ou service indisponible) — réessayez.");
+                return;
+            }
+            Toasts.Success($"Sauvegarde « {backup.FileName} » créée ({FormatSize(backup.SizeBytes)}).");
+            await LoadAsync();
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _busy = false; }
+    }
+
+    private async Task DownloadAsync(string fileName)
+    {
+        if (!_downloading.Add(fileName)) return;
+        try
+        {
+            var bytes = await Api.DownloadDatabaseBackupAsync(fileName);
+            if (bytes is null) { Toasts.Error("Sauvegarde introuvable."); return; }
+            await JS.InvokeVoidAsync("novaccesDownloadBase64", fileName, Convert.ToBase64String(bytes), "application/octet-stream");
+        }
+        catch { Toasts.Error("Téléchargement impossible, réessayez."); }
+        finally { _downloading.Remove(fileName); }
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} o",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} Ko",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} Mo",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} Go",
+    };
+}

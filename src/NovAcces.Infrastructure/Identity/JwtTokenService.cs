@@ -69,10 +69,11 @@ public sealed class JwtTokenService : IJwtTokenService
     private const string ClaimShiftMarker = "nva_shift"; // "1" = jeton de poste
     private const string ClaimTerminalId = "nva_terminal";
 
-    public (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId)
+    public (string Token, DateTimeOffset ExpiresAt, string Jti) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId)
     {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.AddHours(Math.Max(1, _options.ShiftExpiryHours));
+        var jti = Guid.NewGuid().ToString();
 
         var claims = new List<Claim>
         {
@@ -83,7 +84,7 @@ public sealed class JwtTokenService : IJwtTokenService
             new(NovAccesClaimTypes.SiteId, siteId),
             new(ClaimTerminalId, terminalId.ToString("D")),
             new(ClaimShiftMarker, "1"),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, jti),
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
@@ -93,7 +94,7 @@ public sealed class JwtTokenService : IJwtTokenService
             issuer: _options.Issuer, audience: _options.Audience, claims: claims,
             notBefore: now.UtcDateTime, expires: expiresAt.UtcDateTime, signingCredentials: credentials);
 
-        return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt, jti);
     }
 
     public (string Token, DateTimeOffset ExpiresAt) CreateAgentToken(string matricule, string displayName, string siteId, Guid terminalId)
@@ -152,11 +153,12 @@ public sealed class JwtTokenService : IJwtTokenService
 
             var matricule = principal.FindFirst(ClaimMatricule)?.Value;
             var name = principal.FindFirst(ClaimAgentName)?.Value ?? matricule;
+            var jti = principal.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
             var tokenTerminalIdOptional = Guid.TryParse(terminalClaim, out var parsedTerminalId)
                 ? parsedTerminalId : (Guid?)null;
             return string.IsNullOrWhiteSpace(matricule)
                 ? null
-                : new ShiftIdentity(matricule, name!, siteId!, tokenTerminalIdOptional);
+                : new ShiftIdentity(matricule, name!, siteId!, tokenTerminalIdOptional, jti);
         }
         catch
         {

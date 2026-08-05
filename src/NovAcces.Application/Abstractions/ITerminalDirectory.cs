@@ -66,4 +66,13 @@ public interface ITerminalDirectory
     /// </summary>
     Task<TerminalActivation?> ActivateAsync(
         string ticket, string deviceInstanceId, string devicePublicKeyPem, CancellationToken ct);
+
+    /// <summary>Enregistre ce jeton de poste comme actif pour ce terminal (remplace le précédent).</summary>
+    Task SetActiveShiftAsync(Guid terminalId, string shiftJti, string matricule, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Clôt le poste, uniquement s'il correspond au jeton présenté. Idempotent, no-op sinon.</summary>
+    Task EndActiveShiftAsync(Guid terminalId, string shiftJti, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>Le jeton de poste présenté est-il toujours celui en cours pour ce terminal ?</summary>
+    Task<bool> IsShiftActiveAsync(Guid terminalId, string shiftJti, CancellationToken ct);
 }

@@ -37,8 +37,10 @@ public static class AgentEndpoints
             ShiftStartRequestDto request,
             IAgentDirectory agents,
             IJwtTokenService jwt,
+            ITerminalDirectory terminals,
             ICurrentTenant tenant,
             ClaimsPrincipal user,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Matricule) || string.IsNullOrWhiteSpace(request.Pin))
@@ -56,13 +58,51 @@ public static class AgentEndpoints
             if (!Guid.TryParse(terminalId, out var parsedTerminalId))
                 return Results.Forbid();
 
-            var (token, expiresAt) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, tenant.SiteId, parsedTerminalId);
+            var (token, expiresAt, jti) = jwt.CreateShiftToken(agent.Matricule, agent.DisplayName, tenant.SiteId, parsedTerminalId);
+
+            // Remplace silencieusement le poste précédent de ce terminal (relève
+            // sans clôture explicite) — et rend caduc, pour l'ATTRIBUTION des
+            // scans, tout jeton de poste antérieur que l'app n'aurait pas purgé.
+            await terminals.SetActiveShiftAsync(parsedTerminalId, jti, agent.Matricule, clock.UtcNow, ct);
 
             return Results.Ok(new ShiftStartResponseDto(agent.Matricule, agent.DisplayName, token, expiresAt));
         })
         .RequireRateLimiting("sensitive")
         .WithName("ShiftStart")
-        .WithSummary("Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.");
+        .WithSummary("Prise de poste : identifie l'agent (matricule + PIN) et ouvre un poste.")
+        .Produces<ShiftStartResponseDto>(StatusCodes.Status200OK)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest)
+        .Produces<ErrorResponseDto>(StatusCodes.Status401Unauthorized);
+
+        // Fin de poste explicite (§Q11 retour app agent) : le terminal étant
+        // partagé entre agents successifs, un poste jamais clos continue
+        // d'attribuer les scans au matricule parti si l'app oublie de purger
+        // son jeton local. Idempotent : rejouer l'appel, ou le présenter après
+        // qu'un autre agent a démarré un nouveau poste, ne fait rien (jamais
+        // d'erreur — voir Terminal.EndShift).
+        group.MapPost("/shift/end", async (
+            HttpRequest http,
+            ClaimsPrincipal user,
+            ICurrentTenant tenant,
+            IJwtTokenService jwt,
+            ITerminalDirectory terminals,
+            IDateTimeProvider clock,
+            CancellationToken ct) =>
+        {
+            var terminalId = user.FindFirstValue(NovAccesClaimTypes.TerminalId);
+            if (!Guid.TryParse(terminalId, out var parsedTerminalId))
+                return Results.Forbid();
+
+            var shiftToken = http.Headers["X-Shift-Token"].ToString();
+            var shift = jwt.ValidateShiftToken(shiftToken, tenant.SiteId, parsedTerminalId);
+            if (shift?.Jti is not null)
+                await terminals.EndActiveShiftAsync(parsedTerminalId, shift.Jti, clock.UtcNow, ct);
+
+            return Results.Ok();
+        })
+        .WithName("ShiftEnd")
+        .WithSummary("Fin de poste : clôt le poste actif du terminal (idempotent).")
+        .Produces(StatusCodes.Status200OK);
 
         // Sites que CE terminal est autorisé à servir — alimente le sélecteur de
         // site à la prise de poste (un seul site : aucun sélecteur affiché côté
@@ -77,7 +117,8 @@ public static class AgentEndpoints
             return Results.Ok(sites);
         })
         .WithName("AgentTerminalSites")
-        .WithSummary("Sites que ce terminal est autorisé à servir (choix du site si plusieurs).");
+        .WithSummary("Sites que ce terminal est autorisé à servir (choix du site si plusieurs).")
+        .Produces<List<string>>(StatusCodes.Status200OK);
 
         // §11 — Attendus du jour : nom + statut + fenêtre UNIQUEMENT.
         group.MapGet("/expected-today", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
@@ -91,7 +132,8 @@ public static class AgentEndpoints
             return Results.Ok(dto);
         })
         .WithName("ExpectedToday")
-        .WithSummary("Liste des visiteurs attendus aujourd'hui (moindre privilège).");
+        .WithSummary("Liste des visiteurs attendus aujourd'hui (moindre privilège).")
+        .Produces<List<ExpectedVisitorDto>>(StatusCodes.Status200OK);
 
         // §6 — Liste hors-ligne signée (TTL 4h).
         group.MapGet("/offline-list", async (
@@ -116,7 +158,9 @@ public static class AgentEndpoints
             return Results.Ok(new OfflineListDto(signed, issuedAt, expiresAt, entries.Count));
         })
         .WithName("OfflineList")
-        .WithSummary("Liste des QR valides du jour, signée, pour le mode dégradé.");
+        .WithSummary("Liste des QR valides du jour, signée, pour le mode dégradé.")
+        .WithDescription("Route historique (app MAUI). L'app React Native utilise GET /api/offline-list.")
+        .Produces<OfflineListDto>(StatusCodes.Status200OK);
 
         // §6.5 — Resynchronisation : confronte les scans hors-ligne au registre.
         //
@@ -137,6 +181,7 @@ public static class AgentEndpoints
             ClaimsPrincipal user,
             ICurrentTenant tenant,
             IJwtTokenService jwt,
+            ITerminalDirectory terminals,
             HttpRequest http,
             IQrSigningService signing,
             ScanQrHandler handler,
@@ -154,12 +199,10 @@ public static class AgentEndpoints
                     error = $"Lot trop volumineux ({MaxResyncBatchSize} scans maximum par envoi)."
                 });
 
-            // Traçabilité individuelle (§8.5) : matricule du jeton de poste si
-            // présent, sinon le terminal.
-            var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsed)
-                ? parsed : (Guid?)null;
-            var shift = jwt.ValidateShiftToken(http.Headers["X-Shift-Token"].ToString(), tenant.SiteId, terminalId);
-            var agentId = shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
+            // Traçabilité individuelle (§8.5) : matricule du jeton de poste,
+            // seulement si son poste est toujours actif (pas clos entre-temps
+            // par POST /api/agent/shift/end) ; sinon repli sur le terminal.
+            var agentId = await AgentAttribution.ResolveAgentIdAsync(user, http, jwt, terminals, tenant, ct);
 
             var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
             var conflicts = new List<ResyncConflictDto>();
@@ -204,7 +247,10 @@ public static class AgentEndpoints
         })
         .RequireRateLimiting("sensitive")
         .WithName("Resync")
-        .WithSummary("Rejoue les scans hors-ligne contre le registre central et remonte les écarts.");
+        .WithSummary("Rejoue les scans hors-ligne contre le registre central et remonte les écarts.")
+        .WithDescription("Route historique (app MAUI). L'app React Native utilise POST /api/scan/sync.")
+        .Produces<ResyncResultDto>(StatusCodes.Status200OK)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest);
 
         return group;
     }

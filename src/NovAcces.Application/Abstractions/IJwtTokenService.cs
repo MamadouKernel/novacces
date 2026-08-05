@@ -15,8 +15,13 @@ public interface IJwtTokenService
     /// Jeton de « prise de poste » d'un agent, signé et à durée de vie courte
     /// (fin de service). Prouve que le matricule a été vérifié (matricule + PIN),
     /// pour tamponner les scans à cet agent sans qu'il puisse être auto-déclaré.
+    /// Le Jti retourné est enregistré comme poste actif du terminal (voir
+    /// ITerminalDirectory.SetActiveShiftAsync) pour permettre une clôture
+    /// (POST /api/agent/shift/end) qui rende le jeton inopérant pour
+    /// l'attribution même s'il reste cryptographiquement valide jusqu'à son
+    /// expiration naturelle.
     /// </summary>
-    (string Token, DateTimeOffset ExpiresAt) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId);
+    (string Token, DateTimeOffset ExpiresAt, string Jti) CreateShiftToken(string matricule, string displayName, string siteId, Guid terminalId);
 
     /// <summary>Valide un jeton de poste ; retourne l'identité de l'agent, ou null si invalide/expiré.</summary>
     /// <summary>JWT Agent du contrat mobile, lié au terminal enrôlé ayant effectué le login.</summary>
@@ -26,4 +31,4 @@ public interface IJwtTokenService
 }
 
 /// <summary>Identité d'agent portée par un jeton de poste validé.</summary>
-public sealed record ShiftIdentity(string Matricule, string DisplayName, string SiteId, Guid? TerminalId = null);
+public sealed record ShiftIdentity(string Matricule, string DisplayName, string SiteId, Guid? TerminalId = null, string? Jti = null);

@@ -172,6 +172,62 @@ public sealed class AgentTests
     }
 
     [SkippableFact]
+    public async Task ShiftEnd_IsIdempotent()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "6284";
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        var agent = AgentClient();
+        var shiftResp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, pin));
+        shiftResp.EnsureSuccessStatusCode();
+        var shift = await shiftResp.Content.ReadFromJsonAsync<ShiftStartResponseDto>(Json);
+        agent.DefaultRequestHeaders.Add("X-Shift-Token", shift!.ShiftToken);
+
+        var first = await agent.PostAsync("/api/agent/shift/end", null);
+        var second = await agent.PostAsync("/api/agent/shift/end", null);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task ShiftEnd_ClosesShift_SoLaterScanIsNoLongerAttributedToDepartedAgent()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "5037";
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        var agent = AgentClient();
+        var shiftResp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, pin));
+        shiftResp.EnsureSuccessStatusCode();
+        var shift = await shiftResp.Content.ReadFromJsonAsync<ShiftStartResponseDto>(Json);
+        agent.DefaultRequestHeaders.Add("X-Shift-Token", shift!.ShiftToken);
+
+        // L'agent quitte le terminal : le poste est clos côté serveur, mais le
+        // JWT (stateless) reste cryptographiquement valide jusqu'à son
+        // expiration naturelle — c'est exactement le scénario d'une app qui
+        // oublierait de purger son jeton local.
+        (await agent.PostAsync("/api/agent/shift/end", null)).EnsureSuccessStatusCode();
+
+        var (visitId, payload) = await CreateVisitWithQrAsync($"ScanAfterShiftEnd-{Guid.NewGuid():N}");
+        (await agent.PostAsJsonAsync("/api/scan", new ScanRequestDto(payload, "Entry", "ignore")))
+            .EnsureSuccessStatusCode();
+
+        Assert.Equal(0, await CountScanLogsByAgentAsync(visitId, matricule));
+    }
+
+    [SkippableFact]
     public async Task AgentLogin_WithSiteOutsideTerminalAllowList_IsRejected()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

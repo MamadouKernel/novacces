@@ -47,7 +47,32 @@ builder.Services.AddNovAccesAuthorization();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Retour du dev app agent (05/08/2026) : components.securitySchemes vide,
+    // 0 en-tête déclaré sur 80 opérations, alors que tous les endpoints agent
+    // répondent 401 WWW-Authenticate: Bearer. Voir AgentSecurityRequirementsOperationFilter.
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Jeton JWT — login web/agent (POST /api/auth/login) ou jeton de poste "
+            + "(POST /api/agent/shift/start). Format : \"Bearer {token}\".",
+    });
+    options.AddSecurityDefinition("ApiKey", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = NovAcces.Infrastructure.Auth.ApiKeyOptions.HeaderName,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Clé API du terminal, remise UNE SEULE FOIS en réponse de "
+            + "POST /api/device-enrollments/activate. Exigée sur CHAQUE requête "
+            + "/api/agent/* et du contrat React Native — même en présence d'un Bearer.",
+    });
+    options.OperationFilter<NovAcces.Api.Configuration.AgentSecurityRequirementsOperationFilter>();
+});
 
 // --- En-têtes de proxy inverse (nginx/Caddy devant l'API sur le VPS) ---
 // SANS cette configuration, RemoteIpAddress vaut l'adresse du proxy pour TOUTES

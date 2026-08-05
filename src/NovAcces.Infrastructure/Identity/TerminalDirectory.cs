@@ -144,4 +144,33 @@ public sealed class TerminalDirectory : ITerminalDirectory
         return new TerminalActivation(
             terminal.Id, terminal.Label, terminal.SiteIds.ToList(), apiKey, now);
     }
+
+    public async Task SetActiveShiftAsync(Guid terminalId, string shiftJti, string matricule, DateTimeOffset now, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);
+        if (terminal is null)
+            return;
+
+        terminal.StartShift(shiftJti, matricule, now);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task EndActiveShiftAsync(Guid terminalId, string shiftJti, DateTimeOffset now, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);
+        if (terminal is null)
+            return;
+
+        terminal.EndShift(shiftJti, now);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> IsShiftActiveAsync(Guid terminalId, string shiftJti, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(shiftJti))
+            return false;
+
+        return await _db.Terminals.AsNoTracking()
+            .AnyAsync(t => t.Id == terminalId && t.ActiveShiftJti == shiftJti, ct);
+    }
 }

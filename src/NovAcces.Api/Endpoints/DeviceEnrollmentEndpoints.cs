@@ -76,7 +76,15 @@ public static class DeviceEnrollmentEndpoints
         .RequireRateLimiting("sensitive")
         .WithTags("Device enrollment")
         .WithName("ActivateDeviceEnrollment")
-        .WithSummary("Active un terminal avec un ticket QR temporaire à usage unique.");
+        .WithSummary("Active un terminal avec un ticket QR temporaire à usage unique.")
+        .WithDescription(
+            "Preuve de possession (ProofSignature) : signe {ticket}|{deviceInstanceId} "
+            + "(UTF-8, séparateur '|' littéral) en ECDSA P-256/SHA-256 (ES256), signature "
+            + "au format IEEE P1363 (r||s, PAS DER), encodée en Base64URL. Clé publique "
+            + "attendue au format PEM SPKI (\"BEGIN PUBLIC KEY\").")
+        .Produces<DeviceEnrollmentActivationDto>(StatusCodes.Status200OK)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest)
+        .Produces<ErrorResponseDto>(StatusCodes.Status410Gone);
     }
 
     /// <summary>

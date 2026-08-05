@@ -19,14 +19,14 @@ public static class AgentContractEndpoints
 {
     public static void MapAgentContractEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/health", () => Results.Ok(new
+        app.MapGet("/api/health", () =>
         {
-            status = "ok",
-            serverTimeUtc = DateTimeOffset.UtcNow,
-            utc = DateTimeOffset.UtcNow,
-        }))
+            var now = DateTimeOffset.UtcNow;
+            return Results.Ok(new HealthResponseDto("ok", now, now));
+        })
         .WithName("ApiHealth")
-        .WithSummary("Vérifie la disponibilité de l'API et fournit l'heure serveur.");
+        .WithSummary("Vérifie la disponibilité de l'API et fournit l'heure serveur.")
+        .Produces<HealthResponseDto>(StatusCodes.Status200OK);
 
         // Nécessaire avant connexion pour vérifier les listes signées hors ligne.
         // Les clés retirées encore acceptées sont incluses : sans elles, un
@@ -40,7 +40,8 @@ public static class AgentContractEndpoints
                     .Select(k => new PublicKeyEntryDto(k.KeyId, k.PublicKeyPem))
                     .ToList())))
             .WithName("PublicQrSigningKey")
-            .WithSummary("Retourne la clé publique ES256 courante et les clés retirées encore acceptées.");
+            .WithSummary("Retourne la clé publique ES256 courante et les clés retirées encore acceptées.")
+            .Produces<PublicKeyDto>(StatusCodes.Status200OK);
 
         var agent = app.MapGroup("/api")
             .RequireAuthorization(NovAccesPolicies.AgentTerminal)
@@ -73,7 +74,9 @@ public static class AgentContractEndpoints
                 new SiteParametersDto(before, after, ttl)));
         })
         .WithName("AgentSiteConfig")
-        .WithSummary("Retourne la configuration du poste agent pour le site courant.");
+        .WithSummary("Retourne la configuration du poste agent pour le site courant.")
+        .WithDescription("checkpointId n'est PAS validé contre Postes[].Id — transporté tel quel, informatif.")
+        .Produces<SiteConfigDto>(StatusCodes.Status200OK);
 
         agent.MapGet("/offline-list", async (
             IVisitRepository visits,
@@ -103,13 +106,19 @@ public static class AgentContractEndpoints
             return Results.Ok(new ContractOfflineListDto(issuedAt, expiresAt, visitsDto, signed));
         })
         .WithName("ContractOfflineList")
-        .WithSummary("Sert la liste quotidienne signée, avec un TTL de quatre heures maximum.");
+        .WithSummary("Sert la liste quotidienne signée, avec un TTL de quatre heures maximum.")
+        .WithDescription(
+            "SignedList est une chaîne JSON (pas un JWS compact RFC 7515) : "
+            + "{\"PayloadB64Url\":...,\"SignatureB64Url\":...,\"KeyId\":...} — "
+            + "à parser une seconde fois après la désérialisation de la réponse HTTP.")
+        .Produces<ContractOfflineListDto>(StatusCodes.Status200OK);
 
         agent.MapPost("/scan/sync", async (
             IReadOnlyList<ContractOfflineScanDto> request,
             ClaimsPrincipal user,
             ICurrentTenant tenant,
             IJwtTokenService jwt,
+            ITerminalDirectory terminals,
             HttpRequest http,
             IQrSigningService signing,
             ScanQrHandler handler,
@@ -129,14 +138,7 @@ public static class AgentContractEndpoints
                     error = $"Lot trop volumineux ({AgentEndpoints.MaxResyncBatchSize} scans maximum par envoi)."
                 });
 
-            var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsedTerminalId)
-                ? parsedTerminalId : (Guid?)null;
-            var shift = jwt.ValidateShiftToken(
-                http.Headers["X-Shift-Token"].ToString(), tenant.SiteId, terminalId);
-            var agentId = shift?.Matricule
-                ?? user.FindFirstValue("nva_mat")
-                ?? user.FindFirstValue(ClaimTypes.Name)
-                ?? "terminal-inconnu";
+            var agentId = await AgentAttribution.ResolveAgentIdAsync(user, http, jwt, terminals, tenant, ct);
             var conflicts = new List<ContractSyncConflictDto>();
             var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
 
@@ -167,7 +169,11 @@ public static class AgentContractEndpoints
         })
         .RequireRateLimiting("sensitive")
         .WithName("ContractScanSync")
-        .WithSummary("Resynchronise un tableau de scans hors ligne en réutilisant le handler métier et la vérification JWS.");
+        .WithSummary("Resynchronise un tableau de scans hors ligne en réutilisant le handler métier et la vérification JWS.")
+        .WithDescription("Route stable pour l'app React Native (voir /api/agent/resync pour l'ancienne route MAUI).")
+        .Produces<ContractScanSyncResponse>(StatusCodes.Status200OK)
+        .Produces<ContractScanSyncResponse>(StatusCodes.Status409Conflict)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest);
     }
 
     private static bool IsOfflineGrant(string verdict) =>

@@ -30,6 +30,20 @@ public sealed class Terminal
     public DateTimeOffset? DeletedAt { get; private set; }
     public string? DeletedBy { get; private set; }
 
+    /// <summary>
+    /// Poste actif de CE terminal (un seul à la fois — démarrer un nouveau
+    /// poste remplace silencieusement le précédent, comme un agent qui prend
+    /// la relève sans que le précédent ait clôturé). Le Jti sert à distinguer
+    /// « ce jeton de poste est toujours celui en cours » de « ce jeton reste
+    /// cryptographiquement valide mais son poste a été clos » — POST
+    /// /api/agent/shift/end clôt sans révoquer le JWT lui-même (stateless),
+    /// il retire seulement le terminal de la liste des porteurs reconnus pour
+    /// l'attribution des scans (ResolveAgentId retombe alors sur le terminal).
+    /// </summary>
+    public string? ActiveShiftJti { get; private set; }
+    public string? ActiveShiftMatricule { get; private set; }
+    public DateTimeOffset? ActiveShiftStartedAt { get; private set; }
+
     private Terminal() { }
 
     public static Terminal Create(string label, string apiKeyHash, IReadOnlyList<string> siteIds, DateTimeOffset now) => new()
@@ -70,4 +84,31 @@ public sealed class Terminal
         DeletedAt = now;
         DeletedBy = actor;
     }
+
+    /// <summary>Prise de poste : remplace le poste actif précédent, s'il y en avait un.</summary>
+    public void StartShift(string jti, string matricule, DateTimeOffset now)
+    {
+        ActiveShiftJti = jti;
+        ActiveShiftMatricule = matricule;
+        ActiveShiftStartedAt = now;
+    }
+
+    /// <summary>
+    /// Fin de poste idempotente : n'a d'effet que si le jeton présenté est
+    /// bien celui du poste en cours. Rejouer la clôture, ou la présenter
+    /// après qu'un autre agent a démarré un nouveau poste, ne fait rien —
+    /// jamais d'erreur, jamais de clôture d'un poste qui n'est pas le sien.
+    /// </summary>
+    public void EndShift(string jti, DateTimeOffset now)
+    {
+        if (!string.Equals(ActiveShiftJti, jti, StringComparison.Ordinal))
+            return;
+
+        ActiveShiftJti = null;
+        ActiveShiftMatricule = null;
+        ActiveShiftStartedAt = null;
+    }
+
+    public bool IsShiftActive(string jti) =>
+        !string.IsNullOrEmpty(jti) && string.Equals(ActiveShiftJti, jti, StringComparison.Ordinal);
 }

@@ -1,5 +1,8 @@
 namespace NovAcces.Shared.Dtos;
 
+/// <summary>Réponse de GET /api/health. Utc et ServerTimeUtc portent la même valeur (compatibilité).</summary>
+public sealed record HealthResponseDto(string Status, DateTimeOffset ServerTimeUtc, DateTimeOffset Utc);
+
 /// <summary>Configuration consommée par l'application agent.</summary>
 public sealed record SiteConfigDto(
     string SiteLabel,

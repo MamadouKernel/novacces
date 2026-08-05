@@ -21,6 +21,7 @@ public static class ScanEndpoints
             HttpRequest http,
             ScanQrHandler handler,
             IJwtTokenService jwt,
+            ITerminalDirectory terminals,
             IBusinessDayService businessDays,
             IDateTimeProvider clock,
             ICurrentTenant tenant,
@@ -30,7 +31,7 @@ public static class ScanEndpoints
                 return Results.BadRequest(new { error = "Direction invalide : 'Entry' ou 'Exit' attendu." });
 
             var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
-            var agentId = ResolveAgentId(user, http, jwt, tenant);
+            var agentId = await AgentAttribution.ResolveAgentIdAsync(user, http, jwt, terminals, tenant, ct);
 
             var command = new ScanQrCommand(
                 request.SignedQrPayload, direction, agentId,
@@ -49,7 +50,10 @@ public static class ScanEndpoints
         })
         .RequireAuthorization(NovAccesPolicies.AgentTerminal)
         .WithName("ScanQr")
-        .WithSummary("Scanne un QR au poste de contrôle (entrée ou sortie).");
+        .WithSummary("Scanne un QR au poste de contrôle (entrée ou sortie).")
+        .WithDescription(VerdictCodeDescription)
+        .Produces<ScanResponseDto>(StatusCodes.Status200OK)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest);
 
         // Alternative au QR : le visiteur donne un code de secours reçu par
         // email (téléphone déchargé, QR qui ne scanne pas). Mêmes règles de
@@ -61,6 +65,7 @@ public static class ScanEndpoints
             HttpRequest http,
             ScanManualCodeHandler handler,
             IJwtTokenService jwt,
+            ITerminalDirectory terminals,
             IBusinessDayService businessDays,
             IDateTimeProvider clock,
             ICurrentTenant tenant,
@@ -72,7 +77,7 @@ public static class ScanEndpoints
                 return Results.BadRequest(new { error = "Code requis." });
 
             var isBusinessDay = businessDays.IsBusinessDay(clock.UtcNow);
-            var agentId = ResolveAgentId(user, http, jwt, tenant);
+            var agentId = await AgentAttribution.ResolveAgentIdAsync(user, http, jwt, terminals, tenant, ct);
 
             var command = new ScanManualCodeCommand(
                 request.Code, direction, agentId,
@@ -91,27 +96,21 @@ public static class ScanEndpoints
         })
         .RequireAuthorization(NovAccesPolicies.AgentTerminal)
         .WithName("ScanManualCode")
-        .WithSummary("Autorise l'accès via le code de secours (alternative au QR).");
+        .WithSummary("Autorise l'accès via le code de secours (alternative au QR).")
+        .WithDescription(VerdictCodeDescription
+            + " Toujours en ligne (§9) : le code de secours n'est pas résolvable hors ligne.")
+        .Produces<ScanResponseDto>(StatusCodes.Status200OK)
+        .Produces<ErrorResponseDto>(StatusCodes.Status400BadRequest);
 
         return group;
     }
 
-    // Attribution du scan : si un jeton de poste valide est présent (prise de
-    // poste matricule + PIN), on trace au MATRICULE de l'agent (traçabilité
-    // individuelle, §8.5) ; sinon, repli sur le terminal. Le site vient du
-    // tenant déjà résolu (claim du terminal, ou en-tête X-Site-Id revalidé
-    // pour un terminal multi-sites) — jamais relu du claim brut, absent pour
-    // un terminal partagé entre plusieurs sites.
-    private static string ResolveAgentId(
-        ClaimsPrincipal user, HttpRequest http, IJwtTokenService jwt, ICurrentTenant tenant)
-    {
-        var siteId = tenant.SiteId;
-        var shiftToken = http.Headers["X-Shift-Token"].ToString();
-        var terminalId = Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var parsedTerminalId)
-            ? parsedTerminalId : (Guid?)null;
-        var shift = string.IsNullOrWhiteSpace(shiftToken)
-            ? null
-            : jwt.ValidateShiftToken(shiftToken, siteId, terminalId);
-        return shift?.Matricule ?? user.FindFirstValue(ClaimTypes.Name) ?? "terminal-inconnu";
-    }
+    // Énumération exhaustive de ScanResponseDto.VerdictCode (§Q4 retour app
+    // agent, 05/08/2026) — un code inconnu ne doit jamais être présenté comme
+    // une autorisation côté app.
+    private const string VerdictCodeDescription =
+        "verdictCode : GRANTED, CHECKED_OUT, INVALID_SIGNATURE, INVALID_CODE (manual-code "
+        + "uniquement), ou DENIED_{motif} avec motif ∈ Excluded, NoActiveEntry, "
+        + "SuspectedDuplicate, Revoked, CycleAlreadyClosed, AlreadyConsumed, TooEarly, "
+        + "TooLate, NonBusinessDay.";
 }

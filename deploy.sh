@@ -21,22 +21,26 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Charge les variables de .env (POSTGRES_USER, DOMAIN, API_DOMAIN…) dans ce
-# script — docker compose les lit déjà lui-même pour le docker-compose.yml,
-# mais ce script en a aussi besoin directement (psql, curl de vérification).
-#
-# PAS de `source .env` : bash l'interpréterait comme du code shell, donc une
-# valeur avec un espace non protégé par des guillemets (ex. un nom d'affichage
-# "Mamadou Konate") casse le script ("command not found") ou, pire, exécute
-# silencieusement un mot du milieu de la valeur comme une commande. Lecture
-# ligne à ligne à la place : chaque valeur est prise telle quelle, espaces
-# compris, sans jamais être interprétée par le shell.
-set -a
-while IFS='=' read -r key value; do
-    case "$key" in ''|'#'*) continue ;; esac
-    export "$key=$value"
-done < .env
-set +a
+# Ce script n'a besoin QUE de ces 3 valeurs simples, jamais des secrets multi-
+# lignes (clés PEM, etc.) — docker compose les lit lui-même nativement pour
+# docker-compose.yml, avec son propre parseur qui gère les valeurs multi-
+# lignes entre guillemets. Ici, à l'inverse, on va chercher CHAQUE variable
+# par son nom exact, ligne par ligne, sans jamais essayer d'interpréter le
+# fichier .env dans son ensemble : ni `source .env` (bash l'exécuterait comme
+# du code shell — un espace non protégé par des guillemets, ex. un nom
+# d'affichage "Mamadou Konate", casse le script), ni une boucle de lecture
+# générique (elle trébuche sur les lignes de base64 d'une clé PEM multi-
+# lignes, qui contiennent elles-mêmes des "="). Un simple grep ciblé sur la
+# ligne exacte évite ces deux pièges d'un coup.
+read_env_var() {
+    local line
+    line=$(grep -m1 -E "^${1}=" .env) || {
+        echo "Erreur : ${1} absent de .env." >&2; exit 1; }
+    printf '%s' "${line#*=}"
+}
+POSTGRES_USER=$(read_env_var POSTGRES_USER)
+DOMAIN=$(read_env_var DOMAIN)
+API_DOMAIN=$(read_env_var API_DOMAIN)
 
 echo "==> git pull (échoue si le dépôt local a divergé, plutôt qu'un merge silencieux)"
 git pull --ff-only

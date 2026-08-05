@@ -23,6 +23,30 @@ public class Es256QrSigningServiceTests
     }
 
     [Fact]
+    public void SignAndVerify_KeysWithLiteralNewlineEscapes_StillWork()
+    {
+        // Format .env de production (voir deploy.sh) : le PEM multi-lignes
+        // est stocké sur une seule ligne, retours à la ligne remplacés par
+        // des "\n" littéraux — régression du 05/08/2026 (déploiement en
+        // échec, "not a valid identifier" côté bash puis clé illisible côté
+        // app avant ce correctif).
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var privatePem = key.ExportECPrivateKeyPem().Replace("\n", "\\n").Replace("\r", "");
+        var publicPem = key.ExportSubjectPublicKeyInfoPem().Replace("\n", "\\n").Replace("\r", "");
+
+        var service = new Es256QrSigningService(Options.Create(new QrSigningOptions
+        {
+            PrivateKeyPem = privatePem,
+            PublicKeyPem = publicPem
+        }));
+
+        var signed = service.SignVisitToken(Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddMinutes(15));
+        var result = service.VerifySignedToken(signed);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public void SignAndVerify_ValidToken_ReturnsOriginalData()
     {
         var service = CreateService(out _);

@@ -114,7 +114,15 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
     private static ECDsa ImportKey(string pem)
     {
         var key = ECDsa.Create();
-        key.ImportFromPem(pem);
+
+        // En production, la clé arrive par variable d'environnement (.env,
+        // lu ligne à ligne par deploy.sh — voir son commentaire) : un PEM
+        // multi-lignes n'y tient pas sur une ligne, donc la convention est
+        // de l'y stocker avec des "\n" LITTÉRAUX (deux caractères) à la
+        // place des retours à la ligne réels. Remplacement sans effet sur
+        // un PEM déjà multi-lignes (user-secrets en dev, appsettings) :
+        // aucune séquence "\n" littérale à y trouver.
+        key.ImportFromPem(pem.Replace("\\n", "\n"));
         return key;
     }
 

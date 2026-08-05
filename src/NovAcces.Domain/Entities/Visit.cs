@@ -246,6 +246,24 @@ public class Visit
             ? scheduled.AddMinutes(15)   // borne haute de la fenêtre -20/+15
             : CreatedAt.AddDays(30);     // accès 30 jours, depuis la création
 
+    /// <summary>
+    /// Statut D'AFFICHAGE uniquement (jamais persisté) : vrai si la fenêtre/
+    /// période de validité est dépassée sans que la demande ait été
+    /// consommée, révoquée, ou soit en cours de visite. <see cref="Status"/>
+    /// ne change JAMAIS avec le seul écoulement du temps — par construction,
+    /// aucune tâche de fond ne "fait passer" une visite à un état expiré, ce
+    /// qui éviterait une classe entière de bugs de synchronisation. C'est
+    /// exactement pourquoi Scan() ne s'appuie jamais sur cette méthode : il
+    /// recalcule la fenêtre lui-même (EvaluateWindow) au moment du scan, seule
+    /// source de vérité pour un contrôle d'accès. Cette méthode sert
+    /// uniquement à ce qu'un écran de suivi (portail hôte) affiche "Expirée"
+    /// plutôt que "Valide" pour une demande qui ne peut plus être présentée
+    /// avec succès — bug identifié le 05/08/2026 : l'API renvoyait le statut
+    /// brut (toujours "Valid") sans jamais recalculer l'expiration.
+    /// </summary>
+    public bool IsExpiredForDisplay(DateTimeOffset now) =>
+        Status == VisitStatus.Valid && !IsOnSite && now > ComputeQrExpiry();
+
     /// <summary>Durée de présence effective, en minutes (0 si jamais entré).</summary>
     public int ComputePresenceMinutes(DateTimeOffset now)
     {

@@ -4,8 +4,16 @@ namespace NovAcces.Application.Abstractions;
 public sealed record TerminalIdentity(Guid Id, string Label, IReadOnlyList<string> SiteIds);
 
 /// <summary>Projection d'un terminal pour la console Admin — jamais la clé ni son empreinte.</summary>
+/// <param name="PendingTicketExpiresAt">
+/// Expiration du dernier ticket d'enrôlement non utilisé/non révoqué de ce
+/// terminal (null si aucun ticket n'a jamais été émis). Peut être dans le
+/// passé : c'est précisément ce que la console doit distinguer d'un ticket
+/// encore valide — bug du 05/08/2026, le statut "En attente" ne changeait
+/// jamais après l'expiration du QR d'enrôlement, sans aucun moyen de le voir.
+/// </param>
 public sealed record TerminalSummary(
-    Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt, bool IsEnrolled = false);
+    Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt,
+    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null);
 
 /// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule.</summary>
 public sealed record ArchivedTerminalSummary(

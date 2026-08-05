@@ -15,8 +15,14 @@ public sealed record CreateTerminalResponseDto(Guid Id, string Label)
 }
 
 /// <summary>Terminal listé dans la console Admin — jamais la clé ni son empreinte.</summary>
+/// <param name="PendingTicketExpiresAt">
+/// Expiration du dernier ticket d'enrôlement non utilisé/non révoqué (null si
+/// aucun n'a jamais été émis) — peut être dans le passé, à distinguer d'un
+/// ticket encore valide (voir AdminTerminals.razor, StatusKey).
+/// </param>
 public sealed record TerminalSummaryDto(
-    Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt, bool IsEnrolled = false);
+    Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt,
+    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null);
 
 /// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule (SuperAdmin).</summary>
 public sealed record ArchivedTerminalSummaryDto(

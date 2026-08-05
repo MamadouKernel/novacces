@@ -74,9 +74,10 @@
         <input @bind="_search" @bind:event="oninput" @bind:after="() => _terminalsPage = 1" placeholder="Libellé ou site…" /></div>
     <div class="filters" style="margin-bottom:.9rem">
         <button class="filter @(_statusFilter == "all" ? "on" : "")" @onclick='() => SetStatusFilter("all")'>Tous <span class="count">@_terminals.Count</span></button>
-        <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_terminals.Count(t => t.IsActive && t.IsEnrolled)</span></button>
-        <button class="filter @(_statusFilter == "pending" ? "on" : "")" @onclick='() => SetStatusFilter("pending")'>En attente <span class="count">@_terminals.Count(t => t.IsActive && !t.IsEnrolled)</span></button>
-        <button class="filter @(_statusFilter == "revoked" ? "on" : "")" @onclick='() => SetStatusFilter("revoked")'>Révoqués <span class="count">@_terminals.Count(t => !t.IsActive)</span></button>
+        <button class="filter @(_statusFilter == "active" ? "on" : "")" @onclick='() => SetStatusFilter("active")'>Actifs <span class="count">@_terminals.Count(t => StatusKey(t) == "active")</span></button>
+        <button class="filter @(_statusFilter == "pending" ? "on" : "")" @onclick='() => SetStatusFilter("pending")'>En attente <span class="count">@_terminals.Count(t => StatusKey(t) == "pending")</span></button>
+        <button class="filter @(_statusFilter == "expired_ticket" ? "on" : "")" @onclick='() => SetStatusFilter("expired_ticket")'>Ticket expiré <span class="count">@_terminals.Count(t => StatusKey(t) == "expired_ticket")</span></button>
+        <button class="filter @(_statusFilter == "revoked" ? "on" : "")" @onclick='() => SetStatusFilter("revoked")'>Révoqués <span class="count">@_terminals.Count(t => StatusKey(t) == "revoked")</span></button>
         @if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
         {
             <button class="filter @(_statusFilter == "archived" ? "on" : "")" @onclick='() => SetStatusFilter("archived")'>Archivés <span class="count">@_archivedTerminals.Count</span></button>
@@ -126,13 +127,15 @@
                 <tr>
                     <td><strong>@t.Label</strong></td>
                     <td class="muted">@string.Join(", ", t.SiteIds)</td>
-                    <td><span class="badge @(t.IsActive ? (t.IsEnrolled ? "badge-valid" : "badge-pending") : "badge-revoked")">@(t.IsActive ? (t.IsEnrolled ? "Actif" : "En attente") : "Révoqué")</span></td>
+                    <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
                     <td class="muted">@t.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy")</td>
                     <td>
                         @if (t.IsActive)
                         {
                             <button class="btn-danger" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
-                            <button class="btn-ghost" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">Nouveau QR</button>
+                            <button class="btn-ghost" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">
+                                @(StatusKey(t) == "expired_ticket" ? "Régénérer le QR" : "Nouveau QR")
+                            </button>
                         }
                         else
                         {
@@ -164,7 +167,34 @@
     private string? _sortColumn;
     private bool _sortAscending = true;
 
-    private static string StatusKey(TerminalSummaryDto t) => t.IsActive ? (t.IsEnrolled ? "active" : "pending") : "revoked";
+    // "expired_ticket" distingue un terminal encore en attente MAIS dont le
+    // dernier QR d'enrôlement a expiré sans avoir été scanné — auparavant
+    // indiscernable de "pending" (bug du 05/08/2026 : le statut restait
+    // "En attente" indéfiniment, sans aucun moyen de voir qu'il fallait
+    // régénérer un QR).
+    private static string StatusKey(TerminalSummaryDto t)
+    {
+        if (!t.IsActive) return "revoked";
+        if (t.IsEnrolled) return "active";
+        if (t.PendingTicketExpiresAt is { } expires && expires <= DateTimeOffset.UtcNow) return "expired_ticket";
+        return "pending";
+    }
+
+    private static string StatusLabel(TerminalSummaryDto t) => StatusKey(t) switch
+    {
+        "active" => "Actif",
+        "expired_ticket" => "Ticket expiré",
+        "revoked" => "Révoqué",
+        _ => "En attente",
+    };
+
+    private static string StatusBadgeClass(TerminalSummaryDto t) => StatusKey(t) switch
+    {
+        "active" => "badge-valid",
+        "expired_ticket" => "badge-expired",
+        "revoked" => "badge-revoked",
+        _ => "badge-pending",
+    };
 
     private List<TerminalSummaryDto> FilteredTerminals =>
         _terminals

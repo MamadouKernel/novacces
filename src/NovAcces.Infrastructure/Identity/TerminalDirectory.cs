@@ -50,7 +50,16 @@ public sealed class TerminalDirectory : ITerminalDirectory
         await _db.Terminals
             .Where(t => t.DeletedAt == null)
             .OrderByDescending(t => t.CreatedAt)
-            .Select(t => new TerminalSummary(t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled))
+            .Select(t => new TerminalSummary(
+                t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled,
+                // Dernier ticket encore "en jeu" (ni consommé ni révoqué) —
+                // peut être expiré : c'est justement ce que l'appelant doit
+                // pouvoir distinguer d'un ticket toujours valide.
+                _db.TerminalEnrollmentTickets
+                    .Where(k => k.TerminalId == t.Id && k.UsedAt == null && k.RevokedAt == null)
+                    .OrderByDescending(k => k.CreatedAt)
+                    .Select(k => (DateTimeOffset?)k.ExpiresAt)
+                    .FirstOrDefault()))
             .ToListAsync(ct);
 
     public async Task<bool> RevokeAsync(Guid id, CancellationToken ct)

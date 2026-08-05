@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using NovAcces.Application.Abstractions;
 using NovAcces.Application.Visits;
+using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
 using NovAcces.Shared.Auth;
 using NovAcces.Shared.Dtos;
@@ -21,14 +22,16 @@ public static class VisitEndpoints
         group.MapGet("/mine", async (
             ClaimsPrincipal user,
             IVisitRepository visits,
+            IDateTimeProvider clock,
             int? limit,
             CancellationToken ct) =>
         {
             var take = Math.Clamp(limit ?? 200, 1, 200);
             var mine = await visits.GetByHostAsync(user.HostIdentifier(), take, ct);
+            var now = clock.UtcNow;
 
             var dto = mine.Select(v => new HostVisitDto(
-                v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), v.Status.ToString(),
+                v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), DisplayStatus(v, now),
                 v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CreatedAt,
                 v.VisitorPhone, v.VisitorEmail, v.CheckedInAt, v.CheckedOutAt)).ToList();
 
@@ -174,6 +177,7 @@ public static class VisitEndpoints
             Guid visitId,
             ClaimsPrincipal user,
             IVisitRepository visits,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             var visit = await visits.GetByIdAsync(visitId, ct);
@@ -210,7 +214,7 @@ public static class VisitEndpoints
                 events.Add(new(revoked, "QR révoqué", visit.RevokedBy, "revoked"));
 
             var ordered = events.OrderBy(e => e.At).ToList();
-            return Results.Ok(new VisitHistoryDto(visit.Id, visit.VisitorName, visit.Status.ToString(), ordered));
+            return Results.Ok(new VisitHistoryDto(visit.Id, visit.VisitorName, DisplayStatus(visit, clock.UtcNow), ordered));
         })
         .RequireAuthorization(NovAccesPolicies.DashboardApi)
         .WithName("VisitHistory")
@@ -326,6 +330,15 @@ public static class VisitEndpoints
 
         return group;
     }
+
+    /// <summary>
+    /// Statut affiché à l'hôte : "Expired" si la fenêtre/période de validité
+    /// est dépassée sans consommation/révocation (voir Visit.IsExpiredForDisplay
+    /// — bug du 05/08/2026, le statut brut restait "Valid" indéfiniment),
+    /// sinon le statut persisté tel quel.
+    /// </summary>
+    private static string DisplayStatus(Visit visit, DateTimeOffset now) =>
+        visit.IsExpiredForDisplay(now) ? "Expired" : visit.Status.ToString();
 }
 
 internal static class ClaimsPrincipalExtensions

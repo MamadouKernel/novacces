@@ -1227,7 +1227,8 @@ public static class AdminEndpoints
         {
             var list = await terminals.ListAsync(ct);
             return Results.Ok(list.Select(t =>
-                new TerminalSummaryDto(t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled)).ToList());
+                new TerminalSummaryDto(
+                    t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled, t.PendingTicketExpiresAt)).ToList());
         })
         .WithName("AdminListTerminals")
         .WithSummary("Liste les terminaux enrôlés (jamais leur clé).");

@@ -42,6 +42,66 @@ public class VisitScanTests
         Assert.Equal(now.AddDays(30), visit.ComputeQrExpiry());
     }
 
+    // IsExpiredForDisplay est un statut D'AFFICHAGE (portail hôte), jamais
+    // utilisé par Scan() — bug du 05/08/2026 : l'API renvoyait le statut brut
+    // ("Valid") indéfiniment pour une demande jamais scannée après sa fenêtre.
+    [Fact]
+    public void IsExpiredForDisplay_UniqueMode_PastWindow_NeverScanned_IsTrue()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now);
+
+        Assert.True(visit.IsExpiredForDisplay(now.AddMinutes(16)));
+    }
+
+    [Fact]
+    public void IsExpiredForDisplay_UniqueMode_WithinWindow_IsFalse()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now);
+
+        Assert.False(visit.IsExpiredForDisplay(now));
+    }
+
+    [Fact]
+    public void IsExpiredForDisplay_ThirtyDaysMode_PastThirtyDays_NeverUsed_IsTrue()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var visit = Visit.Create("Fatou Bamba", "Bureau Veritas", "Inspection", "host-1",
+            AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
+            visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
+
+        Assert.True(visit.IsExpiredForDisplay(now.AddDays(31)));
+    }
+
+    [Fact]
+    public void IsExpiredForDisplay_AlreadyConsumed_IsFalse()
+    {
+        // Une demande consommée (mode Unique, déjà entrée puis sortie) ne
+        // redevient jamais "expirée" : son statut réel (Consumed) prime.
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
+        visit.Scan(CheckpointDirection.Exit, isBusinessDay: true, now.AddMinutes(10), isOnExclusionList: false);
+
+        Assert.False(visit.IsExpiredForDisplay(now.AddDays(1)));
+    }
+
+    [Fact]
+    public void IsExpiredForDisplay_CurrentlyOnSite_IsFalse()
+    {
+        // Un visiteur toujours présent (mode 30 jours, IsOnSite=true) ne doit
+        // jamais s'afficher "Expirée" pendant qu'il est sur site, même si la
+        // période de 30 jours vient de s'écouler pendant sa présence.
+        var now = DateTimeOffset.UtcNow;
+        var visit = Visit.Create("Fatou Bamba", "Bureau Veritas", "Inspection", "host-1",
+            AccessMode.ThirtyDays, scheduledAt: null, plannedDurationMinutes: 240,
+            visitorPhone: null, visitorEmail: null, isExcluded: false, now: now);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false);
+
+        Assert.False(visit.IsExpiredForDisplay(now.AddDays(31)));
+    }
+
     [Fact]
     public void Scan_WithinWindow_AtEntry_IsGranted()
     {

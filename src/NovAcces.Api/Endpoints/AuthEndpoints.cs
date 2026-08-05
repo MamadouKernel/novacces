@@ -284,6 +284,18 @@ public static class AuthEndpoints
                     || terminalId != presentedTerminalId)
                     return Results.Json(new { error = "Un terminal enrôlé correspondant est requis pour renouveler la session agent." },
                         statusCode: StatusCodes.Status401Unauthorized);
+
+                // CLOISONNEMENT (§7.3, audit du 05/08/2026) : le refresh token ne
+                // porte que le site qui était valide AU MOMENT DE /login. Sans ce
+                // rappel à TerminalMayServeSite, un terminal réaffecté ou retiré
+                // d'un site continuerait de renouveler un jeton pour l'ANCIEN site
+                // tant que ce refresh token n'a pas expiré ou été révoqué — même
+                // contrôle, même raison que dans /login ci-dessus.
+                if (!TerminalMayServeSite(principal, subject.SiteId))
+                    return Results.Json(
+                        new { error = "Site non autorisé pour ce terminal." },
+                        statusCode: StatusCodes.Status403Forbidden);
+
                 var matricule = parts[1];
                 var name = subject.DisplayName ?? matricule;
                 var (token, expiresAt) = jwt.CreateAgentToken(matricule, name, subject.SiteId, terminalId);
@@ -616,7 +628,15 @@ public static class AuthEndpoints
         var roles = await users.GetRolesAsync(user);
         var (token, expiresAt) = jwt.CreateToken(user.Id, user.Email!, user.DisplayName, roles, user.SiteId);
         var refreshToken = await refresh.IssueAsync("user", user.Id.ToString(), user.DisplayName, user.SiteId, ct);
-        return new LoginResponseDto(token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token, SecondsUntil(expiresAt), user.Email!);
+
+        // 2FA optionnel (note-decisions-client.md §5) : on ne bloque plus la
+        // connexion d'un compte à privilèges sans 2FA, mais le portail doit
+        // pouvoir le rappeler à l'utilisateur — audit du 05/08/2026.
+        var twoFactorRecommended = IsPrivilegedRole(roles) && !await users.GetTwoFactorEnabledAsync(user);
+
+        return new LoginResponseDto(
+            token, expiresAt, user.DisplayName, roles.ToList(), user.SiteId, refreshToken.Token,
+            SecondsUntil(expiresAt), user.Email!, twoFactorRecommended);
     }
 
     /// <summary>

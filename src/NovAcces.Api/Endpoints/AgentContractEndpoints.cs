@@ -45,7 +45,11 @@ public static class AgentContractEndpoints
 
         var agent = app.MapGroup("/api")
             .RequireAuthorization(NovAccesPolicies.AgentTerminal)
-            .AddEndpointFilter<ContractSiteHeaderFilter>();
+            .AddEndpointFilter<ContractSiteHeaderFilter>()
+            // Audit du 05/08/2026, finding F1 : /site/config et /offline-list
+            // n'avaient aucune politique de débit (contrairement à /scan/sync
+            // ci-dessous, qui la reprend donc désormais du groupe).
+            .RequireRateLimiting("sensitive");
 
         agent.MapGet("/site/config", (ICurrentTenant tenant, IConfiguration configuration) =>
         {
@@ -167,7 +171,6 @@ public static class AgentContractEndpoints
                 ? Results.Ok(response)
                 : Results.Json(response, statusCode: StatusCodes.Status409Conflict);
         })
-        .RequireRateLimiting("sensitive")
         .WithName("ContractScanSync")
         .WithSummary("Resynchronise un tableau de scans hors ligne en réutilisant le handler métier et la vérification JWS.")
         .WithDescription("Route stable pour l'app React Native (voir /api/agent/resync pour l'ancienne route MAUI).")

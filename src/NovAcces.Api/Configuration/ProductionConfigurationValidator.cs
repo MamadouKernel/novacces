@@ -20,14 +20,15 @@ public static class ProductionConfigurationValidator
             || !string.IsNullOrEmpty(uri.Fragment))
             throw new InvalidOperationException("Api:PublicBaseUrl doit être une URL HTTPS absolue sans query ni fragment en production.");
 
-        // TEMPORAIRE (02/08/2026, Mamadou) : assoupli le temps de créer le compte
-        // Brevo et récupérer les identifiants SMTP réels. Email = seul canal de
-        // notification du produit (WhatsApp abandonné) — à RESTAURER (décommenter
-        // les 4 lignes ci-dessous) avant tout test avec de vrais visiteurs/pilote.
-        // Require(configuration["Smtp:Host"], "Smtp:Host");
-        // Require(configuration["Smtp:Username"], "Smtp:Username");
-        // Require(configuration["Smtp:Password"], "Smtp:Password");
-        // Require(configuration["Smtp:FromAddress"], "Smtp:FromAddress");
+        // Restauré le 05/08/2026 (audit, finding M3) : identifiants SMTP réels
+        // configurés (voir .env sur le VPS de production). Email est le SEUL
+        // canal de notification du produit (WhatsApp abandonné) — un démarrage
+        // de production sans SMTP valide romprait silencieusement toutes les
+        // notifications hôte (arrivée/départ/suspicion de copie/dépassement).
+        Require(configuration["Smtp:Host"], "Smtp:Host");
+        Require(configuration["Smtp:Username"], "Smtp:Username");
+        Require(configuration["Smtp:Password"], "Smtp:Password");
+        Require(configuration["Smtp:FromAddress"], "Smtp:FromAddress");
     }
 
     private static void Require(string? value, string key, int minimumLength = 1)

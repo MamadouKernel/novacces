@@ -21,6 +21,11 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# Restreint la lecture/écriture du fichier de secrets au seul propriétaire
+# (audit du 05/08/2026, finding F4) : sans cela, les permissions dépendent de
+# l'umask du compte qui a créé le fichier, pas d'une garantie du dépôt.
+chmod 600 .env
+
 # Ce script n'a besoin QUE de ces 3 valeurs simples, jamais des secrets multi-
 # lignes (clés PEM, etc.) — docker compose les lit lui-même nativement pour
 # docker-compose.yml, avec son propre parseur qui gère les valeurs multi-

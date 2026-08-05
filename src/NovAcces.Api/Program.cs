@@ -329,7 +329,7 @@ app.MapVisitEndpoints().RequireRateLimiting("sensitive");
 app.MapDashboardEndpoints();
 app.MapExclusionEndpoints();
 app.MapAuditEndpoints();
-app.MapAgentEndpoints();
+app.MapAgentEndpoints().RequireRateLimiting("sensitive");
 app.MapDeviceEnrollmentEndpoints();
 app.MapAdminEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization(NovAccesPolicies.Dashboard);

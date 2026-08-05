@@ -4,6 +4,7 @@
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject ToastService Toast
 
 <PageTitle>SigasAcces — Connexion</PageTitle>
 
@@ -197,6 +198,18 @@
 
     private void OnAuthChanged() => InvokeAsync(StateHasChanged);
 
+    // 2FA optionnel pour tous les rôles (note-decisions-client.md §5) : on ne
+    // bloque plus la connexion d'un compte à privilèges sans 2FA, mais on le
+    // rappelle à chaque connexion tant qu'il ne l'a pas activé — audit du
+    // 05/08/2026, finding M1.
+    private void WarnIfTwoFactorRecommended(LoginOutcome outcome)
+    {
+        if (outcome.TwoFactorRecommended)
+            Toast.Security(
+                "Votre rôle donne accès à des données sensibles. Activez la double authentification depuis votre profil.",
+                "Double authentification recommandée");
+    }
+
     public void Dispose() => Auth.Changed -= OnAuthChanged;
 
     private async Task SubmitPasswordAsync()
@@ -206,7 +219,7 @@
         try
         {
             var outcome = await Api.LoginAsync(_email.Trim(), _password);
-            if (outcome.Success) { Nav.NavigateTo(LandingPage()); return; }
+            if (outcome.Success) { WarnIfTwoFactorRecommended(outcome); Nav.NavigateTo(LandingPage()); return; }
             if (outcome.RequiresTwoFactor) { _step = Step.TwoFactor; return; }
 
             if (outcome.RequiresEnrollment)
@@ -268,7 +281,7 @@
             _step = outcome.RequiresTwoFactor ? Step.TwoFactor : Step.Password;
             if (!outcome.RequiresTwoFactor && !outcome.Success)
                 _error = outcome.Error;
-            if (outcome.Success) Nav.NavigateTo(LandingPage());
+            if (outcome.Success) { WarnIfTwoFactorRecommended(outcome); Nav.NavigateTo(LandingPage()); }
         }
         catch { _error = "Impossible de joindre le service d'authentification."; }
         finally { _busy = false; }
@@ -281,7 +294,7 @@
         try
         {
             var outcome = await Api.LoginTwoFactorAsync(_email.Trim(), _password, _code.Trim());
-            if (outcome.Success) { Nav.NavigateTo(LandingPage()); return; }
+            if (outcome.Success) { WarnIfTwoFactorRecommended(outcome); Nav.NavigateTo(LandingPage()); return; }
             _error = outcome.Error ?? "Code invalide.";
         }
         catch { _error = "Impossible de joindre le service d'authentification."; }

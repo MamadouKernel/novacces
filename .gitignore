@@ -15,6 +15,7 @@ obj/
 *.p12
 appsettings.*.Local.json
 appsettings.Development.json
+appsettings.Production.json
 secrets.json
 .env
 .env.*

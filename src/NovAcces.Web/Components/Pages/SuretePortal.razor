@@ -469,10 +469,10 @@ else if (CanViewDashboard)
     // Le dashboard expose le journal de TOUS les visiteurs du site : réservé à
     // la Sûreté et l'Admin, comme la policy SecurityJournal côté API. Le rôle
     // Hôte en est exclu (moindre privilège §8.5) — il dispose de son propre
-    // portail, limité à ses demandes. Cette liste DOIT rester alignée sur la
-    // policy serveur : sinon l'écran s'afficherait pour se remplir de 403.
-    private bool CanViewDashboard =>
-        Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin);
+    // portail, limité à ses demandes. Délégué à NovAccesAuthorizationMatrix
+    // (Shared) pour rester au même endroit que le reste de la matrice de
+    // rôles plutôt que redéfini ici (audit du 05/08/2026, finding F3).
+    private bool CanViewDashboard => NovAccesAuthorizationMatrix.CanViewSecurityJournal(Auth.Roles);
 
     protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
 

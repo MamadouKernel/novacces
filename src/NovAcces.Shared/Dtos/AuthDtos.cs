@@ -23,7 +23,14 @@ public sealed record LoginResponseDto(
     string? SiteId,
     string? RefreshToken = null,
     int ExpiresIn = 0,
-    string Email = "");
+    string Email = "",
+    /// <summary>
+    /// Vrai si ce compte a un rôle à privilèges (Admin/SuperAdmin/Sûreté) et
+    /// n'a pas activé le 2FA. N'empêche pas la connexion (2FA optionnel,
+    /// décision du 02/08/2026 — voir note-decisions-client.md §5) mais permet
+    /// au portail d'afficher une recommandation.
+    /// </summary>
+    bool TwoFactorRecommended = false);
 
 public sealed record RefreshTokenRequestDto(string RefreshToken);
 public sealed record AgentLoginResponseDto(string AccessToken, string RefreshToken, int ExpiresIn, AgentLoginIdentityDto Agent);

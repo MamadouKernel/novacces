@@ -655,7 +655,7 @@ public sealed class NovAccesApiClient
             return LoginOutcome.Failed("Réponse d'authentification inattendue.");
 
         _auth.SignIn(login.AccessToken, login.DisplayName, login.Email, login.Roles, login.SiteId);
-        return LoginOutcome.Connected();
+        return LoginOutcome.Connected(login.TwoFactorRecommended);
     }
 }
 
@@ -674,9 +674,10 @@ public sealed record ReissueQrOutcome(bool Success, CreateVisitResponseDto? Data
     public static ReissueQrOutcome Failed(string error) => new(false, null, error);
 }
 
-public sealed record LoginOutcome(bool Success, bool RequiresTwoFactor, bool RequiresEnrollment, string? Error)
+public sealed record LoginOutcome(
+    bool Success, bool RequiresTwoFactor, bool RequiresEnrollment, string? Error, bool TwoFactorRecommended = false)
 {
-    public static LoginOutcome Connected() => new(true, false, false, null);
+    public static LoginOutcome Connected(bool twoFactorRecommended = false) => new(true, false, false, null, twoFactorRecommended);
     public static LoginOutcome TwoFactor() => new(false, true, false, null);
     public static LoginOutcome Enrollment() => new(false, false, true, null);
     public static LoginOutcome Failed(string error) => new(false, false, false, error);

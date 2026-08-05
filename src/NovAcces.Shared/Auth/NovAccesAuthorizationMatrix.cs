@@ -58,4 +58,20 @@ public static class NovAccesAuthorizationMatrix
     /// (AdminAccounts.razor:CanManage), qui ne fait que masquer le bouton.
     /// </summary>
     public static bool CanActOnOwnAccount(ClaimsPrincipal caller) => IsSuperAdmin(caller);
+
+    /// <summary>
+    /// Miroir, côté UI (NovAcces.Web), de la policy serveur "SecurityJournal"
+    /// (AuthSetup.cs) : Sûreté/Admin/SuperAdmin. Cette liste est une garde
+    /// d'AFFICHAGE seulement — la policy serveur reste l'unique barrière
+    /// réelle — mais centralisée ici pour qu'un futur changement de la policy
+    /// serveur soit plus facile à repérer que si chaque page redéfinissait sa
+    /// propre liste de rôles. Audit du 05/08/2026, finding F3 : la version
+    /// précédente de SuretePortal.razor omettait SuperAdmin (sans incidence
+    /// pratique tant qu'un SuperAdmin reçoit toujours aussi le rôle Admin à
+    /// la création, mais latent en cas de changement de cette règle).
+    /// </summary>
+    public static bool CanViewSecurityJournal(IEnumerable<string> roles) =>
+        roles.Contains(NovAccesRoles.Surete)
+        || roles.Contains(NovAccesRoles.Admin)
+        || roles.Contains(NovAccesRoles.SuperAdmin);
 }

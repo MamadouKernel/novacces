@@ -9,9 +9,12 @@ namespace NovAcces.Application.Abstractions;
 /// (moindre privilège §8.5 : une sauvegarde complète expose les données de
 /// TOUS les clients de Sigasécurité en un seul fichier).
 ///
-/// Volontairement AUCUNE opération de restauration ici : restaurer un dump
-/// écrase la base de production en cours — bien plus dangereux qu'un bouton
-/// web ne devrait exposer. Voir docs/audit-securite-2026-08-05.md.
+/// La restauration existe (<see cref="RestoreBackupAsync"/>) mais n'est
+/// délibérément PAS exposée en HTTP : elle écrase la base en cours pendant
+/// que l'API sert du trafic live, ce qu'aucune confirmation de bouton web
+/// ne rend sûr. Elle n'est accessible qu'en CLI (Program.cs,
+/// "restore-database"), le même registre que "provision-site"/"migrate" —
+/// un geste d'exploitation délibéré, pas un clic accidentel.
 /// </summary>
 public interface IDatabaseBackupService
 {
@@ -34,6 +37,13 @@ public interface IDatabaseBackupService
     /// validée par cette méthode (protection contre la traversée de chemin).
     /// </summary>
     Task<Stream?> OpenBackupForDownloadAsync(string fileName, CancellationToken ct);
+
+    /// <summary>
+    /// Restaure la base COMPLÈTE depuis une sauvegarde (pg_restore --clean).
+    /// ÉCRASE toutes les données courantes de tous les sites. CLI uniquement
+    /// — voir la remarque de classe. Lève si le fichier est introuvable/invalide.
+    /// </summary>
+    Task RestoreBackupAsync(string fileName, CancellationToken ct);
 }
 
 /// <summary>Nom de fichier + taille + date d'une sauvegarde présente sur disque.</summary>

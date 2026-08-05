@@ -518,6 +518,32 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync() : null;
     }
 
+    /// <summary>Diagnostic transverse de la base (taille, connexions, statistiques par schéma).</summary>
+    public async Task<DatabaseHealthDto?> GetDatabaseHealthAsync()
+    {
+        var response = await CreateClient(true).GetAsync("/api/admin/database/health");
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<DatabaseHealthDto>() : null;
+    }
+
+    /// <summary>Exécute une requête SQL en lecture seule. (Success, Result, Error).</summary>
+    public async Task<(bool Success, DatabaseQueryResultDto? Result, string? Error)> ExecuteDatabaseQueryAsync(string sql)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/admin/database/query", new DatabaseQueryRequestDto(sql));
+        if (response.IsSuccessStatusCode)
+            return (true, await response.Content.ReadFromJsonAsync<DatabaseQueryResultDto>(), null);
+        return (false, null, await ReadErrorAsync(response));
+    }
+
+    /// <summary>(Re)synchronise les privilèges du rôle applicatif PostgreSQL. (Success, Message).</summary>
+    public async Task<(bool Success, string Message)> SyncDatabaseRoleGrantsAsync()
+    {
+        var response = await CreateClient(true).PostAsync("/api/admin/database/roles/sync", null);
+        var message = response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<Dictionary<string, string>>())?.GetValueOrDefault("message") ?? "Terminé."
+            : await ReadErrorAsync(response) ?? "Échec de la synchronisation.";
+        return (response.IsSuccessStatusCode, message);
+    }
+
     /// <summary>Liste les agents (matricule + nom) d'un site.</summary>
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(string siteId)
     {

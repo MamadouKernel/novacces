@@ -221,6 +221,47 @@ if (args.Length >= 1 && args[0] == "grant-app-role")
     return 0;
 }
 
+// --- Commande d'administration hors-ligne : restauration d'une sauvegarde ---
+//   dotnet NovAcces.Api.dll restore-database <fichier.dump> --confirm <fichier.dump>
+// ÉCRASE la base COMPLÈTE (tous les sites) avec le contenu de la sauvegarde.
+// Volontairement CLI uniquement, jamais un endpoint HTTP (voir
+// IDatabaseBackupService) : un geste d'exploitation délibéré exécuté par un
+// opérateur qui a accès au serveur, pas un bouton cliquable pendant que
+// l'API sert du trafic live. --confirm doit répéter EXACTEMENT le nom du
+// fichier — une faute de frappe volontaire est le seul filet de sécurité
+// contre un copier-coller de commande sur la mauvaise ligne.
+if (args.Length >= 1 && args[0] == "restore-database")
+{
+    if (args.Length < 4 || args[2] != "--confirm" || args[1] != args[3])
+    {
+        Console.Error.WriteLine("Usage : dotnet NovAcces.Api.dll restore-database <fichier.dump> --confirm <fichier.dump>");
+        Console.Error.WriteLine("Le nom du fichier doit être répété IDENTIQUE après --confirm.");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("ATTENTION : cette commande ÉCRASE la base complète (tous les sites) avec");
+        Console.Error.WriteLine("le contenu de la sauvegarde. Arrêtez le trafic (docker compose stop api web)");
+        Console.Error.WriteLine("avant de l'exécuter — restaurer pendant que l'API sert des requêtes live");
+        Console.Error.WriteLine("peut laisser la base dans un état incohérent.");
+        return 1;
+    }
+
+    using var scope = app.Services.CreateScope();
+    var backups = scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>();
+
+    Console.WriteLine($"Restauration depuis « {args[1]} »...");
+    try
+    {
+        await backups.RestoreBackupAsync(args[1], default);
+    }
+    catch (Exception ex) when (ex is DatabaseBackupFailedException or DatabaseBackupInProgressException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine("Restauration terminée. Relancez les conteneurs api/web si vous les aviez arrêtés.");
+    return 0;
+}
+
 // --- Commande d'administration hors-ligne : migrations + amorçage initial ---
 //   dotnet NovAcces.Api.dll migrate
 // Applique les migrations EF (idempotentes) et amorce rôles + compte Admin

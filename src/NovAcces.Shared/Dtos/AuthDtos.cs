@@ -220,3 +220,16 @@ public sealed record SitePurgeDto(string SiteId, int VisitsPurged, int ScanLogsA
 
 /// <summary>Sauvegarde présente sur disque, telle qu'affichée dans la console SuperAdmin.</summary>
 public sealed record DatabaseBackupDto(string FileName, long SizeBytes, DateTimeOffset CreatedAt);
+
+/// <summary>Vue d'ensemble de la santé de la base (SuperAdmin uniquement).</summary>
+public sealed record DatabaseHealthDto(
+    string PostgresVersion, long TotalSizeBytes, int ActiveConnections, IReadOnlyList<DatabaseSchemaStatsDto> Schemas);
+
+public sealed record DatabaseSchemaStatsDto(string SchemaName, long SizeBytes, int TableCount, long ApproximateRowCount);
+
+/// <summary>Requête SQL en lecture seule soumise par le SuperAdmin.</summary>
+public sealed record DatabaseQueryRequestDto(string Sql);
+
+/// <summary>Résultat d'une requête SQL en lecture seule.</summary>
+public sealed record DatabaseQueryResultDto(
+    IReadOnlyList<string> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows, bool Truncated);

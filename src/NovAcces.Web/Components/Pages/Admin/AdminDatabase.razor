@@ -38,9 +38,10 @@ else
             supprimées automatiquement.
         </p>
         <p class="hint">
-            Ne restaure rien depuis le portail : la restauration écrase la base en
-            cours et n'est volontairement pas exposée ici — contactez Mamadou en cas
-            de besoin réel de restauration.
+            La restauration n'est pas un bouton ici : elle écrase la base complète et ne
+            doit pas être un clic accidentel pendant que l'API sert du trafic. Chaque
+            sauvegarde ci-dessous propose la commande CLI exacte à exécuter sur le
+            serveur (conteneurs arrêtés).
         </p>
         <button class="btn-primary" @onclick="CreateBackupAsync" disabled="@_busy">
             @(_busy ? "Sauvegarde en cours…" : "Sauvegarder maintenant")
@@ -61,7 +62,7 @@ else
         {
             <div class="table-wrap">
                 <table class="visits">
-                    <thead><tr><th>Fichier</th><th>Taille</th><th>Créée le</th><th></th></tr></thead>
+                    <thead><tr><th>Fichier</th><th>Taille</th><th>Créée le</th><th></th><th></th></tr></thead>
                     <tbody>
                         @foreach (var b in _backups)
                         {
@@ -74,6 +75,112 @@ else
                                         @(_downloading.Contains(b.FileName) ? "Téléchargement…" : "Télécharger")
                                     </button>
                                 </td>
+                                <td>
+                                    <button class="btn-ghost" @onclick="() => CopyRestoreCommandAsync(b.FileName)" title="Copier la commande de restauration (CLI, à exécuter sur le serveur)">
+                                        Commande de restauration
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Santé de la base</h2>
+        @if (_health is null)
+        {
+            <p class="muted">Chargement…</p>
+        }
+        else
+        {
+            <div class="tiles">
+                <div class="tile"><span class="tile-n">@FormatSize(_health.TotalSizeBytes)</span><span class="tile-l">Taille totale</span></div>
+                <div class="tile"><span class="tile-n">@_health.ActiveConnections</span><span class="tile-l">Connexions actives</span></div>
+                <div class="tile"><span class="tile-n">@_health.Schemas.Count</span><span class="tile-l">Schémas (sites + partagé)</span></div>
+            </div>
+            <p class="hint" style="margin-top:.75rem">@_health.PostgresVersion</p>
+
+            <div class="table-wrap" style="margin-top:1rem">
+                <table class="visits">
+                    <thead><tr><th>Schéma</th><th>Taille</th><th>Tables</th><th>Lignes (approx.)</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in _health.Schemas)
+                        {
+                            <tr>
+                                <td><span class="mono">@s.SchemaName</span></td>
+                                <td>@FormatSize(s.SizeBytes)</td>
+                                <td>@s.TableCount</td>
+                                <td>@s.ApproximateRowCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Rôle applicatif PostgreSQL</h2>
+        <p class="muted">
+            Synchronise les privilèges du rôle applicatif (<span class="mono">Database:ApplicationRole</span>)
+            sur le schéma partagé et tous les sites — équivalent à
+            <span class="mono">dotnet NovAcces.Api.dll grant-app-role</span> en CLI.
+        </p>
+        <p class="hint">
+            Ne CRÉE PAS les rôles PostgreSQL eux-mêmes : ce geste, ponctuel, exige un
+            superutilisateur et reste manuel (<span class="mono">tools/provisionner-roles-postgres.sql</span>)
+            — l'application ne détient jamais d'accès superutilisateur.
+        </p>
+        <button class="btn-ghost" @onclick="SyncRolesAsync" disabled="@_syncingRoles">
+            @(_syncingRoles ? "Synchronisation…" : "Synchroniser les privilèges")
+        </button>
+    </section>
+
+    <section class="card">
+        <h2>Console SQL (lecture seule)</h2>
+        <p class="muted">
+            SELECT uniquement, une seule instruction, 500 lignes maximum. Toute tentative
+            d'écriture est refusée par PostgreSQL lui-même (transaction en lecture seule),
+            pas seulement par une validation côté application.
+        </p>
+        <textarea class="mono" style="width:100%;min-height:6rem;padding:.6rem;border:1px solid var(--line);border-radius:8px"
+                  @bind="_sql" @bind:event="oninput" placeholder="SELECT site_id, is_active FROM identity.sites ORDER BY site_id;"></textarea>
+        <button class="btn-primary" style="margin-top:.6rem" @onclick="RunQueryAsync" disabled="@_queryBusy">
+            @(_queryBusy ? "Exécution…" : "Exécuter")
+        </button>
+
+        @if (_queryError is not null)
+        {
+            <p class="error">@_queryError</p>
+        }
+
+        @if (_queryResult is not null)
+        {
+            @if (_queryResult.Truncated)
+            {
+                <p class="hint" style="margin-top:.75rem">Résultat tronqué à 500 lignes.</p>
+            }
+            <div class="table-wrap" style="margin-top:.5rem">
+                <table class="visits">
+                    <thead>
+                        <tr>
+                            @foreach (var c in _queryResult.Columns)
+                            {
+                                <th>@c</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _queryResult.Rows)
+                        {
+                            <tr>
+                                @foreach (var cell in row)
+                                {
+                                    <td>@(cell ?? "—")</td>
+                                }
                             </tr>
                         }
                     </tbody>
@@ -91,6 +198,15 @@ else
     private bool _busy;
     private IReadOnlyList<DatabaseBackupDto> _backups = Array.Empty<DatabaseBackupDto>();
     private readonly HashSet<string> _downloading = new();
+
+    private DatabaseHealthDto? _health;
+
+    private bool _syncingRoles;
+
+    private string _sql = "";
+    private bool _queryBusy;
+    private string? _queryError;
+    private DatabaseQueryResultDto? _queryResult;
 
     protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
 
@@ -111,6 +227,53 @@ else
         try { _backups = await Api.GetDatabaseBackupsAsync(); }
         catch { Toasts.Error("Impossible de charger les sauvegardes."); }
         finally { _loading = false; StateHasChanged(); }
+
+        try { _health = await Api.GetDatabaseHealthAsync(); }
+        catch { /* la section santé reste simplement vide en cas d'échec */ }
+        finally { StateHasChanged(); }
+    }
+
+    private async Task SyncRolesAsync()
+    {
+        if (_syncingRoles) return;
+        _syncingRoles = true;
+        try
+        {
+            var (success, message) = await Api.SyncDatabaseRoleGrantsAsync();
+            if (success) Toasts.Success(message);
+            else Toasts.Error(message);
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _syncingRoles = false; }
+    }
+
+    private async Task RunQueryAsync()
+    {
+        if (_queryBusy || string.IsNullOrWhiteSpace(_sql)) return;
+        _queryBusy = true;
+        _queryError = null;
+        _queryResult = null;
+        try
+        {
+            var (success, result, error) = await Api.ExecuteDatabaseQueryAsync(_sql);
+            if (success) _queryResult = result;
+            else _queryError = error ?? "Requête refusée.";
+        }
+        catch { _queryError = "Service indisponible, réessayez."; }
+        finally { _queryBusy = false; }
+    }
+
+    // La restauration n'est jamais un bouton HTTP ici (voir IDatabaseBackupService) :
+    // on copie la commande CLI exacte, à exécuter par un opérateur sur le serveur.
+    private async Task CopyRestoreCommandAsync(string fileName)
+    {
+        var command = $"docker compose exec api dotnet NovAcces.Api.dll restore-database {fileName} --confirm {fileName}";
+        try
+        {
+            await JS.InvokeVoidAsync("novaccesCopyToClipboard", command);
+            Toasts.Info("Commande copiée. À exécuter sur le serveur, api/web arrêtés, jamais depuis ce portail.", "Restauration");
+        }
+        catch { Toasts.Error("Impossible de copier la commande."); }
     }
 
     private async Task CreateBackupAsync()

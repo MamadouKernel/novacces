@@ -91,6 +91,8 @@ public static class DependencyInjection
         // que partagé pour toute l'application, pas par requête.
         services.Configure<DatabaseBackupOptions>(configuration.GetSection("DatabaseBackup"));
         services.AddSingleton<IDatabaseBackupService, PgDumpDatabaseBackupService>();
+        services.AddScoped<IDatabaseHealthService, PostgresDatabaseHealthService>();
+        services.AddScoped<IDatabaseQueryService, PostgresReadOnlyQueryService>();
 
         // Libellé lisible d'un site (invitations visiteur, §Q ticket enrichi
         // du 05/08/2026) — même convention de configuration que /site/config.

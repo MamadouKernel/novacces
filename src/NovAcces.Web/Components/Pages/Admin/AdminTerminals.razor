@@ -22,7 +22,7 @@
             <p style="margin:0 0 .4rem;font-weight:600;">QR d'enrôlement — « @_lastEnrollmentTicket.Label »</p>
             <img class="qr" style="width:220px;height:220px;margin:.7rem auto;background:#fff;padding:.5rem;" src="@QrImage.ToDataUri(_lastEnrollmentTicket.QrPayload)" alt="QR d'enrôlement du terminal" />
             <p class="hint" style="margin:.5rem 0 0;">Scannez ce QR depuis l'application mobile. Il expire le @_lastEnrollmentTicket.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy à HH:mm:ss") et ne peut être utilisé qu'une seule fois.</p>
-            <p class="hint" style="margin:.5rem 0 0;">Code de secours : <code>@_lastEnrollmentTicket.Ticket</code></p>
+            <p class="hint" style="margin:.5rem 0 0;">Caméra hors service ? Dans l'app mobile, choisissez « Saisir le code manuellement » et entrez : <code>@_lastEnrollmentTicket.ManualCode</code></p>
             <button class="btn-ghost" style="margin-top:.7rem" @onclick="() => _lastEnrollmentTicket = null">Fermer</button>
         </div>
     }

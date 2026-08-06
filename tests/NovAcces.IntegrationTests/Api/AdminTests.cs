@@ -153,6 +153,52 @@ public sealed class AdminTests
         oldKey.DefaultRequestHeaders.Add("X-Api-Key", activated.ApiKey);
         Assert.Equal(HttpStatusCode.Unauthorized, (await oldKey.GetAsync("/api/agent/sites")).StatusCode);
     }
+
+    [SkippableFact]
+    public async Task TerminalEnrollmentTicket_ManualCode_ActivatesSameTicketAsQr()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var create = await admin.PostAsJsonAsync("/api/admin/terminals",
+            new CreateTerminalRequestDto($"Manuel-{Guid.NewGuid():N}", new[] { NovAccesApiFactory.TestSite }));
+        var created = await create.Content.ReadFromJsonAsync<CreateTerminalResponseDto>(Json);
+        Assert.NotNull(created);
+
+        var ticketResponse = await admin.PostAsync($"/api/admin/terminals/{created!.Id}/enrollment-ticket", null);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        Assert.NotNull(ticket);
+        Assert.False(string.IsNullOrWhiteSpace(ticket!.ManualCode));
+        Assert.NotEqual(ticket.ManualCode, TicketFromQr(ticket.QrPayload));
+
+        // Casse volontairement "sale" (minuscules) : la normalisation du hash
+        // doit se comporter comme pour le code de secours visiteur. Pas
+        // d'espaces ajoutés ici : la preuve de possession signe la valeur
+        // TELLE QUE présentée (après Trim() côté serveur comme côté mobile),
+        // donc le test doit signer exactement ce qui sera comparé.
+        var typedCode = ticket.ManualCode.ToLowerInvariant();
+
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var deviceId = Guid.NewGuid().ToString("D");
+        var activation = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            EnrollmentRequest(ecdsa, typedCode, deviceId));
+        Assert.Equal(HttpStatusCode.OK, activation.StatusCode);
+        var activated = await activation.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
+        Assert.NotNull(activated);
+
+        var terminal = _factory.CreateClient();
+        terminal.DefaultRequestHeaders.Add("X-Api-Key", activated!.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, (await terminal.GetAsync("/api/agent/sites")).StatusCode);
+
+        // Le code manuel et le QR pointent vers le MÊME ticket : une fois
+        // consommé par le code, le QR (jamais utilisé) est lui aussi mort.
+        var viaQrAfter = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate",
+            EnrollmentRequest(ecdsa, TicketFromQr(ticket.QrPayload), Guid.NewGuid().ToString("D")));
+        Assert.Equal(HttpStatusCode.Gone, viaQrAfter.StatusCode);
+    }
+
     [SkippableFact]
     public async Task DeviceActivation_WithoutProofOfPossession_IsRejected()
     {

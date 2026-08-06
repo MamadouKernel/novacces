@@ -1217,7 +1217,7 @@ public static class AdminEndpoints
                 $"Ticket QR temporaire créé pour le terminal « {ticket.Label} » (expiration {ticket.ExpiresAt:O}).", ct);
 
             return Results.Ok(new EnrollmentTicketResponseDto(
-                ticket.TerminalId, ticket.Label, ticket.SiteIds, qrPayload, ticket.ExpiresAt));
+                ticket.TerminalId, ticket.Label, ticket.SiteIds, qrPayload, ticket.ManualCode, ticket.ExpiresAt));
         })
         .RequireRateLimiting("sensitive")
         .WithName("CreateTerminalEnrollmentTicket")

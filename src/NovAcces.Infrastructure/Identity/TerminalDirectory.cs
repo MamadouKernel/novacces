@@ -13,8 +13,13 @@ namespace NovAcces.Infrastructure.Identity;
 public sealed class TerminalDirectory : ITerminalDirectory
 {
     private readonly NovAccesIdentityDbContext _db;
+    private readonly IManualCodeService _manualCodes;
 
-    public TerminalDirectory(NovAccesIdentityDbContext db) => _db = db;
+    public TerminalDirectory(NovAccesIdentityDbContext db, IManualCodeService manualCodes)
+    {
+        _db = db;
+        _manualCodes = manualCodes;
+    }
 
     public static string ComputeKeyHash(string apiKey) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
@@ -107,6 +112,7 @@ public sealed class TerminalDirectory : ITerminalDirectory
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(lifetime);
         var rawTicket = GenerateSecret();
+        var (rawManualCode, manualCodeHash) = _manualCodes.GenerateCode();
 
         // Un nouveau QR invalide les invitations précédentes du même terminal.
         var pending = await _db.TerminalEnrollmentTickets
@@ -116,11 +122,11 @@ public sealed class TerminalDirectory : ITerminalDirectory
             old.Revoke(now);
 
         _db.TerminalEnrollmentTickets.Add(TerminalEnrollmentTicketEntity.Create(
-            terminalId, ComputeKeyHash(rawTicket), createdBy, now, expiresAt));
+            terminalId, ComputeKeyHash(rawTicket), manualCodeHash, createdBy, now, expiresAt));
         await _db.SaveChangesAsync(ct);
 
         return new TerminalEnrollmentTicket(
-            terminal.Id, terminal.Label, terminal.SiteIds.ToList(), rawTicket, expiresAt);
+            terminal.Id, terminal.Label, terminal.SiteIds.ToList(), rawTicket, rawManualCode, expiresAt);
     }
 
     public async Task<TerminalActivation?> ActivateAsync(
@@ -134,9 +140,18 @@ public sealed class TerminalDirectory : ITerminalDirectory
         // scanneraient le même QR ne peuvent pas tous les deux l'activer.
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = DateTimeOffset.UtcNow;
-        var ticketHash = ComputeKeyHash(ticket.Trim());
+        var trimmedTicket = ticket.Trim();
+
+        // Le champ "ticket" présenté peut être soit le secret brut du QR (comparé
+        // tel quel), soit le code manuel de secours (comparé normalisé — espaces/
+        // tirets retirés, majuscules, comme la saisie d'un code de secours
+        // visiteur). Les deux pointent vers la MÊME ligne : scanner le QR ou
+        // taper le code consomment un seul et même ticket, pas deux mécanismes
+        // parallèles qui pourraient diverger.
+        var tokenHash = ComputeKeyHash(trimmedTicket);
+        var manualCodeHash = _manualCodes.ComputeHash(trimmedTicket);
         var ticketEntity = await _db.TerminalEnrollmentTickets
-            .FirstOrDefaultAsync(t => t.TokenHash == ticketHash, ct);
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash || t.ManualCodeHash == manualCodeHash, ct);
         if (ticketEntity is null || !ticketEntity.IsUsable(now))
             return null;
 

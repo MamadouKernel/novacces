@@ -31,12 +31,15 @@ public sealed record ArchivedTerminalSummaryDto(
 /// <summary>
 /// Ticket temporaire affiché par la console d'administration sous forme de QR.
 /// Le ticket brut n'est jamais stocké par l'API : seul son hash est conservé.
+/// <paramref name="ManualCode"/> est une alternative de secours au QR (même
+/// ticket, même expiration) si la caméra du terminal est hors service.
 /// </summary>
 public sealed record EnrollmentTicketResponseDto(
     Guid TerminalId,
     string Label,
     IReadOnlyList<string> SiteIds,
     string QrPayload,
+    string ManualCode,
     DateTimeOffset ExpiresAt)
 {
     // Compatibilité avec les clients historiques : jamais renseigné ni sérialisé.

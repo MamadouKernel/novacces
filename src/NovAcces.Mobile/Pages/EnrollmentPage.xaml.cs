@@ -16,6 +16,11 @@ namespace NovAcces.Mobile.Pages;
 /// </summary>
 public partial class EnrollmentPage : ContentPage
 {
+    // Pré-remplissage du mode manuel : seul déploiement en usage réel à ce
+    // jour (voir .env.example, API_PUBLIC_BASE_URL) — le champ reste éditable
+    // pour couvrir un site pilote sur une autre URL.
+    private const string DefaultApiBaseUrl = "https://api.sigasacces.com";
+
     private readonly AgentConfig _config;
     private readonly IServiceProvider _services;
     private bool _processing;
@@ -90,22 +95,13 @@ public partial class EnrollmentPage : ContentPage
             if (expiresAt <= DateTimeOffset.UtcNow)
                 throw new InvalidOperationException("Ce QR d'enrôlement a expiré.");
 
-            _apiBaseUrl = apiUri.ToString().TrimEnd('/');
-            _ticket = ticket;
-            _deviceInstanceId = Guid.NewGuid().ToString("D");
-
-            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            _devicePrivateKeyPem = ecdsa.ExportPkcs8PrivateKeyPem();
-            _devicePublicKeyPem = ecdsa.ExportSubjectPublicKeyInfoPem();
-
-            TerminalLabel.Text = query.TryGetValue("terminal", out var terminalId)
+            var terminalLabelText = query.TryGetValue("terminal", out var terminalId)
                 ? $"Identifiant : {terminalId}"
                 : "Terminal NovAcces";
-            ExpirationLabel.Text = $"Ticket valide jusqu'au {expiresAt.ToLocalTime():dd/MM/yyyy HH:mm:ss}";
-            TicketSummary.IsVisible = true;
-            EnrollButton.IsEnabled = true;
+            var expirationText = $"Ticket valide jusqu'au {expiresAt.ToLocalTime():dd/MM/yyyy HH:mm:ss}";
+
+            PrepareEnrollment(apiUri.ToString().TrimEnd('/'), ticket, terminalLabelText, expirationText);
             ScanStatusLabel.Text = "QR reconnu. Confirmez l'activation du terminal.";
-            StatusLabel.Text = "";
         }
         catch (Exception ex)
         {
@@ -115,6 +111,67 @@ public partial class EnrollmentPage : ContentPage
             EnrollButton.IsEnabled = false;
             ScanStatusLabel.Text = ex.Message;
         }
+    }
+
+    private void OnToggleManualMode(object? sender, EventArgs e)
+    {
+        var showing = !ManualEntrySection.IsVisible;
+        ManualEntrySection.IsVisible = showing;
+        if (showing && string.IsNullOrWhiteSpace(ApiUrlEntry.Text))
+            ApiUrlEntry.Text = DefaultApiBaseUrl;
+
+        // La caméra reste inutile pendant la saisie manuelle — c'est
+        // précisément le repli prévu quand elle est hors service.
+        Camera.IsDetecting = !showing;
+        ToggleManualModeButton.Text = showing
+            ? "Revenir au scan du QR"
+            : "Pas de caméra ? Saisir le code manuellement";
+        ManualStatusLabel.Text = "";
+    }
+
+    private void OnManualCodeSubmit(object? sender, EventArgs e)
+    {
+        var apiText = (ApiUrlEntry.Text ?? "").Trim();
+        var code = (ManualCodeEntry.Text ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            ManualStatusLabel.Text = "Saisissez le code fourni par l'administration.";
+            return;
+        }
+        if (!Uri.TryCreate(apiText, UriKind.Absolute, out var apiUri) || apiUri.Scheme is not ("http" or "https"))
+        {
+            ManualStatusLabel.Text = "URL de l'API invalide.";
+            return;
+        }
+
+        PrepareEnrollment(apiUri.ToString().TrimEnd('/'), code,
+            "Terminal NovAcces (code manuel)",
+            "Vérifiez la validité du code auprès de l'administration si l'activation échoue.");
+        ManualStatusLabel.Text = "Code reconnu. Confirmez l'activation du terminal.";
+    }
+
+    /// <summary>
+    /// Étape commune au QR scanné et au code manuel : les deux jouent
+    /// exactement le même rôle une fois arrivés ici — même génération de
+    /// clés, même écran de confirmation, même appel d'activation dans
+    /// <see cref="OnEnroll"/>.
+    /// </summary>
+    private void PrepareEnrollment(string apiBaseUrl, string ticketValue, string terminalLabelText, string expirationText)
+    {
+        _apiBaseUrl = apiBaseUrl;
+        _ticket = ticketValue;
+        _deviceInstanceId = Guid.NewGuid().ToString("D");
+
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        _devicePrivateKeyPem = ecdsa.ExportPkcs8PrivateKeyPem();
+        _devicePublicKeyPem = ecdsa.ExportSubjectPublicKeyInfoPem();
+
+        TerminalLabel.Text = terminalLabelText;
+        ExpirationLabel.Text = expirationText;
+        TicketSummary.IsVisible = true;
+        EnrollButton.IsEnabled = true;
+        StatusLabel.Text = "";
     }
 
     private async void OnEnroll(object? sender, EventArgs e)

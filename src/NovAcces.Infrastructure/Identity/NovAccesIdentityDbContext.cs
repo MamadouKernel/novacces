@@ -84,9 +84,11 @@ public sealed class NovAccesIdentityDbContext
             t.ToTable("terminal_enrollment_tickets");
             t.HasKey(x => x.Id);
             t.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+            t.Property(x => x.ManualCodeHash).HasMaxLength(64);
             t.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
             t.Property(x => x.DeviceInstanceId).HasMaxLength(200);
             t.HasIndex(x => x.TokenHash).IsUnique();
+            t.HasIndex(x => x.ManualCodeHash).IsUnique().HasFilter("\"ManualCodeHash\" IS NOT NULL");
             t.HasIndex(x => new { x.TerminalId, x.ExpiresAt });
             t.HasOne<Terminal>().WithMany().HasForeignKey(x => x.TerminalId).OnDelete(DeleteBehavior.Restrict);
         });

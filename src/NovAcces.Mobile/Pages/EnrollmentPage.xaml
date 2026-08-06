@@ -24,6 +24,28 @@
                    TextColor="{StaticResource BrandAmber}" FontSize="14"
                    HorizontalTextAlignment="Center" />
 
+            <Button x:Name="ToggleManualModeButton" Text="Pas de caméra ? Saisir le code manuellement"
+                    Clicked="OnToggleManualMode" BackgroundColor="Transparent"
+                    TextColor="{StaticResource BrandMuted}" FontSize="12"
+                    FontAttributes="Italic" Margin="0,-4,0,0" />
+
+            <Border x:Name="ManualEntrySection" IsVisible="False"
+                    BackgroundColor="#183B4D" Stroke="#34586A" StrokeThickness="1"
+                    StrokeShape="RoundRectangle 10" Padding="14">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Mode manuel (sans caméra)" TextColor="White" FontAttributes="Bold" FontSize="15" />
+                    <Label Text="URL de l'API" TextColor="{StaticResource BrandMuted}" FontSize="12" />
+                    <Entry x:Name="ApiUrlEntry" TextColor="White" Keyboard="Url" />
+                    <Label Text="Code fourni par l'administration" TextColor="{StaticResource BrandMuted}" FontSize="12" />
+                    <Entry x:Name="ManualCodeEntry" TextColor="White" Placeholder="XXXX-XXXX" />
+                    <Button Text="Valider le code" Clicked="OnManualCodeSubmit"
+                            BackgroundColor="{StaticResource BrandAmber}" TextColor="{StaticResource BrandNavy}"
+                            FontAttributes="Bold" CornerRadius="10" HeightRequest="46" />
+                    <Label x:Name="ManualStatusLabel" Text="" TextColor="{StaticResource BrandAmber}" FontSize="12"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Border>
+
             <Border x:Name="TicketSummary" IsVisible="False"
                     BackgroundColor="#183B4D" Stroke="#34586A" StrokeThickness="1"
                     StrokeShape="RoundRectangle 10" Padding="14">

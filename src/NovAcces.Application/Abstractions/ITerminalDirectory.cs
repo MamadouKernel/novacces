@@ -19,12 +19,18 @@ public sealed record TerminalSummary(
 public sealed record ArchivedTerminalSummary(
     Guid Id, string Label, IReadOnlyList<string> SiteIds, DateTimeOffset DeletedAt, string? DeletedBy);
 
-/// <summary>Ticket brut remis une seule fois à la console d'administration.</summary>
+/// <summary>
+/// Ticket brut remis une seule fois à la console d'administration.
+/// <paramref name="ManualCode"/> est une alternative de secours au QR (même
+/// ticket, même expiration, même usage unique) pour le cas où la caméra du
+/// terminal est hors service.
+/// </summary>
 public sealed record TerminalEnrollmentTicket(
     Guid TerminalId,
     string Label,
     IReadOnlyList<string> SiteIds,
     string Ticket,
+    string ManualCode,
     DateTimeOffset ExpiresAt);
 
 /// <summary>Résultat de l'activation, avec une nouvelle clé API remise au device.</summary>

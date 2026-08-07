@@ -50,7 +50,7 @@
         // qui faisait planter le circuit.
         _timerActive = false;
         Auth.SignOut();
-        Nav.NavigateTo("/login", forceLoad: true);
+        Nav.NavigateTo("/login?reason=idle", forceLoad: true);
         return Task.CompletedTask;
     }
 

@@ -192,6 +192,11 @@
 
     protected override void OnAfterRender(bool firstRender)
     {
+        if (firstRender && Nav.Uri.Contains("reason=idle", StringComparison.OrdinalIgnoreCase))
+        {
+            Toast.Security("Votre session a été fermée suite à une inactivité prolongée (30 minutes). Veuillez vous reconnecter.", "Session expirée");
+        }
+
         if (Auth.Initialized && Auth.IsAuthenticated)
             Nav.NavigateTo(LandingPage());
     }

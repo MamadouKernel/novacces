@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using NovAcces.Infrastructure.Persistence.Tenancy;
@@ -30,14 +31,27 @@ public sealed class ScanEventsHub : Hub
     /// </summary>
     public const string GlobalGroup = "__all_sites__";
 
+    private static readonly ConcurrentDictionary<string, int> ConnectionsPerIp = new();
+    private const int MaxConnectionsPerIp = 25;
+
     public override async Task OnConnectedAsync()
     {
         var http = Context.GetHttpContext();
+        var clientIp = http?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        var count = ConnectionsPerIp.AddOrUpdate(clientIp, 1, (_, current) => current + 1);
+        if (count > MaxConnectionsPerIp)
+        {
+            DecrementConnectionCount(clientIp);
+            Context.Abort();
+            return;
+        }
 
         if (http?.Request.Query["global"].ToString() == "1")
         {
             if (!NovAccesAuthorizationMatrix.IsGlobalOperator(Context.User ?? new ClaimsPrincipal()))
             {
+                DecrementConnectionCount(clientIp);
                 Context.Abort();
                 return;
             }
@@ -53,6 +67,7 @@ public sealed class ScanEventsHub : Hub
 
         if (!CurrentTenant.IsValidSiteId(requested))
         {
+            DecrementConnectionCount(clientIp);
             Context.Abort();
             return;
         }
@@ -63,6 +78,7 @@ public sealed class ScanEventsHub : Hub
         if (!string.IsNullOrWhiteSpace(claimSite)
             && !string.Equals(claimSite, requested, StringComparison.OrdinalIgnoreCase))
         {
+            DecrementConnectionCount(clientIp);
             Context.Abort();
             return;
         }
@@ -77,6 +93,7 @@ public sealed class ScanEventsHub : Hub
         if (allowedSites.Count > 0
             && !allowedSites.Contains(requested!, StringComparer.OrdinalIgnoreCase))
         {
+            DecrementConnectionCount(clientIp);
             Context.Abort();
             return;
         }
@@ -88,11 +105,25 @@ public sealed class ScanEventsHub : Hub
             && !NovAccesAuthorizationMatrix.IsGlobalOperator(
                 Context.User ?? new ClaimsPrincipal()))
         {
+            DecrementConnectionCount(clientIp);
             Context.Abort();
             return;
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, requested!.ToLowerInvariant());
         await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var http = Context.GetHttpContext();
+        var clientIp = http?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        DecrementConnectionCount(clientIp);
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    private static void DecrementConnectionCount(string clientIp)
+    {
+        ConnectionsPerIp.AddOrUpdate(clientIp, 0, (_, current) => Math.Max(0, current - 1));
     }
 }

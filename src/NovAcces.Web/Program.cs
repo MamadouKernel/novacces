@@ -70,6 +70,7 @@ app.Use(async (context, next) =>
     h["X-Content-Type-Options"] = "nosniff";
     h["X-Frame-Options"] = "DENY";
     h["Referrer-Policy"] = "no-referrer";
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
     h["Content-Security-Policy"] =
         "default-src 'self'; "
         + "script-src 'self'; "

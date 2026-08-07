@@ -21,8 +21,10 @@ public sealed class TerminalDirectory : ITerminalDirectory
         _manualCodes = manualCodes;
     }
 
+    private const string KeyPepper = "SigasAcces_TerminalApiKey_Pepper_v1_ES256_Auth";
+
     public static string ComputeKeyHash(string apiKey) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{KeyPepper}:{apiKey}")));
 
     private static string GenerateSecret() =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(32));

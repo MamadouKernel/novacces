@@ -389,6 +389,7 @@ app.Use(async (context, next) =>
     h["X-Frame-Options"] = "DENY";
     h["Referrer-Policy"] = "no-referrer";
     h["X-Permitted-Cross-Domain-Policies"] = "none";
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
     await next();
 });
 

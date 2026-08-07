@@ -67,3 +67,38 @@ window.novaccesIdleTimer = (() => {
 
     return { start, stop };
 })();
+
+// Notifications bureau système & WebPush (PWA)
+window.novaccesPush = (() => {
+    async function initServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            try {
+                await navigator.serviceWorker.register('/service-worker.js');
+            } catch (err) {
+                console.warn('Service Worker non enregistré:', err);
+            }
+        }
+    }
+
+    async function requestPermission() {
+        if ('Notification' in window) {
+            const result = await Notification.requestPermission();
+            return result === 'granted';
+        }
+        return false;
+    }
+
+    function showNotification(title, body, icon) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, {
+                body: body,
+                icon: icon || '/favicon.svg',
+                tag: 'sigasacces-notify'
+            });
+        }
+    }
+
+    initServiceWorker();
+
+    return { requestPermission, showNotification };
+})();

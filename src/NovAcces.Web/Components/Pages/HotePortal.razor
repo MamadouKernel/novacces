@@ -4,6 +4,7 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 @inject ToastService Toasts
+@inject IJSRuntime JS
 
 <PageTitle>SigasAcces — Portail hôte</PageTitle>
 
@@ -708,6 +709,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             _loaded = true;
             await RefreshMyVisitsAsync();
             try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
+            try { await JS.InvokeVoidAsync("novaccesPush.requestPermission"); } catch { /* best-effort */ }
             StateHasChanged();
         }
     }

@@ -522,19 +522,74 @@
     @apply absolute inset-y-0 right-0 flex items-center pr-3 text-muted
            transition hover:text-ink2;
   }
+
+  /* ---- Animations micro-interactions temps réel (SignalR) ---- */
+  .feed-item-new {
+    animation: scan-pulse 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    border-left-width: 6px !important;
+  }
+}
+
+@keyframes scan-pulse {
+  0% { background-color: rgba(245, 163, 0, 0.35); transform: translateY(-2px) scale(1.01); }
+  60% { background-color: rgba(245, 163, 0, 0.15); }
+  100% { transform: translateY(0) scale(1); }
 }
 
 /* ============================================================
-   Impression : n'imprimer que le badge visiteur (#visitor-badge).
-   Le reste de la page (navbar, formulaires, listes) est masqué.
+   Mode Sombre (Dark Mode — Salle de supervision & postes nuit)
+   ============================================================ */
+.dark body { @apply bg-brand-950 text-slate-100; }
+.dark .card { @apply bg-brand-900/90 border-slate-800 text-slate-100 shadow-xl backdrop-blur-md; }
+.dark .card h2 { @apply border-slate-800 text-amber-400; }
+.dark .tile { @apply bg-brand-900 border-slate-800 text-slate-100; }
+.dark .tile-n { @apply text-amber-400; }
+.dark .field input:not([type="checkbox"]):not([type="radio"]),
+.dark .field select, .dark .field textarea, .dark .search {
+  @apply bg-brand-950 border-slate-700 text-slate-100 placeholder:text-slate-500 focus:border-amber-500 focus:ring-amber-500/20;
+}
+.dark .btn-ghost { @apply bg-brand-900 border-slate-700 text-slate-200 hover:bg-brand-800 hover:text-white; }
+.dark .visits th { @apply border-slate-800 text-slate-400; }
+.dark .visits td { @apply border-slate-800 text-slate-200; }
+.dark .visits tbody tr:hover td { @apply bg-brand-800/60; }
+.dark .shared-box { @apply bg-brand-900/50 border-slate-800; }
+.dark .modal { @apply bg-brand-900 border border-slate-800 text-slate-100; }
+.dark .modal-f { @apply bg-brand-950 border-slate-800; }
+.dark .filter { @apply bg-brand-900 border-slate-700 text-slate-200 hover:bg-brand-800; }
+.dark .filter .count { @apply bg-brand-950 text-slate-300; }
+.dark .synthese { @apply border-amber-500/30 bg-amber-950/40 text-amber-200; }
+
+/* ============================================================
+   Vue Responsive en Cartes pour Mobiles & Tablettes (< 640px)
+   ============================================================ */
+@media (max-width: 640px) {
+  .table-cards table, .table-cards thead, .table-cards tbody,
+  .table-cards th, .table-cards td, .table-cards tr {
+    display: block;
+  }
+  .table-cards thead { display: none; }
+  .table-cards tr {
+    @apply mb-3 rounded-lg border border-line bg-white p-3.5 shadow-sm;
+  }
+  .dark .table-cards tr { @apply border-slate-800 bg-brand-900; }
+  .table-cards td {
+    @apply flex items-center justify-between border-0 px-0 py-1.5 text-right text-xs;
+  }
+  .table-cards td::before {
+    content: attr(data-label);
+    @apply font-mono text-[0.65rem] font-semibold uppercase tracking-wider text-muted text-left pr-2;
+  }
+}
+
+/* ============================================================
+   Impression : Badge physique imprimante thermique & A4.
    ============================================================ */
 @media print {
-  @page { size: A4; margin: 10mm; }
+  @page { size: 85mm 54mm; margin: 0; }
 
-  /* overflow:hidden sur la racine évite les pages blanches supplémentaires :
-     les éléments masqués (visibility) gardent leur hauteur, on la clippe donc. */
   html, body {
-    height: auto !important;
+    height: 100% !important;
+    width: 100% !important;
     overflow: hidden !important;
     background: #fff !important;
   }
@@ -543,13 +598,18 @@
   #visitor-badge, #visitor-badge * { visibility: visible !important; }
 
   #visitor-badge {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    transform: translateX(-50%);
-    width: 72mm;
-    border: 2px solid #0e2a3a !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 85mm !important;
+    height: 54mm !important;
+    border: 1px solid #000 !important;
+    border-radius: 0 !important;
+    padding: 3mm !important;
     box-shadow: none !important;
+    transform: none !important;
+    background: #fff !important;
+    color: #000 !important;
   }
 
   .navbar, .toasts, .app-footer, #blazor-error-ui { display: none !important; }

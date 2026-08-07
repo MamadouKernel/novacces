@@ -82,16 +82,16 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         }
         else
         {
-            <div class="table-wrap">
+            <div class="table-wrap table-cards">
             <table class="visits">
                 <thead><tr><th>Visiteur</th><th>Société</th><th>Statut</th></tr></thead>
                 <tbody>
                     @foreach (var v in TodayRows)
                     {
                         <tr class="@(TodayIsLate(v) ? "row-security" : "")">
-                            <td>@v.VisitorName</td>
-                            <td class="muted">@v.VisitorCompany</td>
-                            <td><span class="badge @TodayBadgeClass(v)">@TodayStatusLabel(v)</span></td>
+                            <td data-label="Visiteur">@v.VisitorName</td>
+                            <td class="muted" data-label="Société">@v.VisitorCompany</td>
+                            <td data-label="Statut"><span class="badge @TodayBadgeClass(v)">@TodayStatusLabel(v)</span></td>
                         </tr>
                     }
                 </tbody>
@@ -225,7 +225,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 var visitsPageCount = (int)Math.Ceiling(allRows.Count / (double)_visitsPageSize);
                 if (_visitsPage > visitsPageCount) { _visitsPage = visitsPageCount; }
                 var rows = allRows.Skip((_visitsPage - 1) * _visitsPageSize).Take(_visitsPageSize).ToList();
-                <div class="table-wrap">
+                <div class="table-wrap table-cards">
                 <table class="visits">
                     <thead>
                         <tr>
@@ -242,14 +242,14 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                         @foreach (var v in rows)
                         {
                             <tr>
-                                <td>@Highlight(v.VisitorName)</td>
-                                <td class="muted">@Highlight(v.VisitorCompany)</td>
-                                <td>@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
-                                <td class="muted">@(v.Mode == "Unique" && v.ScheduledAt is { } rdv ? rdv.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
-                                <td><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
-                                <td class="muted">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
-                                <td>
-                                    <div class="flex flex-wrap gap-1.5">
+                                <td data-label="Visiteur">@Highlight(v.VisitorName)</td>
+                                <td class="muted" data-label="Société">@Highlight(v.VisitorCompany)</td>
+                                <td data-label="Mode">@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
+                                <td class="muted" data-label="Rendez-vous">@(v.Mode == "Unique" && v.ScheduledAt is { } rdv ? rdv.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
+                                <td data-label="Statut"><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
+                                <td class="muted" data-label="Créée">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
+                                <td data-label="Actions">
+                                    <div class="flex flex-wrap gap-1.5 justify-end sm:justify-start">
                                         <button class="btn-ghost" @onclick="() => _historyVisitId = v.VisitId">Historique</button>
                                         @if (v.Status == "Valid")
                                         {

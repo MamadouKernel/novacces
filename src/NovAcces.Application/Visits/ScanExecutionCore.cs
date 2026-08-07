@@ -203,7 +203,7 @@ internal sealed class ScanExecutionCore
         { DenialReason: ScanDenialReason.TooLate } => "Tentative hors fenêtre de validité",
         { DenialReason: ScanDenialReason.NonBusinessDay } => "Accès 30 jours présenté un jour non ouvré",
         { DenialReason: ScanDenialReason.Revoked } => "Scan d'un QR révoqué",
-        { DenialReason: ScanDenialReason.NoActiveEntry } => "Scan au poste sortie sans entrée enregistrée",
+        { DenialReason: ScanDenialReason.NoActiveEntry } => "Scan au poste de sortie sans entrée enregistrée",
         _ => "Refus"
     };
 }

@@ -26,6 +26,7 @@ file sealed class FakeVisitRepository : IVisitRepository
     public Visit? AddedVisit { get; private set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct) => Task.FromResult<Visit?>(null);
+    public Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) { AddedVisit = visit; return Task.CompletedTask; }
@@ -91,6 +92,9 @@ file sealed class FakeNotificationService : INotificationService
         => Task.CompletedTask;
 
     public Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task NotifySureteConfirmationRequestAsync(SureteConfirmationRequestNotification notification, CancellationToken ct)
         => Task.CompletedTask;
 }
 

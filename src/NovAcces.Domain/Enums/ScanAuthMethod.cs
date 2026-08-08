@@ -10,5 +10,14 @@ public enum ScanAuthMethod
 {
     Qr = 0,
     ManualCode = 1,
-    DashboardOverride = 2
+    DashboardOverride = 2,
+
+    /// <summary>
+    /// Accès accordé sans QR ni code, sur confirmation explicite de la sûreté
+    /// depuis le portail Web (liste « Attendus » de l'app agent) — voir
+    /// ScanConfirmationRequest. La revérification complète (anti-rejeu,
+    /// exclusion, fenêtre) a quand même eu lieu au moment de l'approbation,
+    /// via ScanExecutionCore — seule la PREUVE d'identité diffère d'un QR/code.
+    /// </summary>
+    SureteConfirmation = 3
 }

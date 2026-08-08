@@ -27,6 +27,7 @@ public sealed class NovAccesDbContext : DbContext
     public DbSet<ExclusionEntry> ExclusionEntries => Set<ExclusionEntry>();
     public DbSet<AdminAuditEntry> AdminAudit => Set<AdminAuditEntry>();
     public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<ScanConfirmationRequest> ScanConfirmationRequests => Set<ScanConfirmationRequest>();
 
     public NovAccesDbContext(DbContextOptions<NovAccesDbContext> options, ICurrentTenant tenant)
         : base(options)
@@ -41,6 +42,7 @@ public sealed class NovAccesDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ExclusionEntryConfiguration());
         modelBuilder.ApplyConfiguration(new AdminAuditEntryConfiguration());
         modelBuilder.ApplyConfiguration(new AgentConfiguration());
+        modelBuilder.ApplyConfiguration(new ScanConfirmationRequestConfiguration());
     }
 
     /// <summary>

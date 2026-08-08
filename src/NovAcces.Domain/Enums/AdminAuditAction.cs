@@ -85,5 +85,8 @@ public enum AdminAuditAction
     SiteDeleted,
 
     /// <summary>Suppression logique (archivage) d'un terminal déjà révoqué — device réutilisable ensuite.</summary>
-    TerminalDeleted
+    TerminalDeleted,
+
+    /// <summary>Affectation (ou retrait) d'un terminal à un poste — un poste peut regrouper plusieurs terminaux.</summary>
+    TerminalCheckpointAssigned
 }

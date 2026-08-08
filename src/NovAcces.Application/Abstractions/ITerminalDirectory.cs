@@ -13,7 +13,8 @@ public sealed record TerminalIdentity(Guid Id, string Label, IReadOnlyList<strin
 /// </param>
 public sealed record TerminalSummary(
     Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt,
-    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null);
+    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null,
+    string? CheckpointId = null, string? DeviceModel = null);
 
 /// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule.</summary>
 public sealed record ArchivedTerminalSummary(
@@ -95,4 +96,13 @@ public interface ITerminalDirectory
     /// de ce terminal — §7, alerte de dépassement même app fermée.
     /// </summary>
     Task SetPushTokenAsync(Guid terminalId, string? expoPushToken, CancellationToken ct);
+
+    /// <summary>Affecte (Admin) ce terminal à un poste — un poste peut regrouper plusieurs terminaux.</summary>
+    Task SetCheckpointAsync(Guid terminalId, string? checkpointId, CancellationToken ct);
+
+    /// <summary>Enregistre le modèle/OS de l'appareil (remonté par l'app, purement informatif — voir Terminal.DeviceModel).</summary>
+    Task SetDeviceModelAsync(Guid terminalId, string? deviceModel, CancellationToken ct);
+
+    /// <summary>Jeton push Expo d'UN terminal précis (pas tous ceux du site) — cible la notification de résolution d'une demande de confirmation (voir IConfirmationPushNotifier).</summary>
+    Task<string?> GetExpoPushTokenAsync(Guid terminalId, CancellationToken ct);
 }

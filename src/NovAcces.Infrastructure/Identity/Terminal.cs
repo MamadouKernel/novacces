@@ -52,6 +52,30 @@ public sealed class Terminal
     /// </summary>
     public string? ExpoPushToken { get; private set; }
 
+    /// <summary>
+    /// Poste physique auquel ce terminal est affecté (ex. "entry", "exit",
+    /// "poste-nord") — assigné par l'Admin, PAS validé contre la liste des
+    /// checkpoints configurés pour le site (même logique que CheckpointId côté
+    /// scan : transporté tel quel, informatif). Plusieurs terminaux peuvent
+    /// partager le même poste (relation N:1) : un poste physique a souvent
+    /// plusieurs appareils (principal + secours).
+    /// </summary>
+    public string? CheckpointId { get; private set; }
+
+    /// <summary>
+    /// Modèle/OS de l'appareil physique (ex. "Samsung SM-A125F · Android 13"),
+    /// remonté par l'app à l'enrôlement/connexion via expo-device. Sert
+    /// UNIQUEMENT à aider l'Admin à distinguer visuellement quel boîtier
+    /// physique correspond à quel terminal — ce n'est PAS un identifiant
+    /// stable ni un mécanisme de sécurité (voir DeviceInstanceId pour ça,
+    /// lié cryptographiquement via DevicePublicKeyPem). Une adresse MAC serait
+    /// un meilleur candidat "identifiant matériel" en apparence, mais Android
+    /// 6+ et iOS ne l'exposent plus aux apps (valeur aléatoire/constante par
+    /// design) — DeviceInstanceId remplit déjà ce rôle, mieux, sans cette
+    /// restriction.
+    /// </summary>
+    public string? DeviceModel { get; private set; }
+
     private Terminal() { }
 
     public static Terminal Create(string label, string apiKeyHash, IReadOnlyList<string> siteIds, DateTimeOffset now) => new()
@@ -123,4 +147,12 @@ public sealed class Terminal
     /// <summary>Enregistre (ou efface, si null/vide) le jeton push Expo courant de ce terminal.</summary>
     public void SetExpoPushToken(string? token) =>
         ExpoPushToken = string.IsNullOrWhiteSpace(token) ? null : token.Trim();
+
+    /// <summary>Affecte (ou retire, si null/vide) ce terminal à un poste. Plusieurs terminaux peuvent partager le même poste.</summary>
+    public void SetCheckpoint(string? checkpointId) =>
+        CheckpointId = string.IsNullOrWhiteSpace(checkpointId) ? null : checkpointId.Trim();
+
+    /// <summary>Enregistre le modèle/OS de l'appareil, remonté par l'app — purement informatif (voir DeviceModel).</summary>
+    public void SetDeviceModel(string? deviceModel) =>
+        DeviceModel = string.IsNullOrWhiteSpace(deviceModel) ? null : deviceModel.Trim();
 }

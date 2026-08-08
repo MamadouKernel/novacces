@@ -1,3 +1,5 @@
+using NovAcces.Domain.Enums;
+
 namespace NovAcces.Application.Abstractions;
 
 /// <summary>
@@ -12,7 +14,20 @@ public interface IScanEventBroadcaster
 
     /// <summary>Diffuse une alerte de dépassement de durée (§7) au dashboard du site.</summary>
     Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct);
+
+    /// <summary>Une nouvelle demande de confirmation attend la sûreté du site (tap agent sur « Attendus »).</summary>
+    Task BroadcastConfirmationRequestedAsync(ConfirmationRequestedEvent requested, CancellationToken ct);
+
+    /// <summary>
+    /// Une demande vient d'être tranchée (approuvée/refusée/expirée) — permet à
+    /// TOUTE session sûreté connectée (pas seulement celle qui a décidé) de la
+    /// retirer instantanément de sa liste « en attente ».
+    /// </summary>
+    Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct);
 }
+
+public sealed record ConfirmationRequestedEvent(
+    Guid RequestId, string VisitorName, string? CheckpointId, CheckpointDirection Direction, DateTimeOffset ExpiresAt);
 
 public sealed record OverstayBroadcastEvent(
     Guid VisitId,

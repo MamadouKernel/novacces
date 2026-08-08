@@ -22,7 +22,14 @@ public sealed record CreateTerminalResponseDto(Guid Id, string Label)
 /// </param>
 public sealed record TerminalSummaryDto(
     Guid Id, string Label, IReadOnlyList<string> SiteIds, bool IsActive, DateTimeOffset CreatedAt,
-    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null);
+    bool IsEnrolled = false, DateTimeOffset? PendingTicketExpiresAt = null,
+    string? CheckpointId = null, string? DeviceModel = null);
+
+/// <summary>Affectation (Admin) d'un terminal à un poste — un poste peut regrouper plusieurs terminaux. CheckpointId null/vide retire l'affectation.</summary>
+public sealed record SetTerminalCheckpointRequestDto(string? CheckpointId);
+
+/// <summary>Modèle/OS de l'appareil, remonté par l'app agent après connexion (expo-device) — purement informatif.</summary>
+public sealed record AgentDeviceInfoRequestDto(string DeviceModel);
 
 /// <summary>Terminal supprimé (archivé), pour la consultation en lecture seule (SuperAdmin).</summary>
 public sealed record ArchivedTerminalSummaryDto(

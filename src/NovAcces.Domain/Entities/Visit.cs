@@ -388,7 +388,14 @@ public enum ScanDenialReason
     InvalidSignature,
 
     /// <summary>Code de secours introuvable ou mal saisi — distinct d'InvalidSignature (jamais un QR forgé/altéré).</summary>
-    InvalidManualCode
+    InvalidManualCode,
+
+    /// <summary>
+    /// La visite associée à une demande de confirmation sûreté approuvée n'existe
+    /// plus — cas théorique (les visites ne sont jamais supprimées), conservé pour
+    /// que ScanExecutionCore reste total même sur ce chemin d'entrée.
+    /// </summary>
+    VisitNotFound
 }
 
 /// <summary>Résultat d'un scan — jamais d'exception pour un refus métier normal.</summary>

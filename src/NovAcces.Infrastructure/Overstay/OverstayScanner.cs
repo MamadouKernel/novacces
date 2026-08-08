@@ -80,6 +80,19 @@ public sealed class OverstayScanner : IOverstayScanner
         var notifications = sp.GetRequiredService<INotificationService>();
         var pushNotifier = sp.GetRequiredService<IOverstayPushNotifier>();
 
+        // Décision du 08/08/2026 : une demande de confirmation sûreté sans
+        // réponse sous 15 min équivaut à un refus implicite — jamais un accès
+        // laissé "en attente" indéfiniment. Piggyback sur ce balayage
+        // périodique déjà par-site plutôt qu'une seconde boucle dédiée.
+        try
+        {
+            await ExpireStaleConfirmationRequestsAsync(sp, now, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Expiration des demandes de confirmation : échec pour le site {SiteId}.", siteId);
+        }
+
         var onSite = await db.Visits.Where(v => v.IsOnSite).ToListAsync(ct);
 
         var changed = false;
@@ -139,5 +152,22 @@ public sealed class OverstayScanner : IOverstayScanner
 
         if (changed)
             await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task ExpireStaleConfirmationRequestsAsync(IServiceProvider sp, DateTimeOffset now, CancellationToken ct)
+    {
+        var requests = sp.GetRequiredService<IScanConfirmationRequestRepository>();
+        var broadcaster = sp.GetRequiredService<IScanEventBroadcaster>();
+        var confirmationNotifier = sp.GetRequiredService<IConfirmationNotifier>();
+
+        var justExpired = await requests.ExpireStaleAsync(now, ct);
+        foreach (var request in justExpired)
+        {
+            try { await broadcaster.BroadcastConfirmationResolvedAsync(request.Id, ct); }
+            catch { /* best-effort, voir ScanSiteAsync */ }
+
+            try { await confirmationNotifier.NotifyResolvedAsync(request.RequestingTerminalId, granted: false, request.VisitorName, ct); }
+            catch { /* best-effort */ }
+        }
     }
 }

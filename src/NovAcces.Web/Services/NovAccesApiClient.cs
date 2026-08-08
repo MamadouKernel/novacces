@@ -260,6 +260,31 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>Demandes de confirmation sûreté en attente (tap agent sur « Attendus »).</summary>
+    public async Task<IReadOnlyList<PendingConfirmationRequestDto>> GetPendingConfirmationRequestsAsync()
+    {
+        var result = await CreateClient(true).GetFromJsonAsync<List<PendingConfirmationRequestDto>>("/api/dashboard/confirmation-requests");
+        return result ?? new List<PendingConfirmationRequestDto>();
+    }
+
+    /// <summary>
+    /// L'accès réel reste soumis à la revérification complète côté serveur —
+    /// un succès HTTP ne garantit pas IsGranted (voir ConfirmationRequestDecisionDto).
+    /// </summary>
+    public async Task<(bool Success, ConfirmationRequestDecisionDto? Result, string? Error)> ApproveConfirmationRequestAsync(Guid id)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/dashboard/confirmation-requests/{id}/approve", null);
+        if (!response.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(response));
+        return (true, await response.Content.ReadFromJsonAsync<ConfirmationRequestDecisionDto>(), null);
+    }
+
+    public async Task<(bool Success, string? Error)> DenyConfirmationRequestAsync(Guid id)
+    {
+        var response = await CreateClient(true).PostAsync($"/api/dashboard/confirmation-requests/{id}/deny", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
     /// <summary>Synthèse du jour (dashboard sûreté).</summary>
     public async Task<DashboardSummaryDto?> GetSummaryAsync()
         => await CreateClient(true).GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary");
@@ -665,6 +690,14 @@ public sealed class NovAccesApiClient
     public async Task<(bool Success, string? Error)> DeleteTerminalAsync(Guid id)
     {
         var response = await CreateClient(true).PostAsync($"/api/admin/terminals/{id}/delete", null);
+        return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
+    }
+
+    /// <summary>Affecte (ou retire, si checkpointId vide) un terminal à un poste.</summary>
+    public async Task<(bool Success, string? Error)> SetTerminalCheckpointAsync(Guid id, string? checkpointId)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            $"/api/admin/terminals/{id}/checkpoint", new SetTerminalCheckpointRequestDto(checkpointId));
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 

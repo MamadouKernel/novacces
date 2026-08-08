@@ -148,6 +148,39 @@ public sealed class EmailNotificationService : INotificationService
         }
     }
 
+    /// <summary>Best-effort : voir SureteConfirmationMessage pour le choix de ne jamais inclure de lien d'action.</summary>
+    public async Task NotifySureteConfirmationRequestAsync(SureteConfirmationRequestNotification notification, CancellationToken ct)
+    {
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_smtp.FromAddress, _smtp.FromDisplayName),
+                Subject = SureteConfirmationMessage.Subject(notification, _branding),
+                Body = SureteConfirmationMessage.PlainText(notification, _branding),
+                IsBodyHtml = false,
+            };
+            message.To.Add(notification.RecipientEmail);
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
+                SureteConfirmationMessage.Html(notification, _branding), null, MediaTypeNames.Text.Html));
+
+            using var client = new SmtpClient(_smtp.Host, _smtp.Port)
+            {
+                EnableSsl = _smtp.EnableSsl,
+                Credentials = new NetworkCredential(_smtp.Username, _smtp.Password)
+            };
+
+            ct.ThrowIfCancellationRequested();
+            await client.SendMailAsync(message);
+
+            _logger.LogInformation("Sûreté notifiée par email d'une demande de confirmation.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec de la notification email de demande de confirmation.");
+        }
+    }
+
     /// <summary>
     /// Best-effort strict : l'appelant (endpoint /forgot-password) renvoie
     /// toujours le même message générique, que l'envoi réussisse ou non — une

@@ -24,7 +24,23 @@ public interface INotificationService
     /// exception ou un délai différent, l'existence du compte à l'appelant.
     /// </summary>
     Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct);
+
+    /// <summary>
+    /// Prévient UN membre de la sûreté du site qu'une demande de confirmation
+    /// (validation sans QR/code) attend son traitement. Un email par
+    /// destinataire (voir IConfirmationNotifier, qui résout la liste des
+    /// sûretés du site puis appelle ceci en boucle) — best-effort, hors
+    /// transaction, comme le reste de cette interface.
+    /// </summary>
+    Task NotifySureteConfirmationRequestAsync(SureteConfirmationRequestNotification notification, CancellationToken ct);
 }
+
+public sealed record SureteConfirmationRequestNotification(
+    string RecipientEmail,
+    string VisitorName,
+    string? CheckpointId,
+    string DirectionLabel,
+    DateTimeOffset RequestedAt);
 
 /// <summary>Nature de l'événement remonté à l'hôte — détermine le message envoyé.</summary>
 public enum HostEventKind

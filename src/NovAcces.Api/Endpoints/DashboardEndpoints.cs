@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using NovAcces.Application.Abstractions;
+using NovAcces.Application.Visits;
 using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
 using NovAcces.Shared.Dtos;
@@ -188,6 +189,44 @@ public static class DashboardEndpoints
         })
         .WithName("DashboardJournalCsv")
         .WithSummary("Export CSV du journal des scans.");
+
+        // Demandes de confirmation en attente (validation sans QR/code, tap
+        // agent sur « Attendus ») — REQ ajoutée le 08/08/2026. Même policy
+        // SecurityJournal que le reste du dashboard : réservé Sûreté/Admin.
+        group.MapGet("/confirmation-requests", async (IScanConfirmationRequestRepository requests, CancellationToken ct) =>
+        {
+            var pending = await requests.GetPendingAsync(ct);
+            var dto = pending.Select(r => new PendingConfirmationRequestDto(
+                r.Id, r.VisitorName, r.Direction.ToString(), r.CheckpointId,
+                r.AgentId, r.RequestedAt, r.ExpiresAt)).ToList();
+            return Results.Ok(dto);
+        })
+        .WithName("DashboardPendingConfirmationRequests")
+        .WithSummary("Liste les demandes de confirmation sûreté en attente sur le site.");
+
+        group.MapPost("/confirmation-requests/{id:guid}/approve", async (
+            Guid id, ClaimsPrincipal user, ApproveConfirmationRequestHandler handler, CancellationToken ct) =>
+        {
+            var (success, result, error) = await handler.HandleAsync(
+                new ApproveConfirmationRequestCommand(id, user.HostIdentifier()), ct);
+            if (!success)
+                return Results.Conflict(new { error });
+
+            return Results.Ok(new ConfirmationRequestDecisionDto(
+                result!.IsGranted, result.IsCheckOut, result.IsSecurityEvent, result.VerdictCode, result.VisitorName));
+        })
+        .WithName("ApproveConfirmationRequest")
+        .WithSummary("Approuve une demande de confirmation — l'accès réel reste soumis à la revérification complète (anti-rejeu, exclusion, fenêtre).");
+
+        group.MapPost("/confirmation-requests/{id:guid}/deny", async (
+            Guid id, ClaimsPrincipal user, DenyConfirmationRequestHandler handler, CancellationToken ct) =>
+        {
+            var (success, error) = await handler.HandleAsync(
+                new DenyConfirmationRequestCommand(id, user.HostIdentifier()), ct);
+            return success ? Results.Ok(new { message = "Demande refusée." }) : Results.Conflict(new { error });
+        })
+        .WithName("DenyConfirmationRequest")
+        .WithSummary("Refuse une demande de confirmation — aucun scan n'est tenté.");
 
         return group;
     }

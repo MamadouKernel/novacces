@@ -21,6 +21,14 @@ public interface IVisitRepository
     /// </summary>
     Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct);
 
+    /// <summary>
+    /// Même verrou pessimiste que <see cref="GetForUpdateAsync"/>, résolu par
+    /// l'identifiant de visite — utilisé par l'approbation d'une demande de
+    /// confirmation sûreté (pas de QR ni de code à ce stade, l'agent a déjà
+    /// désigné la visite en tapant sur la ligne « Attendus »).
+    /// </summary>
+    Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct);
+
     Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct);
 
     /// <summary>Lecture par jeton de visite, SANS verrou (confrontation de resync).</summary>

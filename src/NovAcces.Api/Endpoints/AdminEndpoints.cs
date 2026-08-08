@@ -1235,10 +1235,47 @@ public static class AdminEndpoints
             var list = await terminals.ListAsync(ct);
             return Results.Ok(list.Select(t =>
                 new TerminalSummaryDto(
-                    t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled, t.PendingTicketExpiresAt)).ToList());
+                    t.Id, t.Label, t.SiteIds, t.IsActive, t.CreatedAt, t.IsEnrolled, t.PendingTicketExpiresAt,
+                    t.CheckpointId, t.DeviceModel)).ToList());
         })
         .WithName("AdminListTerminals")
         .WithSummary("Liste les terminaux enrôlés (jamais leur clé).");
+
+        // Affectation à un poste : PAS validée contre Sites:{id}:Checkpoints (un
+        // terminal peut servir plusieurs sites dont les postes configurés
+        // diffèrent) — même logique que CheckpointId côté scan, transporté tel
+        // quel, informatif (voir AgentSiteConfig). Plusieurs terminaux peuvent
+        // partager le même poste (relation N:1, ex. principal + secours).
+        group.MapPost("/terminals/{id:guid}/checkpoint", async (
+            Guid id,
+            SetTerminalCheckpointRequestDto request,
+            ITerminalDirectory terminals,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            IAdminActivityBroadcaster activity,
+            CancellationToken ct) =>
+        {
+            var checkpointId = request.CheckpointId?.Trim();
+            if (checkpointId is { Length: > 80 })
+                return Results.BadRequest(new { error = "Identifiant de poste trop long (80 caractères maximum)." });
+
+            var before = await terminals.ListAsync(ct);
+            var target = before.FirstOrDefault(t => t.Id == id);
+            if (target is null)
+                return Results.NotFound(new { error = "Terminal introuvable." });
+
+            await terminals.SetCheckpointAsync(id, checkpointId, ct);
+
+            var label = string.IsNullOrWhiteSpace(checkpointId) ? "(aucun)" : checkpointId;
+            await RecordOnEachSiteAsync(scopeFactory, target.SiteIds,
+                AdminAuditAction.TerminalCheckpointAssigned, user.HostIdentifier(), id.ToString(),
+                $"Terminal « {target.Label} » affecté au poste « {label} ».", ct);
+            await activity.NotifyEntityChangedAsync("terminals", ct);
+
+            return Results.Ok(new { message = "Poste mis à jour." });
+        })
+        .WithName("AdminSetTerminalCheckpoint")
+        .WithSummary("Affecte (ou retire) un terminal à un poste. Plusieurs terminaux peuvent partager le même poste.");
 
         group.MapPost("/terminals/{id:guid}/revoke", async (
             Guid id,

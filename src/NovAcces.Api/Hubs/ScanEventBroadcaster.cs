@@ -64,6 +64,20 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
     /// </summary>
     internal static string HostGroup(string hostUserId) => $"host:{hostUserId}";
 
+    // Uniquement le groupe du site : la sûreté seule traite ces demandes
+    // (SecurityJournal), pas de canal Admin/global — bruit inutile pour une
+    // action opérationnelle propre à un site donné.
+    public Task BroadcastConfirmationRequestedAsync(ConfirmationRequestedEvent requested, CancellationToken ct)
+    {
+        var dto = new ConfirmationRequestedDto(
+            requested.RequestId, requested.VisitorName, requested.CheckpointId,
+            requested.Direction.ToString(), requested.ExpiresAt);
+        return _hub.Clients.Group(_tenant.SiteId).SendAsync("ConfirmationRequested", dto, ct);
+    }
+
+    public Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct) =>
+        _hub.Clients.Group(_tenant.SiteId).SendAsync("ConfirmationResolved", requestId, ct);
+
     public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct) =>
         _hub.Clients.Group(_tenant.SiteId).SendAsync(
             "VisitCreated", new AgentVisitEventDto(visitId, visitorName, occurredAt), ct);

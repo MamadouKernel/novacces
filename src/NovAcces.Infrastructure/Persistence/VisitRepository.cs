@@ -46,6 +46,17 @@ public sealed class VisitRepository : IVisitRepository
             .SingleOrDefaultAsync(ct);
     }
 
+    public async Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+
+        // Même verrou FOR UPDATE que GetForUpdateAsync (REQ-SEC-03) — résolu par
+        // Id plutôt que VisitToken/ManualCodeHash (voir approbation sûreté).
+        return await _db.Visits
+            .FromSqlInterpolated($"SELECT * FROM visits WHERE \"Id\" = {visitId} FOR UPDATE")
+            .SingleOrDefaultAsync(ct);
+    }
+
     public async Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
@@ -233,6 +244,61 @@ public sealed class ScanLogRepository : IScanLogRepository
             .Where(e => e.Timestamp >= sinceUtc)
             .OrderByDescending(e => e.Timestamp)
             .ToListAsync(ct);
+    }
+
+    public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
+}
+
+public sealed class ScanConfirmationRequestRepository : IScanConfirmationRequestRepository
+{
+    private readonly NovAccesDbContext _db;
+
+    public ScanConfirmationRequestRepository(NovAccesDbContext db) => _db = db;
+
+    public async Task AddAsync(ScanConfirmationRequest request, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        await _db.ScanConfirmationRequests.AddAsync(request, ct);
+    }
+
+    public async Task<ScanConfirmationRequest?> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.ScanConfirmationRequests.SingleOrDefaultAsync(r => r.Id == id, ct);
+    }
+
+    public async Task<ScanConfirmationRequest?> GetPendingForVisitAsync(Guid visitId, Domain.Enums.CheckpointDirection direction, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.ScanConfirmationRequests
+            .Where(r => r.VisitId == visitId && r.Direction == direction
+                     && r.Status == Domain.Enums.ConfirmationRequestStatus.Pending)
+            .OrderByDescending(r => r.RequestedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<IReadOnlyCollection<ScanConfirmationRequest>> GetPendingAsync(CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        return await _db.ScanConfirmationRequests
+            .Where(r => r.Status == Domain.Enums.ConfirmationRequestStatus.Pending)
+            .OrderByDescending(r => r.RequestedAt)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyCollection<ScanConfirmationRequest>> ExpireStaleAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+
+        var candidates = await _db.ScanConfirmationRequests
+            .Where(r => r.Status == Domain.Enums.ConfirmationRequestStatus.Pending && r.ExpiresAt <= now)
+            .ToListAsync(ct);
+
+        var justExpired = candidates.Where(r => r.ExpireIfPastDeadline(now)).ToList();
+        if (justExpired.Count > 0)
+            await _db.SaveChangesAsync(ct);
+
+        return justExpired;
     }
 
     public Task SaveChangesAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);

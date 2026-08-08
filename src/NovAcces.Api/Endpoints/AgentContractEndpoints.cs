@@ -139,6 +139,61 @@ public static class AgentContractEndpoints
         .WithName("SetAgentPushToken")
         .WithSummary("Enregistre le jeton de notification push Expo du terminal courant.");
 
+        // Purement informatif (voir Terminal.DeviceModel) : aide l'Admin à
+        // distinguer visuellement quel boîtier physique est enrôlé sous quel
+        // terminal — PAS un identifiant de sécurité (voir DeviceInstanceId).
+        agent.MapPost("/agent/device-info", async (
+            AgentDeviceInfoRequestDto request,
+            ClaimsPrincipal user,
+            ITerminalDirectory terminals,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.DeviceModel))
+                return Results.BadRequest(new { error = "Modèle d'appareil requis." });
+
+            if (!Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var terminalId))
+                return Results.Json(new { error = "Terminal non identifié." }, statusCode: StatusCodes.Status403Forbidden);
+
+            await terminals.SetDeviceModelAsync(terminalId, request.DeviceModel.Trim(), ct);
+            return Results.Ok();
+        })
+        .WithName("SetAgentDeviceInfo")
+        .WithSummary("Enregistre le modèle/OS de l'appareil courant (informatif, pour la console Admin).");
+
+        // Validation sans QR ni code — remplace l'ancien tap « Attendus » qui
+        // appelait /api/scan avec un visitId brut (toujours refusé
+        // INVALID_SIGNATURE, cf. correction du 08/08/2026). N'accorde PAS
+        // l'accès : ouvre une demande que la sûreté doit confirmer depuis le
+        // portail Web (voir CreateConfirmationRequestHandler).
+        agent.MapPost("/agent/confirmation-requests", async (
+            CreateConfirmationRequestDto request,
+            ClaimsPrincipal user,
+            HttpRequest http,
+            CreateConfirmationRequestHandler handler,
+            IJwtTokenService jwt,
+            ITerminalDirectory terminals,
+            ICurrentTenant tenant,
+            CancellationToken ct) =>
+        {
+            if (!Enum.TryParse<CheckpointDirection>(request.Direction, ignoreCase: true, out var direction))
+                return Results.BadRequest(new { error = "Direction invalide : 'Entry' ou 'Exit' attendu." });
+
+            if (!Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var terminalId))
+                return Results.Json(new { error = "Terminal non identifié." }, statusCode: StatusCodes.Status403Forbidden);
+
+            var agentId = await AgentAttribution.ResolveAgentIdAsync(user, http, jwt, terminals, tenant, ct);
+
+            var (success, result, error) = await handler.HandleAsync(new CreateConfirmationRequestCommand(
+                request.VisitId, direction, agentId, terminalId, request.CheckpointId), ct);
+
+            if (!success)
+                return Results.BadRequest(new { error });
+
+            return Results.Ok(new ConfirmationRequestCreatedDto(result!.RequestId, result.ExpiresAt, result.AlreadyPending));
+        })
+        .WithName("CreateConfirmationRequest")
+        .WithSummary("Ouvre une demande de confirmation sûreté pour un visiteur attendu, sans QR ni code de secours.");
+
         agent.MapPost("/scan/sync", async (
             IReadOnlyList<ContractOfflineScanDto> request,
             ClaimsPrincipal user,

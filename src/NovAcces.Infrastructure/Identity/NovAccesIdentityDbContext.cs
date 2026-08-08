@@ -74,6 +74,8 @@ public sealed class NovAccesIdentityDbContext
             t.Property(x => x.DeletedBy).HasMaxLength(200);
             t.Property(x => x.ActiveShiftJti).HasMaxLength(36);
             t.Property(x => x.ActiveShiftMatricule).HasMaxLength(80);
+            t.Property(x => x.CheckpointId).HasMaxLength(80);
+            t.Property(x => x.DeviceModel).HasMaxLength(150);
 
             // Unique parmi les terminaux NON supprimés seulement : un appareil
             // physique dont le terminal a été archivé peut être réenrôlé comme

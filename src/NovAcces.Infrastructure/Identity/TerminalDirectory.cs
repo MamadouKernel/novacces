@@ -66,7 +66,8 @@ public sealed class TerminalDirectory : ITerminalDirectory
                     .Where(k => k.TerminalId == t.Id && k.UsedAt == null && k.RevokedAt == null)
                     .OrderByDescending(k => k.CreatedAt)
                     .Select(k => (DateTimeOffset?)k.ExpiresAt)
-                    .FirstOrDefault()))
+                    .FirstOrDefault(),
+                t.CheckpointId, t.DeviceModel))
             .ToListAsync(ct);
 
     public async Task<bool> RevokeAsync(Guid id, CancellationToken ct)
@@ -209,4 +210,30 @@ public sealed class TerminalDirectory : ITerminalDirectory
         return await _db.Terminals.AsNoTracking()
             .AnyAsync(t => t.Id == terminalId && t.ActiveShiftJti == shiftJti, ct);
     }
+
+    public async Task SetCheckpointAsync(Guid terminalId, string? checkpointId, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);
+        if (terminal is null)
+            return;
+
+        terminal.SetCheckpoint(checkpointId);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task SetDeviceModelAsync(Guid terminalId, string? deviceModel, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);
+        if (terminal is null)
+            return;
+
+        terminal.SetDeviceModel(deviceModel);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<string?> GetExpoPushTokenAsync(Guid terminalId, CancellationToken ct) =>
+        await _db.Terminals.AsNoTracking()
+            .Where(t => t.Id == terminalId)
+            .Select(t => t.ExpoPushToken)
+            .FirstOrDefaultAsync(ct);
 }

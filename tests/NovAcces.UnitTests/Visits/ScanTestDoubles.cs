@@ -40,6 +40,7 @@ internal sealed class FakeVisitRepository : IVisitRepository
     public Visit? VisitToReturn { get; set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct) => Task.FromResult(VisitToReturn);
+    public Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task AddAsync(Visit visit, CancellationToken ct) => Task.CompletedTask;
@@ -80,6 +81,8 @@ internal sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
         return Task.CompletedTask;
     }
     public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct) => Task.CompletedTask;
+    public Task BroadcastConfirmationRequestedAsync(ConfirmationRequestedEvent requested, CancellationToken ct) => Task.CompletedTask;
+    public Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct) => Task.CompletedTask;
 }
 
 internal sealed class FakeExclusionList : IExclusionListService
@@ -118,6 +121,9 @@ internal sealed class FakeNotifications : INotificationService
     }
 
     public Task SendPasswordResetAsync(PasswordResetNotification notification, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task NotifySureteConfirmationRequestAsync(SureteConfirmationRequestNotification notification, CancellationToken ct)
         => Task.CompletedTask;
 }
 

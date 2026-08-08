@@ -58,6 +58,7 @@ public static class DependencyInjection
 
         // --- Dépôts & frontière transactionnelle ---
         services.AddScoped<IVisitRepository, VisitRepository>();
+        services.AddScoped<IScanConfirmationRequestRepository, ScanConfirmationRequestRepository>();
         services.AddScoped<IScanLogRepository, ScanLogRepository>();
         services.AddScoped<IExclusionListService, ExclusionListService>();
         services.AddScoped<IAdminAuditLog, AdminAuditLog>();
@@ -89,6 +90,7 @@ public static class DependencyInjection
         services.AddSingleton<IWebPushSender, Notifications.WebPushSender>();
         services.AddSingleton<IExpoPushSender, Notifications.ExpoPushSender>();
         services.AddScoped<IOverstayPushNotifier, Notifications.OverstayPushNotifier>();
+        services.AddScoped<IConfirmationNotifier, Notifications.ConfirmationNotifier>();
 
         // Rétention/purge des données personnelles (§7.3) : balayage multi-sites,
         // même orchestration transverse que la supervision.
@@ -128,6 +130,9 @@ public static class DependencyInjection
         services.AddScoped<CreateVisitHandler>();
         services.AddScoped<UpdateVisitHandler>();
         services.AddScoped<RevokeVisitHandler>();
+        services.AddScoped<CreateConfirmationRequestHandler>();
+        services.AddScoped<ApproveConfirmationRequestHandler>();
+        services.AddScoped<DenyConfirmationRequestHandler>();
 
         return services;
     }

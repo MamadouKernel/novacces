@@ -204,6 +204,7 @@ internal sealed class ScanExecutionCore
         { DenialReason: ScanDenialReason.NonBusinessDay } => "Accès 30 jours présenté un jour non ouvré",
         { DenialReason: ScanDenialReason.Revoked } => "Scan d'un QR révoqué",
         { DenialReason: ScanDenialReason.NoActiveEntry } => "Scan au poste de sortie sans entrée enregistrée",
+        { DenialReason: ScanDenialReason.VisitNotFound } => "Visite introuvable au moment de l'approbation sûreté",
         _ => "Refus"
     };
 }

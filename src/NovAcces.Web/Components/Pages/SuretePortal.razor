@@ -207,6 +207,31 @@ else if (CanViewDashboard)
         </div>
     }
 
+    @if (_pendingConfirmations.Count > 0)
+    {
+        <section class="card" style="margin-bottom:1rem;border-color:var(--brand-amber, #F5A300);">
+            <h2>Demandes de confirmation en attente (@_pendingConfirmations.Count)</h2>
+            <p class="hint">Un agent a désigné un visiteur attendu sans QR ni code de secours — sans réponse de votre part sous 15 minutes, la demande expire et équivaut à un refus.</p>
+            <ul class="onsite">
+                @foreach (var r in _pendingConfirmations)
+                {
+                    <li class="flex flex-wrap items-center gap-x-1.5">
+                        <strong>@r.VisitorName</strong>
+                        <span class="muted"> — @(r.Direction == "Entry" ? "entrée" : "sortie")@(string.IsNullOrWhiteSpace(r.CheckpointId) ? "" : $" · poste {r.CheckpointId}")</span>
+                        <span class="muted"> · agent @r.AgentId</span>
+                        <span class="muted"> · expire à @r.ExpiresAt.LocalDateTime.ToString("HH:mm:ss")</span>
+                        <div class="flex gap-1.5" style="margin-left:auto">
+                            <button class="btn-danger" style="padding:.15rem .6rem;font-size:.75rem" disabled="@_confirmationBusy"
+                                    @onclick="() => DenyConfirmationAsync(r.Id)">Refuser</button>
+                            <button class="btn-primary" style="padding:.15rem .6rem;font-size:.75rem;max-width:8rem" disabled="@_confirmationBusy"
+                                    @onclick="() => ApproveConfirmationAsync(r.Id)">Confirmer</button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
     <div class="cards">
         <section class="card">
             <h2>Flux des scans (temps réel)</h2>
@@ -367,6 +392,8 @@ else if (CanViewDashboard)
     private IReadOnlyList<OnSiteVisitorDto> _onSite = Array.Empty<OnSiteVisitorDto>();
     private DashboardSummaryDto? _summary;
     private readonly List<OverstayAlertDto> _overstayAlerts = new();
+    private readonly List<PendingConfirmationRequestDto> _pendingConfirmations = new();
+    private bool _confirmationBusy;
     private IReadOnlyList<ExclusionDto> _exclusions = Array.Empty<ExclusionDto>();
     private int _exclusionsPage = 1;
     private const int _exclusionsPageSize = 20;
@@ -511,6 +538,7 @@ else if (CanViewDashboard)
             await RefreshSummaryAsync();
             await RefreshOnSiteAsync();
             await SeedFeedFromJournalAsync();
+            await RefreshPendingConfirmationsAsync();
 
             await ConnectHubAsync();
             await SubscribeToPushAsync();
@@ -654,6 +682,22 @@ else if (CanViewDashboard)
             await InvokeAsync(StateHasChanged);
         });
 
+        _hub.On<ConfirmationRequestedDto>("ConfirmationRequested", async requested =>
+        {
+            if (_pendingConfirmations.Any(r => r.Id == requested.RequestId)) return;
+            _pendingConfirmations.Insert(0, new PendingConfirmationRequestDto(
+                requested.RequestId, requested.VisitorName, requested.Direction, requested.CheckpointId,
+                "", DateTimeOffset.UtcNow, requested.ExpiresAt));
+            try { await JS.InvokeVoidAsync("novaccesBeep", 1); } catch { /* best-effort */ }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<Guid>("ConfirmationResolved", async requestId =>
+        {
+            _pendingConfirmations.RemoveAll(r => r.Id == requestId);
+            await InvokeAsync(StateHasChanged);
+        });
+
         _hub.Reconnected += _ => { _connected = true; return InvokeAsync(StateHasChanged); };
         _hub.Closed += _ => { _connected = false; return InvokeAsync(StateHasChanged); };
 
@@ -671,6 +715,59 @@ else if (CanViewDashboard)
     private async Task RefreshOnSiteAsync()
     {
         try { _onSite = await Api.GetOnSiteAsync(); } catch { /* best-effort */ }
+    }
+
+    private async Task RefreshPendingConfirmationsAsync()
+    {
+        try
+        {
+            var pending = await Api.GetPendingConfirmationRequestsAsync();
+            _pendingConfirmations.Clear();
+            _pendingConfirmations.AddRange(pending);
+        }
+        catch { /* best-effort */ }
+    }
+
+    private async Task ApproveConfirmationAsync(Guid id)
+    {
+        if (_confirmationBusy) return;
+        _confirmationBusy = true;
+        try
+        {
+            var (success, result, error) = await Api.ApproveConfirmationRequestAsync(id);
+            if (success)
+            {
+                _pendingConfirmations.RemoveAll(r => r.Id == id);
+                // Le succès HTTP ne garantit pas l'accès : ScanExecutionCore revérifie
+                // tout au moment de l'approbation (exclusion, anti-doublon, fenêtre).
+                if (result is { IsGranted: true })
+                    Toasts.Success($"Accès confirmé pour « {result.VisitorName} ».");
+                else
+                    Toasts.Error($"Confirmation enregistrée, mais l'accès a été refusé ({result?.VerdictCode}) — voir le journal.");
+                await RefreshOnSiteAsync();
+            }
+            else { Toasts.Error(error ?? "Confirmation refusée."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _confirmationBusy = false; }
+    }
+
+    private async Task DenyConfirmationAsync(Guid id)
+    {
+        if (_confirmationBusy) return;
+        _confirmationBusy = true;
+        try
+        {
+            var (success, error) = await Api.DenyConfirmationRequestAsync(id);
+            if (success)
+            {
+                _pendingConfirmations.RemoveAll(r => r.Id == id);
+                Toasts.Info("Demande refusée.");
+            }
+            else { Toasts.Error(error ?? "Le refus a échoué."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _confirmationBusy = false; }
     }
 
     private async Task RefreshSummaryAsync()

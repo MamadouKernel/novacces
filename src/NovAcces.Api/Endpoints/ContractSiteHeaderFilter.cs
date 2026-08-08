@@ -25,8 +25,14 @@ public sealed class ContractSiteHeaderFilter : IEndpointFilter
 
         var tenant = context.HttpContext.RequestServices.GetRequiredService<CurrentTenant>();
         var normalizedHeaderSite = CurrentTenant.NormalizeSiteId(siteId);
-        if (!string.Equals(normalizedHeaderSite, tenant.SiteId, StringComparison.OrdinalIgnoreCase))
+        var terminalLabel = context.HttpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+        var normalizedLabel = !string.IsNullOrWhiteSpace(terminalLabel) ? CurrentTenant.NormalizeSiteId(terminalLabel) : null;
+
+        if (!string.Equals(normalizedHeaderSite, tenant.SiteId, StringComparison.OrdinalIgnoreCase)
+            && !(normalizedLabel is not null && string.Equals(normalizedHeaderSite, normalizedLabel, StringComparison.OrdinalIgnoreCase)))
+        {
             return Results.Json(new { error = "X-Site-Id incohérent avec le jeton Agent." }, statusCode: StatusCodes.Status403Forbidden);
+        }
 
         return await next(context);
     }

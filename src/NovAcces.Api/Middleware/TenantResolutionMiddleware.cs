@@ -53,18 +53,31 @@ public sealed class TenantResolutionMiddleware
         var headerSite = context.Request.Headers.TryGetValue("X-Site-Id", out var h) ? h.ToString() : null;
 
         string? siteId;
+        var terminalLabel = context.User?.FindFirstValue(ClaimTypes.Name);
+        var normHeader = !string.IsNullOrWhiteSpace(headerSite) ? CurrentTenant.NormalizeSiteId(headerSite) : null;
+        var normLabel = !string.IsNullOrWhiteSpace(terminalLabel) ? CurrentTenant.NormalizeSiteId(terminalLabel) : null;
+
         if (!string.IsNullOrWhiteSpace(claimSite))
         {
-            // Le site de l'utilisateur fait foi. Un en-tête qui tenterait de viser
-            // un AUTRE site est une tentative d'évasion de tenant : on refuse.
-            if (!string.IsNullOrWhiteSpace(headerSite)
-                && !string.Equals(CurrentTenant.NormalizeSiteId(headerSite), CurrentTenant.NormalizeSiteId(claimSite), StringComparison.OrdinalIgnoreCase))
+            var normClaim = CurrentTenant.NormalizeSiteId(claimSite);
+            if (normHeader is not null && !string.Equals(normHeader, normClaim, StringComparison.OrdinalIgnoreCase))
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { error = "Site demandé incohérent avec le compte." });
-                return;
+                // Si X-Site-Id est le libellé du terminal (ex: "posteA"), on utilise le claimSite du terminal.
+                if (normLabel is not null && string.Equals(normHeader, normLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    siteId = claimSite;
+                }
+                else
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Site demandé incohérent avec le compte." });
+                    return;
+                }
             }
-            siteId = claimSite;
+            else
+            {
+                siteId = claimSite;
+            }
         }
         else
         {
@@ -73,15 +86,30 @@ public sealed class TenantResolutionMiddleware
 
             if (allowedSites.Count > 0)
             {
-                var normalizedHeaderSite = CurrentTenant.NormalizeSiteId(headerSite ?? string.Empty);
-                if (string.IsNullOrWhiteSpace(headerSite)
-                    || !allowedSites.Contains(normalizedHeaderSite, StringComparer.OrdinalIgnoreCase))
+                if (normHeader is not null && normLabel is not null && string.Equals(normHeader, normLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (allowedSites.Count == 1)
+                    {
+                        siteId = allowedSites[0];
+                    }
+                    else
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new { error = "Site non autorisé pour ce terminal." });
+                        return;
+                    }
+                }
+                else if (string.IsNullOrWhiteSpace(headerSite)
+                    || !allowedSites.Contains(normHeader ?? string.Empty, StringComparer.OrdinalIgnoreCase))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new { error = "Site non autorisé pour ce terminal." });
                     return;
                 }
-                siteId = headerSite;
+                else
+                {
+                    siteId = headerSite;
+                }
             }
             else
             {

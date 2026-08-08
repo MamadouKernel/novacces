@@ -12,6 +12,7 @@ public sealed class DenyConfirmationRequestHandler
     private readonly IScanConfirmationRequestRepository _requests;
     private readonly IScanEventBroadcaster _broadcaster;
     private readonly IConfirmationNotifier _notifier;
+    private readonly IAdminAuditLog _audit;
     private readonly IDateTimeProvider _clock;
     private readonly ILogger<DenyConfirmationRequestHandler> _logger;
 
@@ -19,12 +20,14 @@ public sealed class DenyConfirmationRequestHandler
         IScanConfirmationRequestRepository requests,
         IScanEventBroadcaster broadcaster,
         IConfirmationNotifier notifier,
+        IAdminAuditLog audit,
         IDateTimeProvider clock,
         ILogger<DenyConfirmationRequestHandler> logger)
     {
         _requests = requests;
         _broadcaster = broadcaster;
         _notifier = notifier;
+        _audit = audit;
         _clock = clock;
         _logger = logger;
     }
@@ -46,6 +49,18 @@ public sealed class DenyConfirmationRequestHandler
 
         request.Deny(command.DecidedBy, now);
         await _requests.SaveChangesAsync(ct);
+
+        try
+        {
+            await _audit.RecordAsync(
+                AdminAuditAction.ConfirmationRequestDenied, command.DecidedBy, request.Id.ToString(),
+                $"Confirmation refusée pour « {request.VisitorName} » ({request.Direction}), demandée par l'agent {request.AgentId}.",
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec de l'écriture au journal d'audit pour la demande {RequestId}.", request.Id);
+        }
 
         try { await _broadcaster.BroadcastConfirmationResolvedAsync(request.Id, ct); }
         catch (Exception ex) { _logger.LogWarning(ex, "Échec de diffusion de la résolution de la demande {RequestId}.", request.Id); }

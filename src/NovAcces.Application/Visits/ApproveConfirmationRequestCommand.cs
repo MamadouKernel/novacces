@@ -31,6 +31,7 @@ public sealed class ApproveConfirmationRequestHandler
     private readonly IConfirmationNotifier _confirmationNotifier;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBusinessDayService _businessDays;
+    private readonly IAdminAuditLog _audit;
     private readonly IDateTimeProvider _clock;
     private readonly ILogger<ApproveConfirmationRequestHandler> _logger;
     private readonly ScanExecutionCore _core;
@@ -46,6 +47,7 @@ public sealed class ApproveConfirmationRequestHandler
         IConfirmationNotifier confirmationNotifier,
         IUnitOfWork unitOfWork,
         IBusinessDayService businessDays,
+        IAdminAuditLog audit,
         IDateTimeProvider clock,
         ILogger<ApproveConfirmationRequestHandler> logger)
     {
@@ -59,6 +61,7 @@ public sealed class ApproveConfirmationRequestHandler
         _confirmationNotifier = confirmationNotifier;
         _unitOfWork = unitOfWork;
         _businessDays = businessDays;
+        _audit = audit;
         _clock = clock;
         _logger = logger;
         _core = new ScanExecutionCore(visits, logs, broadcaster, exclusionList, hosts, notifications, unitOfWork, clock, logger);
@@ -99,6 +102,23 @@ public sealed class ApproveConfirmationRequestHandler
             "Visite introuvable", "La visite associée à la demande de confirmation a disparu",
             request.Direction, request.AgentId, isDegradedMode: false, isBusinessDay,
             request.CheckpointId, now, ct);
+
+        // Trace de bout en bout de la décision sûreté (§8.5) — demandeur ET
+        // décideur dans la MÊME entrée, avec le verdict RÉEL (qui peut différer
+        // de « approuvé », voir le commentaire de classe). scan_logs journalise
+        // déjà le scan lui-même, mais sans l'identité du sûreté qui a autorisé
+        // l'entrée sans QR — c'est précisément ce que cette entrée comble.
+        try
+        {
+            await _audit.RecordAsync(
+                AdminAuditAction.ConfirmationRequestApproved, command.DecidedBy, request.Id.ToString(),
+                $"Confirmation approuvée pour « {request.VisitorName} » ({request.Direction}), demandée par l'agent {request.AgentId} — verdict réel : {result.VerdictCode}.",
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec de l'écriture au journal d'audit pour la demande {RequestId}.", request.Id);
+        }
 
         try
         {

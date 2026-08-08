@@ -159,6 +159,7 @@ public sealed class OverstayScanner : IOverstayScanner
         var requests = sp.GetRequiredService<IScanConfirmationRequestRepository>();
         var broadcaster = sp.GetRequiredService<IScanEventBroadcaster>();
         var confirmationNotifier = sp.GetRequiredService<IConfirmationNotifier>();
+        var audit = sp.GetRequiredService<IAdminAuditLog>();
 
         var justExpired = await requests.ExpireStaleAsync(now, ct);
         foreach (var request in justExpired)
@@ -167,6 +168,20 @@ public sealed class OverstayScanner : IOverstayScanner
             catch { /* best-effort, voir ScanSiteAsync */ }
 
             try { await confirmationNotifier.NotifyResolvedAsync(request.RequestingTerminalId, granted: false, request.VisitorName, ct); }
+            catch { /* best-effort */ }
+
+            // Trace de bout en bout même en l'absence de décision humaine :
+            // sans cette entrée, une demande ignorée par la sûreté ne
+            // laisserait aucune trace consultable une fois sortie de la liste
+            // « en attente » (§8.5 — même raisonnement que pour Approve/Deny).
+            try
+            {
+                await audit.RecordAsync(
+                    Domain.Enums.AdminAuditAction.ConfirmationRequestExpired, "système (confirmation)", request.Id.ToString(),
+                    $"Demande de confirmation pour « {request.VisitorName} » ({request.Direction}), demandée par l'agent {request.AgentId}, "
+                    + "expirée sans réponse de la sûreté — refus implicite.",
+                    ct);
+            }
             catch { /* best-effort */ }
         }
     }

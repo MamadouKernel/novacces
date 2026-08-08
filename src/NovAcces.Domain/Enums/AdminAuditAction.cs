@@ -88,5 +88,17 @@ public enum AdminAuditAction
     TerminalDeleted,
 
     /// <summary>Affectation (ou retrait) d'un terminal à un poste — un poste peut regrouper plusieurs terminaux.</summary>
-    TerminalCheckpointAssigned
+    TerminalCheckpointAssigned,
+
+    /// <summary>
+    /// Décision de la sûreté sur une demande de confirmation (validation sans
+    /// QR/code, liste « Attendus »). Le detail précise l'agent demandeur ET,
+    /// pour une approbation, le verdict RÉEL du scan (peut différer de la
+    /// décision sûreté — voir ApproveConfirmationRequestHandler).
+    /// </summary>
+    ConfirmationRequestApproved,
+    ConfirmationRequestDenied,
+
+    /// <summary>Demande de confirmation expirée sans réponse de la sûreté — refus implicite (décision du 08/08/2026).</summary>
+    ConfirmationRequestExpired
 }

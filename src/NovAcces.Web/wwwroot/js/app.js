@@ -135,7 +135,46 @@ window.novaccesPush = (() => {
         }
     }
 
+    // applicationServerKey attend un Uint8Array, la clé VAPID publique arrive
+    // en base64url depuis l'API — conversion standard (MDN).
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(base64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return bytes;
+    }
+
+    // Abonnement WebPush (§7, alerte de dépassement même onglet fermé) :
+    // réutilise l'abonnement navigateur existant s'il y en a déjà un (ex.
+    // reconnexion), sinon en crée un nouveau, puis l'enregistre côté API.
+    // Idempotent — sûr à rappeler à chaque connexion.
+    async function subscribe(apiBase, vapidPublicKey, accessToken) {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !vapidPublicKey) return false;
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            let sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+                sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+                });
+            }
+            const json = sub.toJSON();
+            const response = await fetch(`${apiBase}/api/push/subscribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+                body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+            });
+            return response.ok;
+        } catch (err) {
+            console.warn('Abonnement WebPush indisponible:', err);
+            return false;
+        }
+    }
+
     initServiceWorker();
 
-    return { requestPermission, showNotification };
+    return { requestPermission, showNotification, subscribe };
 })();

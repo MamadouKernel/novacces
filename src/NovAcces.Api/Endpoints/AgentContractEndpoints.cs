@@ -117,6 +117,28 @@ public static class AgentContractEndpoints
             + "à parser une seconde fois après la désérialisation de la réponse HTTP.")
         .Produces<ContractOfflineListDto>(StatusCodes.Status200OK);
 
+        // §7 : jeton de notification push Expo de CE terminal — permet de le
+        // réveiller (son + notification) même app fermée quand un dépassement
+        // survient, voir IOverstayPushNotifier. Réémis à chaque prise de poste
+        // par l'app (le jeton peut changer après réinstallation).
+        agent.MapPost("/agent/push-token", async (
+            AgentPushTokenRequestDto request,
+            ClaimsPrincipal user,
+            ITerminalDirectory terminals,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.ExpoPushToken))
+                return Results.BadRequest(new { error = "Jeton push requis." });
+
+            if (!Guid.TryParse(user.FindFirstValue(NovAccesClaimTypes.TerminalId), out var terminalId))
+                return Results.Json(new { error = "Terminal non identifié." }, statusCode: StatusCodes.Status403Forbidden);
+
+            await terminals.SetPushTokenAsync(terminalId, request.ExpoPushToken.Trim(), ct);
+            return Results.Ok();
+        })
+        .WithName("SetAgentPushToken")
+        .WithSummary("Enregistre le jeton de notification push Expo du terminal courant.");
+
         agent.MapPost("/scan/sync", async (
             IReadOnlyList<ContractOfflineScanDto> request,
             ClaimsPrincipal user,

@@ -89,4 +89,10 @@ public interface ITerminalDirectory
 
     /// <summary>Le jeton de poste présenté est-il toujours celui en cours pour ce terminal ?</summary>
     Task<bool> IsShiftActiveAsync(Guid terminalId, string shiftJti, CancellationToken ct);
+
+    /// <summary>
+    /// Enregistre (ou efface, si null/vide) le jeton de notification push Expo
+    /// de ce terminal — §7, alerte de dépassement même app fermée.
+    /// </summary>
+    Task SetPushTokenAsync(Guid terminalId, string? expoPushToken, CancellationToken ct);
 }

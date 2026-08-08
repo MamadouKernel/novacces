@@ -78,6 +78,7 @@ public sealed class OverstayScanner : IOverstayScanner
         var broadcaster = sp.GetRequiredService<IScanEventBroadcaster>();
         var hosts = sp.GetRequiredService<IHostDirectory>();
         var notifications = sp.GetRequiredService<INotificationService>();
+        var pushNotifier = sp.GetRequiredService<IOverstayPushNotifier>();
 
         var onSite = await db.Visits.Where(v => v.IsOnSite).ToListAsync(ct);
 
@@ -95,6 +96,19 @@ public sealed class OverstayScanner : IOverstayScanner
             await broadcaster.BroadcastOverstayAsync(
                 new OverstayBroadcastEvent(
                     visit.Id, visit.VisitorName, overstayMinutes, level, isSecurityEvent, now, visit.HostUserId), ct);
+
+            // Notifications PUSH (WebPush + Expo) : réveille un client fermé,
+            // là où la diffusion SignalR ci-dessus n'atteint qu'un onglet/app
+            // déjà ouverts. Best-effort, comme tout ce bloc.
+            try
+            {
+                await pushNotifier.NotifyAsync(siteId, visit.HostUserId, visit.VisitorName, overstayMinutes, level, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Dépassement : échec des notifications push pour la visite {VisitId}.", visit.Id);
+            }
 
             // §7 : l'alerte part vers la sûreté (diffusion ci-dessus) ET vers
             // l'hôte, à chaque niveau. Best-effort : une panne d'envoi ne doit

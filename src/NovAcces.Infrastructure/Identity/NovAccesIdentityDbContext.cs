@@ -28,6 +28,7 @@ public sealed class NovAccesIdentityDbContext
     public DbSet<ApplicationAuditEntry> ApplicationAudit => Set<ApplicationAuditEntry>();
     public DbSet<SiteRegistration> Sites => Set<SiteRegistration>();
     public DbSet<AgentRegistryEntry> AgentRegistry => Set<AgentRegistryEntry>();
+    public DbSet<PushSubscriptionEntity> PushSubscriptions => Set<PushSubscriptionEntity>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -135,5 +136,18 @@ public sealed class NovAccesIdentityDbContext
             a.Property(x => x.SiteId).HasMaxLength(40).IsRequired();
             a.HasIndex(x => x.SiteId);
         });
+        builder.Entity<PushSubscriptionEntity>(p =>
+        {
+            p.ToTable("push_subscriptions");
+            p.HasKey(x => x.Id);
+            p.Property(x => x.Endpoint).HasMaxLength(600).IsRequired();
+            p.Property(x => x.P256dh).HasMaxLength(200).IsRequired();
+            p.Property(x => x.Auth).HasMaxLength(100).IsRequired();
+            p.HasIndex(x => x.Endpoint).IsUnique();
+            p.HasIndex(x => x.UserId);
+            p.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Terminal>().Property(x => x.ExpoPushToken).HasMaxLength(300);
     }
 }

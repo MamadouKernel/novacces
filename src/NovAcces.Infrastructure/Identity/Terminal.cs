@@ -44,6 +44,14 @@ public sealed class Terminal
     public string? ActiveShiftMatricule { get; private set; }
     public DateTimeOffset? ActiveShiftStartedAt { get; private set; }
 
+    /// <summary>
+    /// Jeton de notification push Expo de CE terminal (§7 : alerte de
+    /// dépassement même app fermée). Remis à jour à chaque prise de poste —
+    /// l'app le régénère si réinstallée, un jeton périmé est simplement
+    /// écrasé par le suivant, jamais accumulé.
+    /// </summary>
+    public string? ExpoPushToken { get; private set; }
+
     private Terminal() { }
 
     public static Terminal Create(string label, string apiKeyHash, IReadOnlyList<string> siteIds, DateTimeOffset now) => new()
@@ -111,4 +119,8 @@ public sealed class Terminal
 
     public bool IsShiftActive(string jti) =>
         !string.IsNullOrEmpty(jti) && string.Equals(ActiveShiftJti, jti, StringComparison.Ordinal);
+
+    /// <summary>Enregistre (ou efface, si null/vide) le jeton push Expo courant de ce terminal.</summary>
+    public void SetExpoPushToken(string? token) =>
+        ExpoPushToken = string.IsNullOrWhiteSpace(token) ? null : token.Trim();
 }

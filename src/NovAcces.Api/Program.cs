@@ -221,6 +221,22 @@ if (args.Length >= 1 && args[0] == "grant-app-role")
     return 0;
 }
 
+// --- Commande d'administration hors-ligne : génération des clés VAPID ---
+//   dotnet NovAcces.Api.dll generate-vapid-keys
+// À exécuter UNE SEULE FOIS, avant la toute première mise en service des
+// notifications push navigateur (§7 — alerte de dépassement même onglet
+// fermé). Ne JAMAIS régénérer après coup : ça invaliderait tous les
+// abonnements déjà enregistrés par les navigateurs (chacun devrait se
+// réabonner). Coller les valeurs affichées dans WEBPUSH_VAPID_PUBLIC_KEY /
+// WEBPUSH_VAPID_PRIVATE_KEY de .env (voir .env.example).
+if (args.Length >= 1 && args[0] == "generate-vapid-keys")
+{
+    var keys = WebPush.VapidHelper.GenerateVapidKeys();
+    Console.WriteLine("WEBPUSH_VAPID_PUBLIC_KEY=" + keys.PublicKey);
+    Console.WriteLine("WEBPUSH_VAPID_PRIVATE_KEY=" + keys.PrivateKey);
+    return 0;
+}
+
 // --- Commande d'administration hors-ligne : restauration d'une sauvegarde ---
 //   dotnet NovAcces.Api.dll restore-database <fichier.dump> --confirm <fichier.dump>
 // ÉCRASE la base COMPLÈTE (tous les sites) avec le contenu de la sauvegarde.
@@ -449,6 +465,7 @@ app.MapAgentEndpoints().RequireRateLimiting("sensitive");
 app.MapDeviceEnrollmentEndpoints();
 app.MapAdminEndpoints();
 app.MapDatabaseAdminEndpoints().RequireRateLimiting("sensitive");
+app.MapPushEndpoints();
 app.MapHub<ScanEventsHub>("/hubs/scan").RequireAuthorization(NovAccesPolicies.Dashboard);
 app.MapHub<ScanEventsHub>("/hubs/scan-events").RequireAuthorization(NovAccesPolicies.AgentEvents);
 app.MapAgentContractEndpoints();

@@ -171,6 +171,16 @@ public sealed class TerminalDirectory : ITerminalDirectory
             terminal.Id, terminal.Label, terminal.SiteIds.ToList(), apiKey, now);
     }
 
+    public async Task SetPushTokenAsync(Guid terminalId, string? expoPushToken, CancellationToken ct)
+    {
+        var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);
+        if (terminal is null)
+            return;
+
+        terminal.SetExpoPushToken(expoPushToken);
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task SetActiveShiftAsync(Guid terminalId, string shiftJti, string matricule, DateTimeOffset now, CancellationToken ct)
     {
         var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == terminalId, ct);

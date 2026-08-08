@@ -81,6 +81,15 @@ public static class DependencyInjection
         services.Configure<Overstay.OverstayOptions>(configuration.GetSection("Overstay"));
         services.AddSingleton<IOverstayScanner, Overstay.OverstayScanner>();
 
+        // Notifications push (WebPush navigateur + Expo mobile) — réveille un
+        // client FERMÉ, complète la diffusion SignalR (onglet/app ouverts
+        // seulement). AddHttpClient() : IHttpClientFactory pour ExpoPushSender.
+        services.AddHttpClient();
+        services.Configure<Notifications.WebPushOptions>(configuration.GetSection("WebPush"));
+        services.AddSingleton<IWebPushSender, Notifications.WebPushSender>();
+        services.AddSingleton<IExpoPushSender, Notifications.ExpoPushSender>();
+        services.AddScoped<IOverstayPushNotifier, Notifications.OverstayPushNotifier>();
+
         // Rétention/purge des données personnelles (§7.3) : balayage multi-sites,
         // même orchestration transverse que la supervision.
         services.Configure<Retention.RetentionOptions>(configuration.GetSection("Retention"));

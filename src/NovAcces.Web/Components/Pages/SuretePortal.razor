@@ -513,6 +513,7 @@ else if (CanViewDashboard)
             await SeedFeedFromJournalAsync();
 
             await ConnectHubAsync();
+            await SubscribeToPushAsync();
             if (Auth.IsInRole(NovAccesRoles.Surete) || Auth.IsInRole(NovAccesRoles.Admin))
                 await RefreshExclusionsAsync();
             StateHasChanged();
@@ -590,6 +591,21 @@ else if (CanViewDashboard)
     {
         _darkMode = !_darkMode;
         await JS.InvokeVoidAsync("eval", "document.documentElement.classList.toggle('dark')");
+    }
+
+    // Abonnement WebPush (§7) : réveille l'onglet même FERMÉ pour l'alerte de
+    // dépassement — complète ConnectHubAsync, qui ne couvre que l'onglet
+    // ouvert (SignalR). Best-effort partout.
+    private async Task SubscribeToPushAsync()
+    {
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("novaccesPush.requestPermission")) return;
+            var vapidKey = await Api.GetVapidPublicKeyAsync();
+            if (string.IsNullOrWhiteSpace(vapidKey)) return;
+            await JS.InvokeVoidAsync("novaccesPush.subscribe", Config["Api:BaseUrl"], vapidKey, Auth.AccessToken);
+        }
+        catch { /* best-effort */ }
     }
 
     private async Task ConnectHubAsync()

@@ -165,6 +165,17 @@ public sealed class NovAccesApiClient
         return result ?? new List<KnownVisitorDto>();
     }
 
+    /// <summary>Clé publique VAPID — nécessaire au navigateur pour s'abonner au WebPush (§7).</summary>
+    public async Task<string?> GetVapidPublicKeyAsync()
+    {
+        try
+        {
+            var result = await CreateClient(false).GetFromJsonAsync<VapidPublicKeyDto>("/api/push/vapid-public-key");
+            return result?.PublicKey;
+        }
+        catch { return null; } // best-effort : pas de son "app fermée" sans clé, rien d'autre n'en dépend
+    }
+
     /// <summary>Révoque une demande (REQ-F-09). Vrai si la révocation a réussi.</summary>
     public async Task<bool> RevokeVisitAsync(Guid visitId)
     {

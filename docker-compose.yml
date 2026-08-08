@@ -36,6 +36,9 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       QrSigning__PrivateKeyPem: ${QR_SIGNING_PRIVATE_KEY_PEM}
       QrSigning__PublicKeyPem: ${QR_SIGNING_PUBLIC_KEY_PEM}
+      WebPush__VapidPublicKey: ${WEBPUSH_VAPID_PUBLIC_KEY}
+      WebPush__VapidPrivateKey: ${WEBPUSH_VAPID_PRIVATE_KEY}
+      WebPush__Subject: ${WEBPUSH_SUBJECT}
       Smtp__Host: ${SMTP_HOST}
       Smtp__Port: ${SMTP_PORT}
       Smtp__EnableSsl: "true"

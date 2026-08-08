@@ -715,13 +715,30 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             _loaded = true;
             await RefreshMyVisitsAsync();
             try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
-            try { await JS.InvokeVoidAsync("novaccesPush.requestPermission"); } catch { /* best-effort */ }
+            await SubscribeToPushAsync();
             await ConnectHubAsync();
             StateHasChanged();
         }
     }
 
     private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    // Abonnement WebPush (§7) : réveille l'onglet même FERMÉ pour l'alerte de
+    // dépassement — complète ConnectHubAsync ci-dessous, qui ne couvre que
+    // l'onglet ouvert (SignalR). Best-effort partout : navigateur sans
+    // support Push, permission refusée, ou clé VAPID absente ne doit jamais
+    // bloquer le reste du portail.
+    private async Task SubscribeToPushAsync()
+    {
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("novaccesPush.requestPermission")) return;
+            var vapidKey = await Api.GetVapidPublicKeyAsync();
+            if (string.IsNullOrWhiteSpace(vapidKey)) return;
+            await JS.InvokeVoidAsync("novaccesPush.subscribe", Config["Api:BaseUrl"], vapidKey, Auth.AccessToken);
+        }
+        catch { /* best-effort */ }
+    }
 
     // Groupe SignalR personnel (host:{HostUserId}, voir ScanEventsHub — mode
     // ?hote=1) : contrairement au dashboard sûreté, l'hôte ne rejoint JAMAIS

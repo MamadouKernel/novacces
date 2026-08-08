@@ -35,7 +35,8 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.EnsureTenantResolvedAsync(ct);
         var m = (matricule ?? string.Empty).Trim();
 
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m && a.DeletedAt == null, ct);
+        var agent = await _db.Agents.FirstOrDefaultAsync(
+            a => (a.Matricule == m || a.Matricule.ToLower() == m.ToLower()) && a.DeletedAt == null, ct);
         if (agent is null || !agent.IsActive)
         {
             Hasher.VerifyHashedPassword(DummyAgent, DummyPinHash, pin ?? string.Empty);
@@ -114,7 +115,7 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.EnsureTenantResolvedAsync(ct);
         var m = (matricule ?? string.Empty).Trim();
 
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m && a.DeletedAt == null, ct);
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => (a.Matricule == m || a.Matricule.ToLower() == m.ToLower()) && a.DeletedAt == null, ct);
         if (agent is null)
             return false;
 
@@ -132,7 +133,7 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.EnsureTenantResolvedAsync(ct);
         var m = (matricule ?? string.Empty).Trim();
 
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m && a.DeletedAt == null, ct);
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => (a.Matricule == m || a.Matricule.ToLower() == m.ToLower()) && a.DeletedAt == null, ct);
         if (agent is null)
             return false;
 
@@ -154,7 +155,7 @@ public sealed class AgentDirectory : IAgentDirectory
         await _db.EnsureTenantResolvedAsync(ct);
         var m = (matricule ?? string.Empty).Trim();
 
-        var agent = await _db.Agents.FirstOrDefaultAsync(a => a.Matricule == m && a.DeletedAt == null, ct);
+        var agent = await _db.Agents.FirstOrDefaultAsync(a => (a.Matricule == m || a.Matricule.ToLower() == m.ToLower()) && a.DeletedAt == null, ct);
         if (agent is null)
             return false;
 

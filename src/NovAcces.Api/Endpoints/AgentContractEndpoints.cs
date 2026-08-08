@@ -106,7 +106,7 @@ public static class AgentContractEndpoints
             var visitsDto = today.Select(v => new ContractOfflineVisitDto(
                 v.Id, v.VisitorName, v.Mode.ToString(),
                 v.ScheduledAt?.AddMinutes(-20), v.ScheduledAt?.AddMinutes(15),
-                v.Status.ToString(), v.IsOnSite)).ToList();
+                v.Status.ToString(), v.IsOnSite, v.ComputeOverstayMinutes(issuedAt))).ToList();
             return Results.Ok(new ContractOfflineListDto(issuedAt, expiresAt, visitsDto, signed));
         })
         .WithName("ContractOfflineList")

@@ -25,7 +25,12 @@ public sealed record ContractOfflineVisitDto(
     DateTimeOffset? FenetreDebut,
     DateTimeOffset? FenetreFin,
     string Statut,
-    bool Present);
+    bool Present,
+    // §7 : permet à l'app agent de détecter localement un dépassement (et
+    // d'en avertir l'agent) sans dépendre d'une connexion temps réel — la
+    // liste hors-ligne est déjà régulièrement rafraîchie (mode dégradé).
+    // 0 si non présent ou pas en dépassement.
+    int OverstayMinutes = 0);
 
 /// <summary>Scan remonté par l'application après une période hors-ligne.</summary>
 public sealed record ContractOfflineScanDto(

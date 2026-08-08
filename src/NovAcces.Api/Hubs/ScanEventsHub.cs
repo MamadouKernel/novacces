@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
+using NovAcces.Api.Endpoints;
 using NovAcces.Infrastructure.Persistence.Tenancy;
 using NovAcces.Shared.Auth;
 
@@ -57,6 +58,27 @@ public sealed class ScanEventsHub : Hub
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, GlobalGroup);
+            await base.OnConnectedAsync();
+            return;
+        }
+
+        // Portail Hôte : groupe personnel (host:{HostUserId}), JAMAIS le groupe
+        // du site — un hôte n'a pas à voir le flux des autres visiteurs du site
+        // (moindre privilège, §8.5). L'identifiant vient du jeton authentifié
+        // (même claim que ClaimsPrincipalExtensions.HostIdentifier côté API),
+        // jamais d'un paramètre fourni par le client : usurper le groupe d'un
+        // autre hôte reviendrait à intercepter ses alertes de dépassement.
+        if (http?.Request.Query["hote"].ToString() == "1")
+        {
+            var hostId = Context.User?.HostIdentifier();
+            if (string.IsNullOrWhiteSpace(hostId) || hostId == "inconnu")
+            {
+                DecrementConnectionCount(clientIp);
+                Context.Abort();
+                return;
+            }
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, ScanEventBroadcaster.HostGroup(hostId));
             await base.OnConnectedAsync();
             return;
         }

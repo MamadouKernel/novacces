@@ -6,6 +6,7 @@
 @inject AuthState Auth
 @inject IConfiguration Config
 @inject IWebHostEnvironment Env
+@inject IJSRuntime JS
 
 <PageTitle>SigasAcces — Administration · Dashboard</PageTitle>
 
@@ -395,6 +396,16 @@
         {
             try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
             _alerts = BuildAlerts();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // Signal anonymisé (voir AdminOverstayAlertDto) : pas de nom de
+        // visiteur ici, juste "un dépassement est en cours sur tel site".
+        _hub.On<AdminOverstayAlertDto>("AdminOverstayAlert", async alert =>
+        {
+            try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+            _alerts = BuildAlerts();
+            try { await JS.InvokeVoidAsync("novaccesBeep", alert.Level); } catch { /* best-effort */ }
             await InvokeAsync(StateHasChanged);
         });
 

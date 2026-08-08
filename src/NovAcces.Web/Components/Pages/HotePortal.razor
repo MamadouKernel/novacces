@@ -1,10 +1,12 @@
 @page "/hote"
-@implements IDisposable
+@implements IAsyncDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
 
 <PageTitle>SigasAcces — Portail hôte</PageTitle>
 
@@ -714,13 +716,62 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             await RefreshMyVisitsAsync();
             try { _knownVisitors = await Api.GetKnownVisitorsAsync(); } catch { /* best-effort */ }
             try { await JS.InvokeVoidAsync("novaccesPush.requestPermission"); } catch { /* best-effort */ }
+            await ConnectHubAsync();
             StateHasChanged();
         }
     }
 
     private void OnAuthChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Auth.Changed -= OnAuthChanged;
+    // Groupe SignalR personnel (host:{HostUserId}, voir ScanEventsHub — mode
+    // ?hote=1) : contrairement au dashboard sûreté, l'hôte ne rejoint JAMAIS
+    // le flux complet du site, seulement les alertes de dépassement de SES
+    // propres visiteurs (moindre privilège, §8.5).
+    private HubConnection? _hub;
+
+    private async Task ConnectHubAsync()
+    {
+        var apiBase = Config["Api:BaseUrl"]!;
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{apiBase}/hubs/scan?hote=1", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+
+                // Dev : l'API expose un certificat auto-signé — accepté UNIQUEMENT
+                // en développement (connexion serveur-à-serveur).
+                if (Env.IsDevelopment())
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler h)
+                            h.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        return handler;
+                    };
+                    options.WebSocketConfiguration = conf =>
+                        conf.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                }
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<OverstayAlertDto>("OverstayAlert", async alert =>
+        {
+            Toasts.Error($"« {alert.VisitorName} » dépasse la durée prévue (+{alert.OverstayMinutes} min).");
+            try { await JS.InvokeVoidAsync("novaccesBeep", alert.Level); } catch { /* best-effort */ }
+            await RefreshMyVisitsAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        try { await _hub.StartAsync(); } catch { /* best-effort : pas de son sans réseau, rien d'autre n'en dépend */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.Changed -= OnAuthChanged;
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
 
     private async Task RefreshMyVisitsAsync()
     {

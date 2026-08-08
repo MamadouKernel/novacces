@@ -68,6 +68,43 @@ window.novaccesIdleTimer = (() => {
     return { start, stop };
 })();
 
+// Alerte sonore de dépassement de durée (§7) — Web Audio API : pas de
+// fichier audio à héberger, fonctionne même hors ligne. Un seul AudioContext
+// réutilisé (créer un AudioContext par bip finirait par être bloqué par le
+// navigateur, qui plafonne le nombre d'instances simultanées).
+// Niveau 3 (événement de sécurité) : bip plus aigu, répété deux fois.
+window.novaccesBeep = (level) => {
+    try {
+        window.__novaccesAudioCtx = window.__novaccesAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = window.__novaccesAudioCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const playTone = (startAt, freq) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            // Attaque/relâche courtes : évite le "clic" d'un son coupé net.
+            gain.gain.setValueAtTime(0, startAt);
+            gain.gain.linearRampToValueAtTime(0.25, startAt + 0.02);
+            gain.gain.linearRampToValueAtTime(0, startAt + 0.28);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(startAt);
+            osc.stop(startAt + 0.3);
+        };
+
+        const now = ctx.currentTime;
+        if (level >= 3) {
+            playTone(now, 880);
+            playTone(now + 0.35, 880);
+        } else {
+            playTone(now, 660);
+        }
+    } catch (err) {
+        console.warn('Bip de dépassement indisponible:', err);
+    }
+};
+
 // Notifications bureau système & WebPush (PWA)
 window.novaccesPush = (() => {
     async function initServiceWorker() {

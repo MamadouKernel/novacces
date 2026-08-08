@@ -634,6 +634,7 @@ else if (CanViewDashboard)
             _overstayAlerts.Insert(0, alert);
             if (_overstayAlerts.Count > 6) _overstayAlerts.RemoveRange(6, _overstayAlerts.Count - 6);
             await RefreshOnSiteAsync();          // met à jour les badges de dépassement
+            try { await JS.InvokeVoidAsync("novaccesBeep", alert.Level); } catch { /* best-effort */ }
             await InvokeAsync(StateHasChanged);
         });
 

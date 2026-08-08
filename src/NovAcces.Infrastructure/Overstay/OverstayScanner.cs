@@ -93,7 +93,8 @@ public sealed class OverstayScanner : IOverstayScanner
             var isSecurityEvent = level >= 3;
 
             await broadcaster.BroadcastOverstayAsync(
-                new OverstayBroadcastEvent(visit.Id, visit.VisitorName, overstayMinutes, level, isSecurityEvent, now), ct);
+                new OverstayBroadcastEvent(
+                    visit.Id, visit.VisitorName, overstayMinutes, level, isSecurityEvent, now, visit.HostUserId), ct);
 
             // §7 : l'alerte part vers la sûreté (diffusion ci-dessus) ET vers
             // l'hôte, à chaque niveau. Best-effort : une panne d'envoi ne doit

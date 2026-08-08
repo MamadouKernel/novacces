@@ -69,6 +69,19 @@ public sealed record AdminScanActivityDto(
     DateTimeOffset OccurredAt);
 
 /// <summary>
+/// Alerte de dépassement diffusée au canal global « tous sites » (SignalR,
+/// message « AdminOverstayAlert », réservé Admin/SuperAdmin). Même principe
+/// que AdminScanActivityDto : volontairement SANS nom de visiteur — l'Admin
+/// est alerté qu'un site a un dépassement à surveiller, le détail nominatif
+/// reste au dashboard sûreté de ce site (moindre privilège).
+/// </summary>
+public sealed record AdminOverstayAlertDto(
+    string SiteId,
+    int Level,
+    bool IsSecurityEvent,
+    DateTimeOffset OccurredAt);
+
+/// <summary>
 /// Signale, au même canal global que <see cref="AdminScanActivityDto"/>,
 /// qu'une entité gérée depuis la console (site/agent/terminal/compte) a
 /// changé — pour rafraîchir un tableau ouvert sans rechargement de page.

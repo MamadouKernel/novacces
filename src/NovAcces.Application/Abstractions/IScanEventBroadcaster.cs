@@ -20,7 +20,12 @@ public sealed record OverstayBroadcastEvent(
     int OverstayMinutes,
     int Level,
     bool IsSecurityEvent,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    // Permet à ScanEventBroadcaster de cibler AUSSI le groupe SignalR personnel
+    // de l'hôte (host:{HostUserId}), en plus du groupe du site (Sûreté) — un
+    // hôte doit être alerté en direct du dépassement de SON visiteur, sans
+    // jamais recevoir le flux complet du site (moindre privilège).
+    string HostUserId);
 
 public sealed record ScanBroadcastEvent(
     Guid VisitId,

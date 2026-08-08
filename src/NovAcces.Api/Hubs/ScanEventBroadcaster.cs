@@ -42,8 +42,27 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
             overstay.VisitId, overstay.VisitorName, overstay.OverstayMinutes,
             overstay.Level, overstay.IsSecurityEvent, overstay.OccurredAt);
 
-        return _hub.Clients.Group(_tenant.SiteId).SendAsync("OverstayAlert", dto, ct);
+        // Sûreté : flux complet du site (nom compris — c'est son rôle).
+        var siteTask = _hub.Clients.Group(_tenant.SiteId).SendAsync("OverstayAlert", dto, ct);
+
+        // Admin/SuperAdmin : signal ANONYMISÉ (pas de nom, voir AdminOverstayAlertDto)
+        // au canal global — même principe que l'écho AdminActivity de BroadcastAsync.
+        var adminDto = new AdminOverstayAlertDto(_tenant.SiteId, overstay.Level, overstay.IsSecurityEvent, overstay.OccurredAt);
+        var globalTask = _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync("AdminOverstayAlert", adminDto, ct);
+
+        // Hôte : groupe personnel (host:{HostUserId}), jamais le groupe du site —
+        // il ne doit voir QUE ses propres visiteurs (moindre privilège), avec le
+        // nom cette fois puisque c'est bien SON visiteur.
+        var hostTask = _hub.Clients.Group(HostGroup(overstay.HostUserId)).SendAsync("OverstayAlert", dto, ct);
+
+        return Task.WhenAll(siteTask, globalTask, hostTask);
     }
+
+    /// <summary>
+    /// Nom du groupe SignalR personnel d'un hôte — DOIT rester identique à la
+    /// jointure faite dans ScanEventsHub.OnConnectedAsync (mode ?hote=1).
+    /// </summary>
+    internal static string HostGroup(string hostUserId) => $"host:{hostUserId}";
 
     public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct) =>
         _hub.Clients.Group(_tenant.SiteId).SendAsync(

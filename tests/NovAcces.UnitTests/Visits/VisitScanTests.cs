@@ -392,4 +392,49 @@ public class VisitScanTests
         Assert.True(outcome.IsCheckOut);
         Assert.Equal(34, outcome.OverstayMinutesAtCheckOut);
     }
+
+    [Fact]
+    public void ExpireIfWindowPassed_NeverScanned_WindowClosed_TransitionsToExpired()
+    {
+        // Régression du 08/08/2026 : une demande dont la fenêtre est dépassée
+        // sans avoir jamais été utilisée restait "Valid" indéfiniment en base,
+        // bloquant à tort le garde-fou anti-doublon pour une réinvitation du
+        // même visiteur (voir VisitEndpoints.ExpireStaleActiveVisitsAsync).
+        var scheduled = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: scheduled, now: scheduled);
+        var afterWindow = scheduled.AddMinutes(16); // fenêtre : +15 min
+
+        var expired = visit.ExpireIfWindowPassed(afterWindow);
+
+        Assert.True(expired);
+        Assert.Equal(VisitStatus.Expired, visit.Status);
+    }
+
+    [Fact]
+    public void ExpireIfWindowPassed_StillWithinWindow_DoesNothing()
+    {
+        var scheduled = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: scheduled, now: scheduled);
+
+        var expired = visit.ExpireIfWindowPassed(scheduled.AddMinutes(5));
+
+        Assert.False(expired);
+        Assert.Equal(VisitStatus.Valid, visit.Status);
+    }
+
+    [Fact]
+    public void ExpireIfWindowPassed_VisitorCurrentlyOnSite_NeverExpires()
+    {
+        // Un visiteur entré avant la fermeture de sa fenêtre reste "sur site"
+        // même après celle-ci : IsExpiredForDisplay exclut explicitement
+        // IsOnSite, on ne doit jamais expirer quelqu'un actuellement présent.
+        var scheduled = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: scheduled, now: scheduled);
+        visit.Scan(CheckpointDirection.Entry, isBusinessDay: true, scheduled, isOnExclusionList: false);
+
+        var expired = visit.ExpireIfWindowPassed(scheduled.AddHours(3));
+
+        Assert.False(expired);
+        Assert.True(visit.IsOnSite);
+    }
 }

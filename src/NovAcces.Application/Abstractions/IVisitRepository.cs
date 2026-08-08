@@ -52,6 +52,16 @@ public interface IVisitRepository
     /// </summary>
     Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct);
 
+    /// <summary>
+    /// Fait passer à Expired toute demande Valid de ce visiteur (même clé que
+    /// le garde-fou anti-doublon) dont la fenêtre est dépassée sans avoir été
+    /// consommée ni révoquée — à appeler avant <see cref="HasActiveVisitForVisitorAsync"/>
+    /// lors d'une nouvelle création : sans ça, une demande qui ne pourra plus
+    /// jamais être présentée avec succès (voir Visit.ExpireIfWindowPassed)
+    /// bloquerait indéfiniment une réinvitation du même visiteur.
+    /// </summary>
+    Task ExpireStaleActiveVisitsAsync(string visitorName, string visitorCompany, DateTimeOffset now, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }
 

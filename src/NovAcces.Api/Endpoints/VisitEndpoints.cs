@@ -68,6 +68,11 @@ public static class VisitEndpoints
             if (string.IsNullOrWhiteSpace(request.VisitorName))
                 return Results.BadRequest(new { error = "Nom du visiteur requis." });
 
+            // Une demande dont la fenêtre est dépassée sans avoir été utilisée
+            // ne redeviendra jamais valide (Visit.Scan la refuserait) : elle ne
+            // doit pas bloquer indéfiniment une réinvitation du même visiteur.
+            await visits.ExpireStaleActiveVisitsAsync(request.VisitorName, request.VisitorCompany, clock.UtcNow, ct);
+
             // Garde-fou anti-doublon (maquette du 22/07/2026) : une seule demande
             // active par visiteur (nom + société) sur le site.
             if (await visits.HasActiveVisitForVisitorAsync(request.VisitorName, request.VisitorCompany, ct))
@@ -132,6 +137,8 @@ public static class VisitEndpoints
 
                     if (mode == AccessMode.Unique && r.ScheduledAt is null)
                     { items.Add(Fail(name, "Date de rendez-vous requise (mode unique).")); continue; }
+
+                    await visits.ExpireStaleActiveVisitsAsync(name, r.VisitorCompany, clock.UtcNow, ct);
 
                     if (await visits.HasActiveVisitForVisitorAsync(name, r.VisitorCompany, ct))
                     { items.Add(Fail(name, "Une demande active existe déjà pour ce visiteur.")); continue; }

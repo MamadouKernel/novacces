@@ -39,6 +39,8 @@ file sealed class FakeVisitRepository : IVisitRepository
         => Task.FromResult<IReadOnlyCollection<KnownVisitor>>(Array.Empty<KnownVisitor>());
     public Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)
         => Task.FromResult(false);
+    public Task ExpireStaleActiveVisitsAsync(string visitorName, string visitorCompany, DateTimeOffset now, CancellationToken ct)
+        => Task.CompletedTask;
     public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 }
 

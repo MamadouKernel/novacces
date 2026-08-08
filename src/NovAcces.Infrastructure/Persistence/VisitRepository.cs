@@ -128,6 +128,30 @@ public sealed class VisitRepository : IVisitRepository
               && v.VisitorCompany.ToLower() == company, ct);
     }
 
+    public async Task ExpireStaleActiveVisitsAsync(string visitorName, string visitorCompany, DateTimeOffset now, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var name = visitorName.Trim().ToLower();
+        var company = (visitorCompany ?? "").Trim().ToLower();
+
+        // Même clé que HasActiveVisitForVisitorAsync (nom + société,
+        // normalisés) : seules les demandes qui bloqueraient une nouvelle
+        // création sont candidates. IsOnSite exclut déjà les présents via
+        // Visit.ExpireIfWindowPassed (une visite en cours n'est jamais expirée).
+        var candidates = await _db.Visits
+            .Where(v => v.Status == Domain.Enums.VisitStatus.Valid
+                     && v.VisitorName.ToLower() == name
+                     && v.VisitorCompany.ToLower() == company)
+            .ToListAsync(ct);
+
+        var changed = false;
+        foreach (var visit in candidates)
+            changed |= visit.ExpireIfWindowPassed(now);
+
+        if (changed)
+            await _db.SaveChangesAsync(ct);
+    }
+
     public async Task SaveChangesAsync(CancellationToken ct)
     {
         try

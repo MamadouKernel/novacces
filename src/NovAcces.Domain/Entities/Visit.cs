@@ -264,6 +264,24 @@ public class Visit
     public bool IsExpiredForDisplay(DateTimeOffset now) =>
         Status == VisitStatus.Valid && !IsOnSite && now > ComputeQrExpiry();
 
+    /// <summary>
+    /// Fait passer la demande à Expired si sa fenêtre est dépassée sans avoir
+    /// été consommée ni révoquée (même condition qu'IsExpiredForDisplay,
+    /// jusqu'ici un calcul d'affichage seulement, jamais persisté). Utile au
+    /// garde-fou anti-doublon (une seule demande Valid par visiteur, y compris
+    /// la contrainte unique en base) : une demande dont la fenêtre est close
+    /// ne redeviendra JAMAIS utilisable (Visit.Scan la refuserait TooLate),
+    /// elle ne doit donc plus bloquer une nouvelle invitation pour la même
+    /// personne. Retourne si une transition a eu lieu, pour éviter un
+    /// SaveChanges inutile côté appelant.
+    /// </summary>
+    public bool ExpireIfWindowPassed(DateTimeOffset now)
+    {
+        if (!IsExpiredForDisplay(now)) return false;
+        Status = VisitStatus.Expired;
+        return true;
+    }
+
     /// <summary>Durée de présence effective, en minutes (0 si jamais entré).</summary>
     public int ComputePresenceMinutes(DateTimeOffset now)
     {

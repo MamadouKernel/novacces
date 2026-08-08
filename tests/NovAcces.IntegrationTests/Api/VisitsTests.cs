@@ -139,6 +139,32 @@ public sealed class VisitsTests
     }
 
     [SkippableFact]
+    public async Task Create_ForVisitorWithExpiredNeverScannedPriorVisit_Succeeds()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Régression du 08/08/2026 : une demande jamais scannée dont la
+        // fenêtre (-20/+15 min) est dépassée restait "Valid" en base pour
+        // toujours, bloquant à tort une réinvitation du même visiteur avec
+        // 409 ("Une demande active existe déjà pour ce visiteur.") alors que
+        // l'ancienne ne pourra plus jamais être présentée avec succès.
+        var hote = await LoginNewUserAsync("Hote");
+        var name = $"Expiree-{Guid.NewGuid():N}";
+        var company = "Société Expirée";
+
+        var firstRequest = new CreateVisitRequestDto(
+            name, company, "Test", "Unique", DateTimeOffset.UtcNow.AddMinutes(-30), 60, null, null);
+        var first = await hote.PostAsJsonAsync("/api/visits", firstRequest);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var secondRequest = new CreateVisitRequestDto(
+            name, company, "Test", "Unique", DateTimeOffset.UtcNow.AddHours(1), 60, null, null);
+        var second = await hote.PostAsJsonAsync("/api/visits", secondRequest);
+
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+    }
+
+    [SkippableFact]
     public async Task KnownVisitors_ReturnsPrefillData()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

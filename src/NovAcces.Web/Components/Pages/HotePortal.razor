@@ -836,7 +836,18 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                 string.IsNullOrWhiteSpace(_form.VisitorPhone) ? null : _form.VisitorPhone.Trim(),
                 string.IsNullOrWhiteSpace(_form.VisitorEmail) ? null : _form.VisitorEmail.Trim());
 
-            _result = await Api.CreateVisitAsync(request);
+            var (success, result, error) = await Api.CreateVisitAsync(request);
+            if (!success)
+            {
+                // Le vrai motif de l'API (ex. anti-doublon 409 : "Une demande
+                // active existe déjà pour ce visiteur.") plutôt qu'un message
+                // générique qui laissait croire à tort à une session expirée.
+                _error = error ?? "La génération a échoué.";
+                Toasts.Error(_error);
+                return;
+            }
+
+            _result = result;
 
             // Mémorise le visiteur pour le badge, PUIS vide le formulaire.
             _lastVisitorName = _form.VisitorName.Trim();
@@ -853,7 +864,7 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         catch
         {
             _error = "La génération a échoué (session expirée ou service indisponible).";
-            Toasts.Error("La génération a échoué (session ou service indisponible).");
+            Toasts.Error(_error);
         }
         finally { _busy = false; }
     }

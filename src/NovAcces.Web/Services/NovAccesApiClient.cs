@@ -123,12 +123,20 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
-    /// <summary>Crée une visite. Le site est déduit du jeton côté API (claim).</summary>
-    public async Task<CreateVisitResponseDto?> CreateVisitAsync(CreateVisitRequestDto request)
+    /// <summary>
+    /// Crée une visite. Le site est déduit du jeton côté API (claim). Ne lève
+    /// plus sur un échec (ex. 409 anti-doublon) : EnsureSuccessStatusCode()
+    /// jetait le corps de la réponse, forçant l'appelant à afficher un message
+    /// générique ("session expirée ou service indisponible") au lieu du vrai
+    /// motif renvoyé par l'API (ex. "Une demande active existe déjà pour ce
+    /// visiteur.").
+    /// </summary>
+    public async Task<(bool Success, CreateVisitResponseDto? Result, string? Error)> CreateVisitAsync(CreateVisitRequestDto request)
     {
         var response = await CreateClient(true).PostAsJsonAsync("/api/visits", request);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<CreateVisitResponseDto>();
+        if (!response.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(response));
+        return (true, await response.Content.ReadFromJsonAsync<CreateVisitResponseDto>(), null);
     }
 
     /// <summary>Création groupée : invite un lot de visiteurs en une opération.</summary>

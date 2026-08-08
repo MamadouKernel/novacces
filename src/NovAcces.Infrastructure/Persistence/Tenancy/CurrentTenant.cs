@@ -27,28 +27,31 @@ public sealed class CurrentTenant : ICurrentTenant
 
     public bool IsResolved => _siteId is not null;
 
+    public static string NormalizeSiteId(string siteId) =>
+        (siteId ?? string.Empty).Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+
     public void Resolve(string siteId)
     {
         if (!IsValidSiteId(siteId))
             throw new ArgumentException("Identifiant de site invalide.", nameof(siteId));
 
-        _siteId = siteId.ToLowerInvariant();
+        _siteId = NormalizeSiteId(siteId);
         _schemaName = $"site_{_siteId}";
     }
 
     /// <summary>
-    /// Whitelist ASCII stricte [a-zA-Z0-9_], appliquée AVANT toute conversion
-    /// de casse : ToLowerInvariant() sur certains caractères Unicode (ex. le
-    /// 'İ' turc, U+0130) peut produire des caractères combinants absents de
-    /// la chaîne d'origine, donc jamais validés si on vérifiait après coup.
-    /// char.IsLetterOrDigit() était utilisé précédemment mais accepte
-    /// n'importe quelle lettre Unicode, pas seulement [a-z0-9] — contraire au
-    /// commentaire d'origine. Longueur bornée : voir MaxSiteIdLength.
-    /// Partagé avec ScanEventsHub pour éviter une double implémentation qui
-    /// dérive silencieusement de cette règle.
+    /// Whitelist ASCII stricte [a-zA-Z0-9_-] (espaces et tirets automatiquement
+    /// normalisés en soulignés '_'), appliquée AVANT toute conversion de casse.
+    /// Longueur bornée : voir MaxSiteIdLength.
+    /// Partagé avec ScanEventsHub et les filtres d'en-têtes.
     /// </summary>
-    public static bool IsValidSiteId(string? siteId) =>
-        !string.IsNullOrWhiteSpace(siteId)
-        && siteId.Length <= MaxSiteIdLength
-        && siteId.All(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_');
+    public static bool IsValidSiteId(string? siteId)
+    {
+        if (string.IsNullOrWhiteSpace(siteId) || siteId.Length > MaxSiteIdLength)
+            return false;
+
+        var normalized = NormalizeSiteId(siteId);
+        return normalized.Length > 0 && normalized.Length <= MaxSiteIdLength
+            && normalized.All(c => (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_');
+    }
 }

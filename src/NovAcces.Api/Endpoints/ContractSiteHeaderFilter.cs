@@ -24,7 +24,8 @@ public sealed class ContractSiteHeaderFilter : IEndpointFilter
             return Results.BadRequest(new { error = "X-Site-Id requis et invalide." });
 
         var tenant = context.HttpContext.RequestServices.GetRequiredService<CurrentTenant>();
-        if (!string.Equals(siteId, tenant.SiteId, StringComparison.OrdinalIgnoreCase))
+        var normalizedHeaderSite = CurrentTenant.NormalizeSiteId(siteId);
+        if (!string.Equals(normalizedHeaderSite, tenant.SiteId, StringComparison.OrdinalIgnoreCase))
             return Results.Json(new { error = "X-Site-Id incohérent avec le jeton Agent." }, statusCode: StatusCodes.Status403Forbidden);
 
         return await next(context);

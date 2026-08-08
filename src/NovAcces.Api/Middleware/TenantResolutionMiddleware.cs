@@ -58,7 +58,7 @@ public sealed class TenantResolutionMiddleware
             // Le site de l'utilisateur fait foi. Un en-tête qui tenterait de viser
             // un AUTRE site est une tentative d'évasion de tenant : on refuse.
             if (!string.IsNullOrWhiteSpace(headerSite)
-                && !string.Equals(headerSite, claimSite, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(CurrentTenant.NormalizeSiteId(headerSite), CurrentTenant.NormalizeSiteId(claimSite), StringComparison.OrdinalIgnoreCase))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new { error = "Site demandé incohérent avec le compte." });
@@ -69,15 +69,13 @@ public sealed class TenantResolutionMiddleware
         else
         {
             var allowedSites = context.User?.FindAll(NovAccesClaimTypes.AllowedSite)
-                .Select(c => c.Value).ToList() ?? new List<string>();
+                .Select(c => CurrentTenant.NormalizeSiteId(c.Value)).ToList() ?? new List<string>();
 
             if (allowedSites.Count > 0)
             {
-                // Terminal partagé entre plusieurs sites : l'agent DOIT avoir choisi
-                // un site (X-Site-Id), et UNIQUEMENT parmi ceux autorisés pour ce
-                // terminal — jamais un site quelconque du parc.
+                var normalizedHeaderSite = CurrentTenant.NormalizeSiteId(headerSite ?? string.Empty);
                 if (string.IsNullOrWhiteSpace(headerSite)
-                    || !allowedSites.Contains(headerSite, StringComparer.OrdinalIgnoreCase))
+                    || !allowedSites.Contains(normalizedHeaderSite, StringComparer.OrdinalIgnoreCase))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new { error = "Site non autorisé pour ce terminal." });

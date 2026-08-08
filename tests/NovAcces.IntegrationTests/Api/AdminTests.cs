@@ -118,7 +118,12 @@ public sealed class AdminTests
         Assert.Equal(HttpStatusCode.OK, ticketResponse.StatusCode);
         var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
         Assert.NotNull(ticket);
-        Assert.Contains("novacces://enroll", ticket!.QrPayload);
+        // JSON {"ticket": "...", "baseUrl": "..."} — format attendu par le
+        // parseur de l'app agent réelle (React Native, parseEnrollmentTicket),
+        // PAS l'ancien schéma d'URI "novacces://enroll?..." du prototype MAUI
+        // abandonné.
+        Assert.Contains("\"ticket\"", ticket!.QrPayload);
+        Assert.Contains("\"baseUrl\"", ticket.QrPayload);
         Assert.True(ticket.ExpiresAt > DateTimeOffset.UtcNow);
 
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -1030,13 +1035,8 @@ public sealed class AdminTests
 
     private static string TicketFromQr(string payload)
     {
-        var marker = "ticket=";
-        var start = payload.IndexOf(marker, StringComparison.Ordinal);
-        Assert.True(start >= 0);
-        start += marker.Length;
-        var end = payload.IndexOf('&', start);
-        var encoded = end >= 0 ? payload[start..end] : payload[start..];
-        return Uri.UnescapeDataString(encoded);
+        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+        return doc.RootElement.GetProperty("ticket").GetString()!;
     }
 
     private static async Task<bool> SchemaHasTableAsync(string schema, string table)

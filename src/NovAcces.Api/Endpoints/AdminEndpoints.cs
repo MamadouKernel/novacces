@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -1210,7 +1211,13 @@ public static class AdminEndpoints
             {
                 publicBaseUrl = configuredBaseUrl.TrimEnd('/');
             }
-            var qrPayload = $"novacces://enroll?api={Uri.EscapeDataString(publicBaseUrl)}&ticket={Uri.EscapeDataString(ticket.Ticket)}&terminal={ticket.TerminalId:D}&expires={ticket.ExpiresAt.ToUnixTimeSeconds()}";
+            // Format JSON, PAS l'ancien schéma d'URI "novacces://enroll?..." (hérité
+            // du prototype MAUI abandonné) : l'app agent réelle est en React Native
+            // (dépôt sigasacces-mobile), et son parseur de ticket (parseEnrollmentTicket)
+            // n'accepte qu'un ticket brut ou ce JSON — jamais l'URI, qu'il aurait pris
+            // tel quel pour un "ticket" invalide, faisant échouer l'activation à
+            // chaque scan. Garder les deux formats synchronisés si l'un change.
+            var qrPayload = JsonSerializer.Serialize(new { ticket = ticket.Ticket, baseUrl = publicBaseUrl });
 
             await RecordOnEachSiteAsync(scopeFactory, ticket.SiteIds,
                 AdminAuditAction.EnrollmentTicketCreated, user.HostIdentifier(), ticket.TerminalId.ToString(),

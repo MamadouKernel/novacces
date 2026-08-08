@@ -47,6 +47,33 @@ public sealed class ScanViewModel
         return await EvaluateOfflineAsync(signedQr);
     }
 
+    /// <summary>
+    /// Scan par code de secours — TOUJOURS en ligne (voir AgentApiClient.
+    /// ScanManualCodeAsync) : contrairement au QR, aucun repli hors-ligne
+    /// n'est possible, donc pas d'appel à EvaluateOfflineAsync ici.
+    /// </summary>
+    public async Task<ScanVerdict> EvaluateManualCodeAsync(string code, CancellationToken ct = default)
+    {
+        if (!IsOnline)
+            return new ScanVerdict("HORS LIGNE", "Le code de secours nécessite une connexion", "#E0932A", false);
+
+        try
+        {
+            var r = await _api.ScanManualCodeAsync(code, _session.Direction, _session.ShiftToken, ct);
+            if (r is not null)
+                return ScanVerdict.FromApi(
+                    r.VerdictCode, r.IsGranted, r.IsCheckOut, r.IsSecurityEvent, r.VisitorName,
+                    r.PresenceMinutes, r.OverstayMinutes);
+        }
+        catch
+        {
+            // Panne réseau au moment précis de l'appel (la vérification IsOnline
+            // ci-dessus n'est qu'un instantané) — même message que le cas hors ligne.
+        }
+
+        return new ScanVerdict("SERVICE INDISPONIBLE", "Réessayez dans un instant", "#E0932A", false);
+    }
+
     private async Task<ScanVerdict> EvaluateOfflineAsync(string signedQr)
     {
         var now = DateTimeOffset.UtcNow;
@@ -98,6 +125,7 @@ public sealed record ScanVerdict(string Title, string Subtitle, string ColorHex,
         "CHECKED_OUT" => new("SORTIE ENREGISTRÉE", FormatSortie(name, presenceMinutes, overstayMinutes), Blue, false),
         "GRANTED" => new("ACCÈS AUTORISÉ", name ?? "", Green, false),
         "INVALID_SIGNATURE" => new("SIGNATURE INVALIDE", "QR altéré ou expiré", Red, true),
+        "INVALID_CODE" => new("CODE INCONNU", "Vérifiez la saisie auprès du visiteur", Red, true),
         _ when security => new("ACCÈS REFUSÉ", "Événement de sécurité", Red, true),
         _ => new("ACCÈS REFUSÉ", "Voir poste de garde", Orange, false),
     };

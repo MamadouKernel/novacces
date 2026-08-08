@@ -25,16 +25,48 @@
             </Border.StrokeShape>
         </Border>
 
-        <!-- Bandeau supérieur : connectivité + son + sens du poste -->
-        <Grid VerticalOptions="Start" Padding="16,40,16,16" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <!-- Bandeau supérieur : connectivité + code de secours + son + sens du poste -->
+        <Grid VerticalOptions="Start" Padding="16,40,16,16" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
             <Label x:Name="ConnectivityLabel" Text="● en ligne"
                    TextColor="White" FontSize="14" VerticalOptions="Center" />
-            <Button x:Name="SoundButton" Grid.Column="1" Text="🔊"
+            <Button x:Name="ManualCodeButton" Grid.Column="1" Text="🔑 Code"
+                    Clicked="OnToggleManualCode" BackgroundColor="{StaticResource BrandSlate}"
+                    TextColor="White" CornerRadius="8" Padding="10,0" />
+            <Button x:Name="SoundButton" Grid.Column="2" Text="🔊"
                     Clicked="OnToggleSound" BackgroundColor="{StaticResource BrandSlate}"
                     TextColor="White" CornerRadius="8" Padding="10,0" WidthRequest="46" />
-            <Button x:Name="DirectionButton" Grid.Column="2"
+            <Button x:Name="DirectionButton" Grid.Column="3"
                     Text="Poste : entrée" Clicked="OnToggleDirection"
                     BackgroundColor="{StaticResource Tertiary}" TextColor="White" CornerRadius="8" />
+        </Grid>
+
+        <!-- Panneau de saisie du code de secours (alternative au QR) : masque
+             la caméra pendant la saisie, comme le repli manuel de l'écran
+             d'enrôlement (EnrollmentPage). Toujours en ligne (voir
+             ScanViewModel.EvaluateManualCodeAsync). -->
+        <Grid x:Name="ManualCodePanel" IsVisible="False" BackgroundColor="#CC101820">
+            <Border BackgroundColor="{StaticResource BrandSlate}" Padding="24" WidthRequest="320"
+                    HorizontalOptions="Center" VerticalOptions="Center">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="16" />
+                </Border.StrokeShape>
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Code de secours" TextColor="White" FontSize="20" FontAttributes="Bold"
+                           HorizontalTextAlignment="Center" />
+                    <Label Text="Le visiteur n'a pas pu présenter son QR : demandez-lui le code reçu par email."
+                           TextColor="{StaticResource BrandMuted}" FontSize="13" HorizontalTextAlignment="Center" />
+                    <Entry x:Name="ManualCodeEntryField" Placeholder="XXXX-XXXX" TextColor="White"
+                           PlaceholderColor="{StaticResource BrandMuted}" HorizontalTextAlignment="Center"
+                           FontSize="22" Keyboard="Chat" />
+                    <Label x:Name="ManualCodePanelStatus" Text="" TextColor="{StaticResource BrandAmber}"
+                           FontSize="13" HorizontalTextAlignment="Center" />
+                    <Button x:Name="ManualCodeSubmitButton" Text="Valider" Clicked="OnManualCodeSubmit"
+                            BackgroundColor="{StaticResource BrandAmber}" TextColor="{StaticResource BrandNavyDeep}"
+                            FontAttributes="Bold" CornerRadius="8" />
+                    <Button Text="Annuler" Clicked="OnToggleManualCode"
+                            BackgroundColor="Transparent" TextColor="{StaticResource BrandMuted}" />
+                </VerticalStackLayout>
+            </Border>
         </Grid>
 
         <!-- Pied : poste + compteur de scans du jour -->

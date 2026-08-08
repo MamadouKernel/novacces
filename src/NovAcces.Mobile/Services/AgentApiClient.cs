@@ -69,6 +69,26 @@ public sealed class AgentApiClient
         return await response.Content.ReadFromJsonAsync<ScanResponseDto>(cancellationToken: ct);
     }
 
+    /// <summary>
+    /// Scan par code de secours (alternative au QR, visiteur sans téléphone
+    /// fonctionnel) — toujours EN LIGNE : contrairement au QR, le code n'est
+    /// pas vérifiable hors base (résoudre le code EST la recherche en base),
+    /// donc pas de repli hors-ligne possible ici (voir ScanManualCodeCommand).
+    /// </summary>
+    public async Task<ScanResponseDto?> ScanManualCodeAsync(string code, string direction, string? shiftToken, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/scan/manual-code")
+        {
+            Content = JsonContent.Create(new ScanManualCodeRequestDto(code, direction)),
+        };
+        if (!string.IsNullOrWhiteSpace(shiftToken))
+            req.Headers.Add("X-Shift-Token", shiftToken);
+
+        using var response = await _http.SendAsync(req, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ScanResponseDto>(cancellationToken: ct);
+    }
+
     /// <summary>Liste des attendus du jour (nom + statut + fenêtre uniquement).</summary>
     public async Task<IReadOnlyList<ExpectedVisitorDto>> GetExpectedTodayAsync(CancellationToken ct = default)
         => await _http.GetFromJsonAsync<List<ExpectedVisitorDto>>("/api/agent/expected-today", ct)

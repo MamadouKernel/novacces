@@ -130,6 +130,59 @@ public partial class ScanPage : ContentPage
         }
     }
 
+    // Bascule le panneau de saisie du code de secours — la caméra est coupée
+    // pendant la saisie (inutile, et évite un scan QR parasite en même temps).
+    private void OnToggleManualCode(object? sender, EventArgs e)
+    {
+        var showing = !ManualCodePanel.IsVisible;
+        ManualCodePanel.IsVisible = showing;
+        Camera.IsDetecting = !showing;
+        ManualCodePanelStatus.Text = "";
+        if (showing)
+        {
+            ManualCodeEntryField.Text = "";
+            ManualCodeEntryField.Focus();
+        }
+    }
+
+    private async void OnManualCodeSubmit(object? sender, EventArgs e)
+    {
+        var code = (ManualCodeEntryField.Text ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            ManualCodePanelStatus.Text = "Saisissez le code communiqué par le visiteur.";
+            return;
+        }
+
+        ManualCodeSubmitButton.IsEnabled = false;
+        ManualCodePanelStatus.Text = "Vérification…";
+        try
+        {
+            var verdict = await _vm.EvaluateManualCodeAsync(code);
+            _scanCount++;
+            ManualCodePanel.IsVisible = false;
+            Camera.IsDetecting = true;
+            // Verrouillé jusqu'au tapé de l'agent sur le verdict (OnDismissVerdict) —
+            // même garde que le scan QR, pour qu'une détection caméra parasite
+            // pendant l'affichage du verdict ne déclenche pas un second scan.
+            _processing = true;
+            ShowVerdict(verdict);
+            CountLabel.Text = _scanCount == 1 ? "1 scan aujourd'hui" : $"{_scanCount} scans aujourd'hui";
+
+            try { Vibration.Default.Vibrate(TimeSpan.FromMilliseconds(verdict.IsSecurityEvent ? 600 : 200)); } catch { }
+            if (_soundOn)
+                try { _ = TextToSpeech.Default.SpeakAsync(verdict.Title); } catch { }
+        }
+        catch
+        {
+            ManualCodePanelStatus.Text = "Erreur — réessayez.";
+        }
+        finally
+        {
+            ManualCodeSubmitButton.IsEnabled = true;
+        }
+    }
+
     private void ShowVerdict(ScanVerdict verdict)
     {
         VerdictTitle.Text = verdict.Title;

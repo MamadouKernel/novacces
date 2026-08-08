@@ -234,6 +234,8 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                             <th>Société</th>
                             <th>Mode</th>
                             <th>Rendez-vous</th>
+                            <th>Entrée</th>
+                            <th>Sortie</th>
                             <th scope="col" aria-sort="@AriaSort("status")"><button type="button" class="sortable-th-btn" @onclick='() => SortBy("status")'>Statut@(Arrow("status"))</button></th>
                             <th scope="col" aria-sort="@AriaSort("created")"><button type="button" class="sortable-th-btn" @onclick='() => SortBy("created")'>Créée@(Arrow("created"))</button></th>
                             <th></th>
@@ -247,7 +249,9 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
                                 <td class="muted" data-label="Société">@Highlight(v.VisitorCompany)</td>
                                 <td data-label="Mode">@(v.Mode == "Unique" ? "Unique" : "30 jours")</td>
                                 <td class="muted" data-label="Rendez-vous">@(v.Mode == "Unique" && v.ScheduledAt is { } rdv ? rdv.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
-                                <td data-label="Statut"><span class="badge badge-@v.Status.ToLowerInvariant()">@StatusLabel(v)</span></td>
+                                <td class="muted" data-label="Entrée">@(v.CheckedInAt is { } ci ? ci.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
+                                <td class="muted" data-label="Sortie">@(v.CheckedOutAt is { } co ? co.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")</td>
+                                <td data-label="Statut"><span class="badge @StatusBadgeClass(v)">@StatusLabel(v)</span></td>
                                 <td class="muted" data-label="Créée">@v.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
                                 <td data-label="Actions">
                                     <div class="flex flex-wrap gap-1.5 justify-end sm:justify-start">
@@ -770,9 +774,22 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
         finally { _revoking = false; }
     }
 
+    // Nom de la pastille CSS : PAS directement `v.Status.ToLowerInvariant()`
+    // (ex. "Consumed" → "badge-consumed", classe qui n'existe pas) — mappé
+    // explicitement vers les classes réellement définies dans app.css.
+    private static string StatusBadgeClass(HostVisitDto v) => v.Status switch
+    {
+        "Valid" => "badge-valid",
+        "Consumed" => "badge-used",
+        "Revoked" => "badge-revoked",
+        "Expired" => "badge-expired",
+        _ => "badge-pending",
+    };
+
     private static string StatusLabel(HostVisitDto v) => v.Status switch
     {
         "Valid" => "Valide",
+        "Consumed" => "Utilisée",
         "Revoked" => "Révoquée",
         "Expired" => "Expirée",
         _ => v.Status

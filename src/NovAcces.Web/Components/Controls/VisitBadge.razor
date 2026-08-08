@@ -12,7 +12,7 @@
     <img class="qr" src="@QrImage.ToDataUri(SignedQrPayload)" alt="QR visiteur" />
     <div class="badge-name">@VisitorName</div>
     <div class="badge-company">@VisitorCompany</div>
-    <div class="badge-valid">Valide jusqu'au @ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
+    <div class="badge-validity">Valide jusqu'au @ExpiresAt.LocalDateTime.ToString("dd/MM/yyyy 'à' HH:mm")</div>
     @if (!string.IsNullOrWhiteSpace(ManualCode))
     {
         <div class="badge-code">

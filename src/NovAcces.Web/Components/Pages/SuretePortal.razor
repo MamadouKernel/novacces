@@ -857,6 +857,15 @@ else if (CanViewDashboard)
             await InvokeAsync(StateHasChanged);
         });
 
+        // Correction de coordonnées par l'hôte (typo sur le nom, société,
+        // motif...) : sans cet abonnement, "Toutes les demandes" resterait
+        // affichée avec l'ancienne valeur jusqu'à un rafraîchissement manuel.
+        _hub.On<AgentVisitEventDto>("VisitUpdated", async _ =>
+        {
+            await ChangeVisitsPageAsync(_visitsPage);
+            await InvokeAsync(StateHasChanged);
+        });
+
         _hub.On<OverstayAlertDto>("OverstayAlert", async alert =>
         {
             _overstayAlerts.Insert(0, alert);

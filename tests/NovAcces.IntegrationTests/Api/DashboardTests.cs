@@ -137,6 +137,46 @@ public sealed class DashboardTests
     }
 
     [SkippableFact]
+    public async Task UpdateVisit_BroadcastsVisitUpdated_ToSiteGroup()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var sureteToken = await GetTokenAsync("Surete");
+        var hoteToken = await GetTokenAsync("Hote");
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, $"hubs/scan?site={NovAccesApiFactory.TestSite}"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(sureteToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<AgentVisitEventDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<AgentVisitEventDto>("VisitUpdated", e => received.TrySetResult(e));
+        await hub.StartAsync();
+
+        var hoteClient = _factory.CreateClient();
+        hoteClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", hoteToken);
+        var original = $"Typo-{Guid.NewGuid():N}";
+        var createResp = await hoteClient.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            original, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+
+        var corrected = $"Corrige-{Guid.NewGuid():N}";
+        var updateResp = await hoteClient.PutAsJsonAsync($"/api/visits/{created!.VisitId}",
+            new UpdateVisitRequestDto(corrected, "ACME", "Test", null, null));
+        updateResp.EnsureSuccessStatusCode();
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(created.VisitId, evt.VisitId);
+        Assert.Equal(corrected, evt.VisitorName);
+    }
+
+    [SkippableFact]
     public async Task Summary_And_CsvExport_Work()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

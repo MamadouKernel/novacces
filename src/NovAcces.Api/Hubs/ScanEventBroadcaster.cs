@@ -107,6 +107,15 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
         return Task.WhenAll(siteTask, adminTask);
     }
 
+    public Task BroadcastVisitUpdatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        var siteTask = _hub.Clients.Group(_tenant.SiteId).SendAsync(
+            "VisitUpdated", new AgentVisitEventDto(visitId, visitorName, occurredAt), ct);
+        var adminTask = _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(
+            "AdminEntityChanged", new AdminEntityChangedDto("visits", occurredAt), ct);
+        return Task.WhenAll(siteTask, adminTask);
+    }
+
     public Task NotifyEntityChangedAsync(string kind, CancellationToken ct) =>
         _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(
             "AdminEntityChanged", new AdminEntityChangedDto(kind, DateTimeOffset.UtcNow), ct);

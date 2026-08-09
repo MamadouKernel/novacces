@@ -5,4 +5,5 @@ public interface IAgentEventBroadcaster
 {
     Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct);
     Task BroadcastVisitRevokedAsync(Guid visitId, DateTimeOffset occurredAt, CancellationToken ct);
+    Task BroadcastVisitUpdatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct);
 }

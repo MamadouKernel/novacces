@@ -283,6 +283,8 @@ public static class VisitEndpoints
             UpdateVisitRequestDto request,
             ClaimsPrincipal user,
             UpdateVisitHandler handler,
+            IAgentEventBroadcaster events,
+            IDateTimeProvider clock,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.VisitorName))
@@ -297,9 +299,16 @@ public static class VisitEndpoints
             if (result.Forbidden)
                 return Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status403Forbidden);
 
-            return result.Success
-                ? Results.Ok(new { message = "Coordonnées mises à jour.", invitationResent = result.InvitationResent })
-                : Results.BadRequest(new { error = result.Error });
+            if (!result.Success)
+                return Results.BadRequest(new { error = result.Error });
+
+            // Sûreté/Admin affichent le nom/société/motif dans "Toutes les
+            // demandes" — sans cet écho, une correction (typo sur le nom, par
+            // exemple) resterait invisible tant que personne ne rafraîchit à la
+            // main. Même schéma que VisitCreated/VisitRevoked ci-dessus.
+            await events.BroadcastVisitUpdatedAsync(visitId, request.VisitorName, clock.UtcNow, ct);
+
+            return Results.Ok(new { message = "Coordonnées mises à jour.", invitationResent = result.InvitationResent });
         })
         .RequireAuthorization(NovAccesRoles.Hote)
         .WithName("UpdateVisit")

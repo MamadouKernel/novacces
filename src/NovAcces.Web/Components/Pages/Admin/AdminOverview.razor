@@ -518,13 +518,26 @@
             // Dégradé de privilège au sein de chaque famille de teinte : navy pour
             // les rôles opérationnels (Hôte, clair → Sûreté, plus soutenu), ambre
             // pour les rôles d'administration (Admin, clair → SuperAdmin, soutenu).
-            return new()
+            var points = new List<ChartPoint>
             {
                 new("Hôtes", hotes, "#7ca1ae"),
                 new("Sûreté", surete, "#123649"),
-                new("Admin", admins, "#f5a300"),
-                new("SuperAdmin", superAdmins, "#7a5200"),
             };
+
+            if (IsSuperAdmin)
+            {
+                points.Add(new("Admin", admins, "#f5a300"));
+                points.Add(new("SuperAdmin", superAdmins, "#7a5200"));
+            }
+            else
+            {
+                // Moindre privilège : un Admin ordinaire n'a pas à savoir qu'un
+                // niveau SuperAdmin existe — comptés avec "Admin", indiscernables
+                // dans cette vue (le total du centre du donut reste exact).
+                points.Add(new("Admin", admins + superAdmins, "#f5a300"));
+            }
+
+            return points;
         }
     }
 

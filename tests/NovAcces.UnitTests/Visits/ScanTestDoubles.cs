@@ -88,6 +88,12 @@ internal sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
     public Task BroadcastOverstayAsync(OverstayBroadcastEvent overstay, CancellationToken ct) => Task.CompletedTask;
     public Task BroadcastConfirmationRequestedAsync(ConfirmationRequestedEvent requested, CancellationToken ct) => Task.CompletedTask;
     public Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct) => Task.CompletedTask;
+    public HostVisitBroadcastEvent? LastHostVisitEvent { get; private set; }
+    public Task BroadcastHostVisitEventAsync(HostVisitBroadcastEvent evt, CancellationToken ct)
+    {
+        LastHostVisitEvent = evt;
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeExclusionList : IExclusionListService

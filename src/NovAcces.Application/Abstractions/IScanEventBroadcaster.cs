@@ -24,7 +24,27 @@ public interface IScanEventBroadcaster
     /// retirer instantanément de sa liste « en attente ».
     /// </summary>
     Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct);
+
+    /// <summary>
+    /// Diffuse au groupe SignalR personnel de l'hôte (host:{HostUserId}) qu'un
+    /// événement vient de survenir sur SON visiteur (arrivée, départ, suspicion
+    /// de copie) — jusqu'ici l'hôte n'était notifié en direct QUE des
+    /// dépassements (BroadcastOverstayAsync), son portail restait muet sur les
+    /// entrées/sorties tant qu'il ne rechargeait pas la page. Complète, ne
+    /// remplace pas, la notification email/push existante (INotificationService.NotifyHostAsync) —
+    /// ce canal ne couvre que l'onglet ouvert.
+    /// </summary>
+    Task BroadcastHostVisitEventAsync(HostVisitBroadcastEvent evt, CancellationToken ct);
 }
+
+public sealed record HostVisitBroadcastEvent(
+    Guid VisitId,
+    string VisitorName,
+    HostEventKind Kind,
+    DateTimeOffset OccurredAt,
+    int? PresenceMinutes,
+    int? OverstayMinutes,
+    string HostUserId);
 
 public sealed record ConfirmationRequestedEvent(
     Guid RequestId, string VisitorName, string? CheckpointId, CheckpointDirection Direction, DateTimeOffset ExpiresAt);

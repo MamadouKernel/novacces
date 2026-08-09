@@ -163,8 +163,29 @@ internal sealed class ScanExecutionCore
         // §1.3 / §1.6 / §2 : l'hôte est prévenu de l'arrivée, du départ, ou
         // d'une présentation anormale de SON visiteur. Comme la diffusion :
         // après commit, best-effort, jamais bloquant pour le poste de contrôle.
+        // Deux canaux distincts et complémentaires : SignalR pour l'onglet
+        // ouvert (immédiat, silencieux si personne n'écoute), email/push pour
+        // le reste (onglet fermé, app mobile) — voir IScanEventBroadcaster.
         if (hostEvent is { } evt)
+        {
+            try
+            {
+                await _broadcaster.BroadcastHostVisitEventAsync(
+                    new HostVisitBroadcastEvent(
+                        evt.VisitId, evt.VisitorName, evt.Kind, now,
+                        evt.Kind == HostEventKind.Departure ? evt.PresenceMinutes : null,
+                        evt.Kind == HostEventKind.Departure ? evt.OverstayMinutes : null,
+                        evt.HostUserId),
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Échec de diffusion temps réel à l'hôte pour la visite {VisitId}.", evt.VisitId);
+            }
+
             await NotifyHostAsync(evt, ct);
+        }
 
         return result;
     }

@@ -76,3 +76,15 @@ public sealed record VisitEventDto(DateTimeOffset At, string Label, string? Deta
 /// <summary>Chronologie complète d'une demande.</summary>
 public sealed record VisitHistoryDto(
     Guid VisitId, string VisitorName, string Status, IReadOnlyList<VisitEventDto> Events);
+
+// ---- Événement temps réel personnel de l'hôte (SignalR, groupe host:{id}) ----
+
+/// <summary>
+/// Diffusé au portail hôte quand SON visiteur entre, sort, ou déclenche une
+/// suspicion de copie — Kind reprend les valeurs de HostEventKind ("Arrival",
+/// "Departure", "SuspectedDuplicate") en chaîne, pour rester un DTO Shared
+/// simple sans dépendre du type Application côté client Blazor.
+/// </summary>
+public sealed record HostVisitEventDto(
+    Guid VisitId, string VisitorName, string Kind, DateTimeOffset OccurredAt,
+    int? PresenceMinutes, int? OverstayMinutes);

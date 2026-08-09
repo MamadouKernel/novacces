@@ -837,6 +837,23 @@ else if (CanViewDashboard)
             if (_feed.Count > 50) _feed.RemoveRange(50, _feed.Count - 50);
             await RefreshOnSiteAsync();          // un scan change souvent les présents
             await RefreshSummaryAsync();
+            await ChangeVisitsPageAsync(_visitsPage); // entrée/sortie/statut change dans "Toutes les demandes"
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // Une visite créée ou révoquée doit apparaître/se mettre à jour dans
+        // « Toutes les demandes » sans que la sûreté ait à relancer une
+        // recherche — ces deux événements sont déjà diffusés au groupe du
+        // site (VisitEndpoints.cs), simplement pas encore écoutés ici.
+        _hub.On<AgentVisitEventDto>("VisitCreated", async _ =>
+        {
+            await ChangeVisitsPageAsync(_visitsPage);
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<AgentVisitEventDto>("VisitRevoked", async _ =>
+        {
+            await ChangeVisitsPageAsync(_visitsPage);
             await InvokeAsync(StateHasChanged);
         });
 

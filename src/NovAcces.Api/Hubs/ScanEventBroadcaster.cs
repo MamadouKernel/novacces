@@ -78,6 +78,14 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
     public Task BroadcastConfirmationResolvedAsync(Guid requestId, CancellationToken ct) =>
         _hub.Clients.Group(_tenant.SiteId).SendAsync("ConfirmationResolved", requestId, ct);
 
+    public Task BroadcastHostVisitEventAsync(HostVisitBroadcastEvent evt, CancellationToken ct)
+    {
+        var dto = new HostVisitEventDto(
+            evt.VisitId, evt.VisitorName, evt.Kind.ToString(), evt.OccurredAt,
+            evt.PresenceMinutes, evt.OverstayMinutes);
+        return _hub.Clients.Group(HostGroup(evt.HostUserId)).SendAsync("HostVisitEvent", dto, ct);
+    }
+
     public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct) =>
         _hub.Clients.Group(_tenant.SiteId).SendAsync(
             "VisitCreated", new AgentVisitEventDto(visitId, visitorName, occurredAt), ct);

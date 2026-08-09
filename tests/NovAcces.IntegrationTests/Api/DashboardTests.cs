@@ -91,6 +91,52 @@ public sealed class DashboardTests
     }
 
     [SkippableFact]
+    public async Task Scan_BroadcastsHostVisitEvent_OnArrival_ToHostsPersonalGroup()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Jusqu'ici l'hôte n'était alerté en direct QUE des dépassements — son
+        // portail restait muet sur l'arrivée de son propre visiteur tant qu'il
+        // ne rechargeait pas la page. Connexion au groupe SignalR PERSONNEL
+        // (?hote=1, voir ScanEventsHub), pas le groupe du site.
+        var hoteToken = await GetTokenAsync("Hote");
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "hubs/scan?hote=1"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(hoteToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<HostVisitEventDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<HostVisitEventDto>("HostVisitEvent", e => received.TrySetResult(e));
+        await hub.StartAsync();
+
+        // La visite doit être créée par CE MÊME hôte (celui connecté au hub) :
+        // la diffusion cible le groupe personnel du HostUserId de la visite.
+        var hoteClient = _factory.CreateClient();
+        hoteClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", hoteToken);
+        var visitorName = $"HostLive-{Guid.NewGuid():N}";
+        var createResp = await hoteClient.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            visitorName, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+        var scan = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(created!.SignedQrPayload, "Entry", "ignore"));
+        scan.EnsureSuccessStatusCode();
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(visitorName, evt.VisitorName);
+        Assert.Equal("Arrival", evt.Kind);
+    }
+
+    [SkippableFact]
     public async Task Summary_And_CsvExport_Work()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

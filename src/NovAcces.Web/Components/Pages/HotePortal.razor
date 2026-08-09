@@ -780,6 +780,24 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             await InvokeAsync(StateHasChanged);
         });
 
+        // Jusqu'ici l'hôte n'était alerté en direct QUE des dépassements
+        // (ci-dessus) — son portail restait muet sur l'arrivée/le départ de
+        // SON visiteur tant qu'il ne rechargeait pas la page. Même groupe
+        // SignalR personnel (host:{HostUserId}), voir ScanExecutionCore.
+        _hub.On<HostVisitEventDto>("HostVisitEvent", async evt =>
+        {
+            var message = evt.Kind switch
+            {
+                "Arrival" => $"« {evt.VisitorName} » vient d'entrer sur site.",
+                "Departure" => $"« {evt.VisitorName} » vient de sortir.",
+                "SuspectedDuplicate" => $"⚠ « {evt.VisitorName} » présenté à l'entrée alors que déjà marqué présent — suspicion de copie.",
+                _ => $"Mise à jour pour « {evt.VisitorName} ».",
+            };
+            if (evt.Kind == "SuspectedDuplicate") Toasts.Error(message); else Toasts.Info(message);
+            await RefreshMyVisitsAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
         try { await _hub.StartAsync(); } catch { /* best-effort : pas de son sans réseau, rien d'autre n'en dépend */ }
     }
 

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using Npgsql;
 using NovAcces.Shared.Dtos;
 using Xunit;
@@ -169,6 +171,55 @@ public sealed class AgentTests
 
         Assert.True(await CountScanLogsByAgentAsync(visitId, matricule) >= 1,
             "Le scan aurait dû être tracé au matricule de l'agent.");
+    }
+
+    [SkippableFact]
+    public async Task Agent_CanConnectToScanEventsHub_ViaShiftToken_AndReceiveScanRecorded()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Prouve que /hubs/scan-events (policy AgentEvents, scaffoldé mais
+        // jusqu'ici jamais consommé par le client mobile) fonctionne
+        // réellement avec le jeton de poste de l'agent — c'est le fondement
+        // du temps réel côté app agent (pas de nouvelle infra d'auth requise,
+        // CreateShiftToken émet déjà un JWT signé par le même service que le
+        // reste de l'app, avec le rôle Agent + le claim SiteId).
+        var matricule = "SG-" + Guid.NewGuid().ToString("N")[..6];
+        const string pin = "6203";
+        var admin = await LoginNewUserAsync("Admin");
+        (await admin.PostAsJsonAsync("/api/admin/agents",
+            new CreateAgentRequestDto(NovAccesApiFactory.TestSite, matricule, "Agent Test", pin)))
+            .EnsureSuccessStatusCode();
+
+        var agent = AgentClient();
+        var shiftResp = await agent.PostAsJsonAsync("/api/agent/shift/start", new ShiftStartRequestDto(matricule, pin));
+        shiftResp.EnsureSuccessStatusCode();
+        var shift = await shiftResp.Content.ReadFromJsonAsync<ShiftStartResponseDto>(Json);
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, $"hubs/scan-events?site={NovAccesApiFactory.TestSite}"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(shift!.ShiftToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<ScanEventDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<ScanEventDto>("ScanRecorded", e => received.TrySetResult(e));
+        await hub.StartAsync();
+
+        var visitorName = $"AgentHubLive-{Guid.NewGuid():N}";
+        var (visitId, payload) = await CreateVisitWithQrAsync(visitorName);
+        _ = visitId;
+        agent.DefaultRequestHeaders.Add("X-Shift-Token", shift!.ShiftToken);
+        (await agent.PostAsJsonAsync("/api/scan", new ScanRequestDto(payload, "Entry", "ignore")))
+            .EnsureSuccessStatusCode();
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(visitorName, evt.VisitorName);
+        Assert.True(evt.IsGranted);
     }
 
     [SkippableFact]

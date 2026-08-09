@@ -19,5 +19,15 @@ public enum ScanAuthMethod
     /// exclusion, fenêtre) a quand même eu lieu au moment de l'approbation,
     /// via ScanExecutionCore — seule la PREUVE d'identité diffère d'un QR/code.
     /// </summary>
-    SureteConfirmation = 3
+    SureteConfirmation = 3,
+
+    /// <summary>
+    /// Entrée accordée malgré une correspondance sur la liste d'exclusion
+    /// (REQ-F-11), sur décision explicite et justifiée de la sûreté — cas des
+    /// homonymes : l'exclusion ne compare que le nom (voir ExclusionListService),
+    /// donc une personne distincte de celle réellement exclue peut y matcher.
+    /// Voir Visit.Scan(exclusionOverrideBySecurity) et OverrideExclusionAndEnterCommand.
+    /// Toutes les autres règles (anti-rejeu, fenêtre, cycle) restent appliquées.
+    /// </summary>
+    ExclusionOverride = 4
 }

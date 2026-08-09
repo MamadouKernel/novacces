@@ -133,6 +133,7 @@ public static class DependencyInjection
         services.AddScoped<CreateConfirmationRequestHandler>();
         services.AddScoped<ApproveConfirmationRequestHandler>();
         services.AddScoped<DenyConfirmationRequestHandler>();
+        services.AddScoped<OverrideExclusionAndEnterHandler>();
 
         return services;
     }

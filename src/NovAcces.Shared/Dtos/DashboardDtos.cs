@@ -55,7 +55,15 @@ public sealed record VisitListEntryDto(
     DateTimeOffset? CheckedInAt,
     DateTimeOffset? CheckedOutAt,
     string? RevokedBy,
-    DateTimeOffset? RevokedAt);
+    DateTimeOffset? RevokedAt,
+    // Vrai si le NOM de ce visiteur correspond actuellement à la liste
+    // d'exclusion du site (même comparaison que ScanExecutionCore, relue en
+    // direct) — signale à la sûreté qu'un scan serait refusé, et permet
+    // d'afficher l'action de contournement pour les homonymes innocents.
+    bool MatchesExclusionList = false);
+
+/// <summary>Contournement d'une correspondance sur la liste d'exclusion (sûreté uniquement).</summary>
+public sealed record ExclusionOverrideRequestDto(string Justification);
 
 /// <summary>
 /// Visiteur actuellement présent sur site (avec état de dépassement).

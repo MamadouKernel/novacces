@@ -218,11 +218,11 @@ else if (CanViewDashboard)
         {
             <div class="table-wrap table-cards">
             <table class="visits">
-                <thead><tr><th>Visiteur</th><th>Société</th><th>Motif</th><th>Mode</th><th>Rendez-vous</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th></tr></thead>
+                <thead><tr><th>Visiteur</th><th>Société</th><th>Motif</th><th>Mode</th><th>Rendez-vous</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th><th>Exclusion</th></tr></thead>
                 <tbody>
                     @foreach (var v in _visits)
                     {
-                        <tr>
+                        <tr class="@(v.MatchesExclusionList ? "row-security" : "")">
                             <td data-label="Visiteur">
                                 <button class="btn-ghost" style="padding:0;font:inherit;text-decoration:underline;" @onclick="() => _historyVisitId = v.VisitId">@v.VisitorName</button>
                             </td>
@@ -247,6 +247,17 @@ else if (CanViewDashboard)
                             <td class="muted" data-label="Créé le">@v.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</td>
                             <td class="muted" data-label="Entrée">@(v.CheckedInAt is { } ci ? ci.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
                             <td class="muted" data-label="Sortie">@(v.CheckedOutAt is { } co ? co.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
+                            <td data-label="Exclusion">
+                                @if (v.MatchesExclusionList)
+                                {
+                                    <span class="badge badge-revoked" title="Le nom de ce visiteur correspond à la liste d'exclusion du site — un scan serait refusé.">⚠ Exclu</span>
+                                    @if (!v.IsOnSite)
+                                    {
+                                        <button class="btn-ghost" style="padding:.15rem .5rem;font-size:.72rem;display:block;margin-top:.25rem;white-space:nowrap;"
+                                                @onclick="() => _pendingOverride = v">Autoriser quand même</button>
+                                    }
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -446,6 +457,37 @@ else if (CanViewDashboard)
             </div>
         </div>
     }
+
+    @if (_pendingOverride is { } po)
+    {
+        <div class="overlay" @onclick="CancelOverride">
+            <div class="modal" style="max-width:28rem" @onclick:stopPropagation="true">
+                <div class="modal-h">
+                    <div><h2>Autoriser malgré l'exclusion ?</h2></div>
+                </div>
+                <div class="modal-b">
+                    <p><strong>@po.VisitorName</strong> correspond à un nom de la liste d'exclusion du site.</p>
+                    <p class="hint">
+                        À utiliser uniquement après vérification d'identité (pièce d'identité) confirmant qu'il ne
+                        s'agit PAS de la personne réellement exclue — cas d'un homonyme. L'action est journalisée et
+                        tracée à votre compte, et reste soumise aux autres règles (fenêtre de validité, anti-rejeu).
+                    </p>
+                    <div class="field">
+                        <label>Justification (obligatoire)</label>
+                        <input @bind="_overrideJustification" @bind:event="oninput"
+                               placeholder="ex. pièce d'identité vérifiée, homonyme confirmé" />
+                    </div>
+                </div>
+                <div class="modal-f">
+                    <button class="btn-ghost" @onclick="CancelOverride">Annuler</button>
+                    <button class="btn-primary" style="max-width:220px" @onclick="ConfirmExclusionOverrideAsync"
+                            disabled="@(_overriding || string.IsNullOrWhiteSpace(_overrideJustification))">
+                        @(_overriding ? "Traitement…" : "Oui, autoriser l'entrée")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
@@ -485,6 +527,42 @@ else if (CanViewDashboard)
     private Guid? _historyVisitId;
     private OnSiteVisitorDto? _pendingCheckOut;
     private bool _checkingOut;
+
+    private VisitListEntryDto? _pendingOverride;
+    private string _overrideJustification = "";
+    private bool _overriding;
+
+    private void CancelOverride()
+    {
+        _pendingOverride = null;
+        _overrideJustification = "";
+    }
+
+    private async Task ConfirmExclusionOverrideAsync()
+    {
+        if (_pendingOverride is not { } v || _overriding || string.IsNullOrWhiteSpace(_overrideJustification)) return;
+        _overriding = true;
+        try
+        {
+            var (success, result, error) = await Api.OverrideExclusionAsync(v.VisitId, _overrideJustification.Trim());
+            if (success)
+            {
+                CancelOverride();
+                // Comme pour l'approbation de confirmation : le succès HTTP ne
+                // garantit pas l'accès, ScanExecutionCore revérifie tout
+                // (fenêtre, anti-rejeu) au moment même du contournement.
+                if (result is { IsGranted: true })
+                    Toasts.Success($"Entrée autorisée pour « {result.VisitorName} » malgré l'exclusion.");
+                else
+                    Toasts.Error($"Contournement enregistré, mais l'accès a été refusé ({result?.VerdictCode}) — voir le journal.");
+                await ChangeVisitsPageAsync(_visitsPage);
+                await RefreshOnSiteAsync();
+            }
+            else { Toasts.Error(error ?? "Le contournement a échoué."); }
+        }
+        catch { Toasts.Error("Service indisponible, réessayez."); }
+        finally { _overriding = false; }
+    }
 
     private async Task ConfirmManualCheckOutAsync()
     {

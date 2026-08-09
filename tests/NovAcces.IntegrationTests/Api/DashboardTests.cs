@@ -260,6 +260,64 @@ public sealed class DashboardTests
         Assert.NotEqual(entry.AgentId, entry.CreatedByDisplayName);
     }
 
+    [SkippableFact]
+    public async Task ExclusionOverride_LetsAnExcludedNameEnter_WhenJustifiedBySurete()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Cas homonyme : le nom exact est sur la liste d'exclusion AVANT même
+        // la création de la demande — un scan normal doit être refusé.
+        var visitorName = $"Homonyme-{Guid.NewGuid():N}";
+        var surete = await LoginNewUserAsync("Surete");
+        var addExclusion = await surete.PostAsJsonAsync("/api/exclusions",
+            new AddExclusionRequestDto(visitorName, "Test contournement"));
+        addExclusion.EnsureSuccessStatusCode();
+
+        var hote = await LoginNewUserAsync("Hote");
+        var createResp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            visitorName, "ACME", "Test override", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+        var scan = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(created!.SignedQrPayload, "Entry", "ignore"));
+        var scanResult = await scan.Content.ReadFromJsonAsync<ScanResponseDto>(Json);
+        Assert.False(scanResult!.IsGranted);
+        Assert.Equal("DENIED_Excluded", scanResult.VerdictCode);
+
+        // La vue « toutes les demandes » doit signaler la correspondance.
+        var list = await surete.GetFromJsonAsync<PagedResultDto<VisitListEntryDto>>(
+            $"/api/dashboard/visits?q={visitorName}", Json);
+        Assert.True(Assert.Single(list!.Items).MatchesExclusionList);
+
+        // Un Hôte n'a pas accès au contournement (moindre privilège) : 403.
+        var refused = await hote.PostAsJsonAsync(
+            $"/api/dashboard/visits/{created.VisitId}/exclusion-override", new ExclusionOverrideRequestDto("test"));
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        // Sans justification : refusé (garde-fou applicatif).
+        var noJustification = await surete.PostAsJsonAsync(
+            $"/api/dashboard/visits/{created.VisitId}/exclusion-override", new ExclusionOverrideRequestDto(""));
+        Assert.Equal(HttpStatusCode.BadRequest, noJustification.StatusCode);
+
+        // Avec justification : l'entrée est accordée malgré l'exclusion.
+        var justification = "Pièce d'identité vérifiée — homonyme confirmé, pas la personne exclue.";
+        var overrideResp = await surete.PostAsJsonAsync(
+            $"/api/dashboard/visits/{created.VisitId}/exclusion-override",
+            new ExclusionOverrideRequestDto(justification));
+        overrideResp.EnsureSuccessStatusCode();
+        var decision = await overrideResp.Content.ReadFromJsonAsync<ConfirmationRequestDecisionDto>(Json);
+        Assert.True(decision!.IsGranted);
+        Assert.True(decision.IsSecurityEvent); // jamais un octroi silencieux
+
+        // Le journal garde la trace du contournement, distincte d'un scan normal.
+        var journal = await surete.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?q={visitorName}", Json);
+        Assert.Contains(journal!.Items, e => e.WasGranted && e.IsSecurityEvent && e.AuthMethod == "ExclusionOverride");
+    }
+
     // ---- Aides ----
 
     private async Task<Guid> CreateVisitAndCheckInAsync(

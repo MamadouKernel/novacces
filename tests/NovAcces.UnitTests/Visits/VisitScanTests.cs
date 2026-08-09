@@ -295,6 +295,60 @@ public class VisitScanTests
     }
 
     [Fact]
+    public void Scan_ExcludedVisitor_WithSecurityOverride_IsGrantedAndFlaggedAsSecurityEvent()
+    {
+        // Cas des homonymes : la sûreté a vérifié l'identité et outrepasse
+        // explicitement le refus d'exclusion — voir OverrideExclusionAndEnterHandler.
+        // L'octroi doit rester repérable dans le journal (IsSecurityEvent),
+        // jamais un octroi silencieux.
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now, excluded: true);
+
+        var outcome = visit.Scan(
+            CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false,
+            exclusionOverrideBySecurity: true);
+
+        Assert.True(outcome.IsGranted);
+        Assert.True(outcome.IsSecurityEvent);
+        Assert.True(visit.IsOnSite);
+        Assert.Equal(VisitStatus.Consumed, visit.Status);
+    }
+
+    [Fact]
+    public void Scan_NotExcluded_WithSecurityOverrideFlagSet_BehavesLikeOrdinaryGrant()
+    {
+        // Le drapeau de contournement n'a d'effet QUE s'il y a effectivement une
+        // correspondance d'exclusion — il ne doit jamais, par accident, changer
+        // le comportement d'un octroi ordinaire.
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now, now: now, excluded: false);
+
+        var outcome = visit.Scan(
+            CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false,
+            exclusionOverrideBySecurity: true);
+
+        Assert.True(outcome.IsGranted);
+        Assert.False(outcome.IsSecurityEvent);
+    }
+
+    [Fact]
+    public void Scan_ExcludedVisitor_WithSecurityOverride_StillDeniedIfWindowClosed()
+    {
+        // Le contournement ne dispense d'AUCUNE autre règle : ici la fenêtre de
+        // validité est dépassée, le contournement d'exclusion ne doit pas
+        // "sauver" un scan par ailleurs hors fenêtre.
+        var now = DateTimeOffset.UtcNow;
+        var visit = CreateUniqueVisit(scheduledAt: now.AddHours(-19), now: now.AddHours(-19), excluded: true);
+
+        var outcome = visit.Scan(
+            CheckpointDirection.Entry, isBusinessDay: true, now, isOnExclusionList: false,
+            exclusionOverrideBySecurity: true);
+
+        Assert.False(outcome.IsGranted);
+        Assert.Equal(ScanDenialReason.TooLate, outcome.DenialReason);
+    }
+
+    [Fact]
     public void Scan_ThirtyDaysMode_OnNonBusinessDay_IsDenied()
     {
         var now = DateTimeOffset.UtcNow;

@@ -131,8 +131,22 @@ public class Visit
     /// optionnel à dessein : un appelant qui oublierait de le fournir laisserait
     /// passer une personne écartée, c'est au compilateur de l'en empêcher.
     /// </param>
+    /// <param name="exclusionOverrideBySecurity">
+    /// Vrai UNIQUEMENT pour le chemin dédié où la sûreté a explicitement
+    /// vérifié l'identité et décidé de laisser entrer malgré une correspondance
+    /// sur la liste d'exclusion (cas des homonymes : la correspondance ne se
+    /// fait que sur le nom — voir ExclusionListService — donc deux personnes
+    /// distinctes peuvent partager la même entrée). Défaut à faux : un appelant
+    /// ordinaire (scan QR/code au poste) ne le fournit jamais, le comportement
+    /// est donc inchangé partout ailleurs. Ne dispense d'AUCUNE autre règle
+    /// (anti-rejeu, fenêtre, cycle, jours ouvrés) — seul le refus d'exclusion
+    /// est court-circuité, le reste de Scan() s'applique normalement. L'entrée
+    /// accordée par ce chemin reste marquée événement de sécurité (voir plus
+    /// bas) : jamais un octroi silencieux.
+    /// </param>
     public ScanOutcome Scan(
-        CheckpointDirection direction, bool isBusinessDay, DateTimeOffset now, bool isOnExclusionList)
+        CheckpointDirection direction, bool isBusinessDay, DateTimeOffset now, bool isOnExclusionList,
+        bool exclusionOverrideBySecurity = false)
     {
         // 1. Liste d'exclusion : refus générique, motif réservé à la sûreté (REQ-F-11).
         //    On retient l'instantané de création OU l'état courant : une personne
@@ -141,7 +155,8 @@ public class Visit
         //    Réciproquement, on ne « déverrouille » pas un QR émis pour une
         //    personne déjà exclue : son retrait de la liste est une décision de
         //    sûreté qui passe par une nouvelle demande de visite.
-        if ((IsExcluded || isOnExclusionList) && !IsOnSite)
+        var matchesExclusion = (IsExcluded || isOnExclusionList) && !IsOnSite;
+        if (matchesExclusion && !exclusionOverrideBySecurity)
             return ScanOutcome.Denied(ScanDenialReason.Excluded, isSecurityEvent: true);
 
         // 2. Poste SORTIE : ne gère que des sorties, jamais d'entrée
@@ -197,7 +212,11 @@ public class Visit
         if (Mode == AccessMode.Unique)
             Status = VisitStatus.Consumed;
 
-        return ScanOutcome.Granted();
+        // Un octroi qui a nécessité de court-circuiter l'exclusion reste un
+        // événement de sécurité (jamais un octroi silencieux), même si l'issue
+        // finale est un accès accordé — la sûreté doit pouvoir le retrouver
+        // dans le journal aussi facilement qu'un refus.
+        return ScanOutcome.Granted(isSecurityEvent: matchesExclusion);
     }
 
     private ScanOutcome CheckOut(DateTimeOffset now)
@@ -421,7 +440,7 @@ public sealed class ScanOutcome
         PresenceMinutesAtCheckOut = presence;
     }
 
-    public static ScanOutcome Granted() => new(true, false, false, null, 0, 0);
+    public static ScanOutcome Granted(bool isSecurityEvent = false) => new(true, false, isSecurityEvent, null, 0, 0);
     public static ScanOutcome CheckedOut(int overstayMinutes, int presenceMinutes = 0) =>
         new(true, true, false, null, overstayMinutes, presenceMinutes);
     public static ScanOutcome Denied(ScanDenialReason reason, bool isSecurityEvent) =>

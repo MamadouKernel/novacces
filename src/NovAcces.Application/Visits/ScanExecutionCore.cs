@@ -60,7 +60,8 @@ internal sealed class ScanExecutionCore
         bool isBusinessDayOverride,
         string? checkpointId,
         DateTimeOffset now,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool exclusionOverrideBySecurity = false)
     {
         // Section critique de l'anti-rejeu (REQ-SEC-03) enveloppée dans UNE
         // transaction : le verrou pessimiste posé par loadVisitForUpdate
@@ -96,7 +97,7 @@ internal sealed class ScanExecutionCore
             var isOnExclusionList = await _exclusionList.IsExcludedAsync(visit.VisitorName, token);
 
             // Application de la règle métier (Domain) — jamais dupliquée ici.
-            var outcome = visit.Scan(direction, isBusinessDayOverride, now, isOnExclusionList);
+            var outcome = visit.Scan(direction, isBusinessDayOverride, now, isOnExclusionList, exclusionOverrideBySecurity);
 
             // Journalisation inaltérable, y compris pour les refus. Le dépôt
             // de scans partage le même DbContext : un seul SaveChanges
@@ -195,6 +196,9 @@ internal sealed class ScanExecutionCore
         { IsCheckOut: true, OverstayMinutesAtCheckOut: > 0 } o =>
             $"Sortie enregistrée · dépassement de la durée prévue : +{o.OverstayMinutesAtCheckOut} min",
         { IsCheckOut: true } => "Sortie enregistrée",
+        // Seul chemin actuel où un octroi porte IsSecurityEvent : le contournement
+        // sûreté d'une correspondance d'exclusion (Visit.Scan, matchesExclusion).
+        { IsGranted: true, IsSecurityEvent: true } => "Accès autorisé malgré une correspondance sur la liste d'exclusion (contournement sûreté)",
         { IsGranted: true } => "Accès autorisé",
         { DenialReason: ScanDenialReason.Excluded } => "Personne figurant sur la liste d'exclusion du site (REQ-F-11)",
         { DenialReason: ScanDenialReason.SuspectedDuplicate } => "QR présenté à l'entrée alors qu'une entrée est déjà enregistrée — suspicion de copie",

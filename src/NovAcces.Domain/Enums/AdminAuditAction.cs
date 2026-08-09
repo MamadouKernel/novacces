@@ -100,5 +100,13 @@ public enum AdminAuditAction
     ConfirmationRequestDenied,
 
     /// <summary>Demande de confirmation expirée sans réponse de la sûreté — refus implicite (décision du 08/08/2026).</summary>
-    ConfirmationRequestExpired
+    ConfirmationRequestExpired,
+
+    /// <summary>
+    /// Entrée autorisée par la sûreté malgré une correspondance sur la liste
+    /// d'exclusion (cas homonyme) — voir OverrideExclusionAndEnterCommand.
+    /// Le detail porte la justification saisie ET le verdict réel du scan
+    /// (peut différer si une autre règle a entre-temps refusé l'accès).
+    /// </summary>
+    ExclusionOverridden
 }

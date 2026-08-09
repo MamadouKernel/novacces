@@ -300,6 +300,21 @@ public sealed class NovAccesApiClient
         return response.IsSuccessStatusCode ? (true, null) : (false, await ReadErrorAsync(response));
     }
 
+    /// <summary>
+    /// Contournement justifié d'une correspondance sur la liste d'exclusion
+    /// (cas homonyme) — voir OverrideExclusionAndEnterHandler. Toujours audité
+    /// côté API ; l'octroi réel reste soumis aux autres règles (fenêtre, cycle).
+    /// </summary>
+    public async Task<(bool Success, ConfirmationRequestDecisionDto? Result, string? Error)> OverrideExclusionAsync(
+        Guid visitId, string justification)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync(
+            $"/api/dashboard/visits/{visitId}/exclusion-override", new ExclusionOverrideRequestDto(justification));
+        if (!response.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(response));
+        return (true, await response.Content.ReadFromJsonAsync<ConfirmationRequestDecisionDto>(), null);
+    }
+
     /// <summary>Synthèse du jour (dashboard sûreté).</summary>
     public async Task<DashboardSummaryDto?> GetSummaryAsync()
         => await CreateClient(true).GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary");

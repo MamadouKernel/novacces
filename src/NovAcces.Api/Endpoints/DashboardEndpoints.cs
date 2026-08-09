@@ -58,13 +58,18 @@ public static class DashboardEndpoints
         // leur statut, avec l'hôte qui les a créées — répond au besoin de la
         // sûreté de savoir qui a invité qui, pas seulement qui a scanné.
         group.MapGet("/visits", async (
-            IVisitRepository visits, IHostDirectory hosts, IDateTimeProvider clock,
+            IVisitRepository visits, IHostDirectory hosts, IExclusionListService exclusionList, IDateTimeProvider clock,
             int? page, int? pageSize, string? q, CancellationToken ct) =>
         {
             var (p, size) = PaginationQuery.Normalize(page, pageSize, defaultPageSize: 20, maxPageSize: 200);
             var (items, total) = await visits.GetPagedAsync(p, size, q, ct);
 
             var hostContacts = await hosts.FindManyAsync(items.Select(v => v.HostUserId).Distinct().ToList(), ct);
+            // Un seul aller-retour pour toute la page (pas un IsExcludedAsync par
+            // ligne) : mêmes noms normalisés que ScanExecutionCore, comparés en
+            // mémoire — signale les homonymes potentiels à la sûreté et permet
+            // d'afficher l'action de contournement (voir /visits/{id}/exclusion-override).
+            var excludedNames = await exclusionList.GetExcludedNormalizedNamesAsync(ct);
             var now = clock.UtcNow;
 
             var dto = items.Select(v =>
@@ -74,13 +79,35 @@ public static class DashboardEndpoints
                     v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), DisplayStatus(v, now),
                     v.CreatedAt, contact?.DisplayName ?? "Hôte inconnu", contact?.Email,
                     v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CheckedInAt, v.CheckedOutAt,
-                    v.RevokedBy, v.RevokedAt);
+                    v.RevokedBy, v.RevokedAt,
+                    excludedNames.Contains(ExclusionEntry.Normalize(v.VisitorName)));
             }).ToList();
 
             return Results.Ok(new PagedResultDto<VisitListEntryDto>(dto, p, size, total));
         })
         .WithName("AllSiteVisits")
         .WithSummary("Toutes les demandes de visite du site, paginées (recherche via 'q'), avec l'hôte créateur.");
+
+        // Cas des homonymes (REQ-F-11) : l'exclusion ne compare que le nom
+        // (voir ExclusionListService), donc une personne DISTINCTE de celle
+        // réellement exclue peut y correspondre et se voir refuser l'entrée
+        // sans recours. Cette action donne à la sûreté un levier explicite,
+        // justifié et audité — jamais un contournement silencieux, et qui ne
+        // dispense d'aucune autre règle (voir OverrideExclusionAndEnterHandler).
+        group.MapPost("/visits/{visitId:guid}/exclusion-override", async (
+            Guid visitId, ExclusionOverrideRequestDto request, ClaimsPrincipal user,
+            OverrideExclusionAndEnterHandler handler, CancellationToken ct) =>
+        {
+            var (success, result, error) = await handler.HandleAsync(
+                new OverrideExclusionAndEnterCommand(visitId, user.HostIdentifier(), request.Justification), ct);
+            if (!success)
+                return Results.BadRequest(new { error });
+
+            return Results.Ok(new ConfirmationRequestDecisionDto(
+                result!.IsGranted, result.IsCheckOut, result.IsSecurityEvent, result.VerdictCode, result.VisitorName));
+        })
+        .WithName("OverrideExclusionAndEnter")
+        .WithSummary("Autorise l'entrée malgré une correspondance sur la liste d'exclusion (homonyme) — justifié et audité.");
 
         group.MapGet("/on-site", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {

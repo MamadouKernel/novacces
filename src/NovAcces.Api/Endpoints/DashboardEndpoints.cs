@@ -28,19 +28,59 @@ public static class DashboardEndpoints
             .RequireAuthorization(NovAccesPolicies.SecurityJournal);
 
         group.MapGet("/journal", async (
-            IScanLogRepository logs, int? page, int? pageSize, string? q, CancellationToken ct) =>
+            IScanLogRepository logs, IVisitRepository visits, IHostDirectory hosts,
+            int? page, int? pageSize, string? q, CancellationToken ct) =>
         {
             var (p, size) = PaginationQuery.Normalize(page, pageSize, defaultPageSize: 20, maxPageSize: 200);
             var (entries, total) = await logs.GetPagedAsync(p, size, q, ct);
 
+            // Qui a CRÉÉ la visite scannée (l'hôte), distinct d'AgentId (qui a
+            // SCANNÉ) — résolu en 2 requêtes groupées plutôt qu'un aller-retour
+            // par ligne : ScanLogEntry n'a que VisitId, jamais HostUserId
+            // directement (minimisation, voir ApplySearch ci-dessous).
+            var visitIds = entries.Select(e => e.VisitId).Distinct().ToList();
+            var hostIdByVisit = await visits.GetHostUserIdsByVisitIdsAsync(visitIds, ct);
+            var hostContacts = await hosts.FindManyAsync(hostIdByVisit.Values.Distinct().ToList(), ct);
+
             var dto = entries.Select(e => new ScanJournalEntryDto(
                 e.Timestamp, e.VisitorName, e.AgentId, e.Direction.ToString(),
-                e.WasGranted, e.WasCheckOut, e.IsSecurityEvent, e.Detail, e.AuthMethod.ToString())).ToList();
+                e.WasGranted, e.WasCheckOut, e.IsSecurityEvent, e.Detail, e.AuthMethod.ToString(),
+                hostIdByVisit.TryGetValue(e.VisitId, out var hostId) && hostContacts.TryGetValue(hostId, out var contact)
+                    ? contact.DisplayName : null)).ToList();
 
             return Results.Ok(new PagedResultDto<ScanJournalEntryDto>(dto, p, size, total));
         })
         .WithName("ScanJournal")
-        .WithSummary("Scans journalisés du site, paginés (recherche via 'q').");
+        .WithSummary("Scans journalisés du site, paginés (recherche via 'q'), avec l'hôte créateur.");
+
+        // Distinct du journal (scans effectués) et de /on-site (présents
+        // MAINTENANT) : TOUTES les demandes créées sur le site, quel que soit
+        // leur statut, avec l'hôte qui les a créées — répond au besoin de la
+        // sûreté de savoir qui a invité qui, pas seulement qui a scanné.
+        group.MapGet("/visits", async (
+            IVisitRepository visits, IHostDirectory hosts, IDateTimeProvider clock,
+            int? page, int? pageSize, string? q, CancellationToken ct) =>
+        {
+            var (p, size) = PaginationQuery.Normalize(page, pageSize, defaultPageSize: 20, maxPageSize: 200);
+            var (items, total) = await visits.GetPagedAsync(p, size, q, ct);
+
+            var hostContacts = await hosts.FindManyAsync(items.Select(v => v.HostUserId).Distinct().ToList(), ct);
+            var now = clock.UtcNow;
+
+            var dto = items.Select(v =>
+            {
+                hostContacts.TryGetValue(v.HostUserId, out var contact);
+                return new VisitListEntryDto(
+                    v.Id, v.VisitorName, v.VisitorCompany, v.Motif, v.Mode.ToString(), DisplayStatus(v, now),
+                    v.CreatedAt, contact?.DisplayName ?? "Hôte inconnu", contact?.Email,
+                    v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CheckedInAt, v.CheckedOutAt,
+                    v.RevokedBy, v.RevokedAt);
+            }).ToList();
+
+            return Results.Ok(new PagedResultDto<VisitListEntryDto>(dto, p, size, total));
+        })
+        .WithName("AllSiteVisits")
+        .WithSummary("Toutes les demandes de visite du site, paginées (recherche via 'q'), avec l'hôte créateur.");
 
         group.MapGet("/on-site", async (IVisitRepository visits, IDateTimeProvider clock, CancellationToken ct) =>
         {
@@ -230,6 +270,15 @@ public static class DashboardEndpoints
 
         return group;
     }
+
+    /// <summary>
+    /// Même calcul que VisitEndpoints.DisplayStatus (statut brut sauf
+    /// "Expired" recalculé à l'affichage — voir Visit.IsExpiredForDisplay) :
+    /// dupliqué ici plutôt que partagé entre les deux classes d'endpoints
+    /// statiques, pour une ligne qui ne justifie pas une abstraction commune.
+    /// </summary>
+    private static string DisplayStatus(Visit visit, DateTimeOffset now) =>
+        visit.IsExpiredForDisplay(now) ? "Expired" : visit.Status.ToString();
 
     private static string BuildCsv(IReadOnlyCollection<ScanLogEntry> entries)
     {

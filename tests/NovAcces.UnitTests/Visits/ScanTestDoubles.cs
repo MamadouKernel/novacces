@@ -51,6 +51,10 @@ internal sealed class FakeVisitRepository : IVisitRepository
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
     public Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<(IReadOnlyCollection<Visit> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, string? query, CancellationToken ct)
+        => Task.FromResult<(IReadOnlyCollection<Visit>, int)>((Array.Empty<Visit>(), 0));
+    public Task<IReadOnlyDictionary<Guid, string>> GetHostUserIdsByVisitIdsAsync(IReadOnlyCollection<Guid> visitIds, CancellationToken ct)
+        => Task.FromResult<IReadOnlyDictionary<Guid, string>>(new Dictionary<Guid, string>());
     public Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<KnownVisitor>>(Array.Empty<KnownVisitor>());
     public Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)
@@ -106,6 +110,15 @@ internal sealed class FakeHostDirectory : IHostDirectory
 {
     public HostContact? Contact { get; set; } = new("Hôte Test", "hote@sicopa.local", null);
     public Task<HostContact?> FindAsync(string hostUserId, CancellationToken ct) => Task.FromResult(Contact);
+
+    public Task<IReadOnlyDictionary<string, HostContact>> FindManyAsync(
+        IReadOnlyCollection<string> hostUserIds, CancellationToken ct)
+    {
+        IReadOnlyDictionary<string, HostContact> result = Contact is null
+            ? new Dictionary<string, HostContact>()
+            : hostUserIds.Distinct().ToDictionary(id => id, _ => Contact);
+        return Task.FromResult(result);
+    }
 }
 
 internal sealed class FakeNotifications : INotificationService

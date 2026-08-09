@@ -175,7 +175,7 @@ else if (CanViewDashboard)
             <h2>Résultats de recherche</h2>
             <div class="table-wrap table-cards">
             <table class="visits">
-                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Accès</th><th>Détail</th></tr></thead>
+                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Accès</th><th>Créé par</th><th>Détail</th></tr></thead>
                 <tbody>
                     @foreach (var r in _searchResults)
                     {
@@ -184,6 +184,7 @@ else if (CanViewDashboard)
                             <td data-label="Visiteur">@r.VisitorName</td>
                             <td class="muted" data-label="Agent">@r.AgentId</td>
                             <td class="muted" data-label="Accès">@AuthMethodLabel(r.AuthMethod)</td>
+                            <td class="muted" data-label="Créé par">@(r.CreatedByDisplayName ?? "—")</td>
                             <td class="muted" data-label="Détail" style="white-space:normal">@r.Detail</td>
                         </tr>
                     }
@@ -194,6 +195,59 @@ else if (CanViewDashboard)
                         OnPageChanged="ChangeSearchPageAsync" />
         </section>
     }
+
+    <section class="card" style="margin-bottom:1rem;">
+        <h2>Toutes les demandes du site (@_visitsTotal)</h2>
+        <p class="hint">Chaque demande créée sur le site, quel que soit son statut — y compris celles jamais scannées — avec l'hôte qui l'a invitée.</p>
+        <div class="toolbar">
+            <input class="search" placeholder="Rechercher (visiteur, société, motif)…"
+                   @bind="_visitsSearchTerm" @bind:event="oninput"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SearchVisitsAsync(); })" />
+            <button class="btn-ghost" @onclick="SearchVisitsAsync">Rechercher</button>
+            @if (!string.IsNullOrWhiteSpace(_visitsSearchTerm))
+            {
+                <button class="btn-ghost" @onclick="ClearVisitsSearchAsync">Effacer</button>
+            }
+        </div>
+
+        @if (_visits.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucune demande ne correspond.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap table-cards">
+            <table class="visits">
+                <thead><tr><th>Visiteur</th><th>Société</th><th>Mode</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th></tr></thead>
+                <tbody>
+                    @foreach (var v in _visits)
+                    {
+                        <tr>
+                            <td data-label="Visiteur">
+                                <button class="btn-ghost" style="padding:0;font:inherit;text-decoration:underline;" @onclick="() => _historyVisitId = v.VisitId">@v.VisitorName</button>
+                            </td>
+                            <td class="muted" data-label="Société">@v.VisitorCompany</td>
+                            <td class="muted" data-label="Mode">@(v.Mode == "Unique" ? "Passage unique" : "30 jours")</td>
+                            <td data-label="Statut"><span class="badge @VisitStatusBadgeClass(v.Status)">@VisitStatusLabel(v.Status)</span></td>
+                            <td data-label="Créé par">
+                                @v.CreatedByDisplayName
+                                @if (!string.IsNullOrWhiteSpace(v.CreatedByEmail))
+                                {
+                                    <div class="muted" style="font-size:.75rem;">@v.CreatedByEmail</div>
+                                }
+                            </td>
+                            <td class="muted" data-label="Créé le">@v.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="muted" data-label="Entrée">@(v.CheckedInAt is { } ci ? ci.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
+                            <td class="muted" data-label="Sortie">@(v.CheckedOutAt is { } co ? co.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <Pagination Page="_visitsPage" PageSize="_visitsPageSize" TotalCount="_visitsTotal"
+                        OnPageChanged="ChangeVisitsPageAsync" />
+        }
+    </section>
 
     @if (_overstayAlerts.Count > 0)
     {
@@ -404,6 +458,15 @@ else if (CanViewDashboard)
     private int _searchPage = 1;
     private const int _searchPageSize = 20;
     private int _searchTotal;
+
+    // Toutes les demandes du site (distinct du journal ci-dessus, qui ne
+    // porte que sur les scans effectués) — chargée dès l'ouverture du
+    // dashboard, comme les présents et le résumé du jour.
+    private string _visitsSearchTerm = "";
+    private IReadOnlyList<VisitListEntryDto> _visits = Array.Empty<VisitListEntryDto>();
+    private int _visitsPage = 1;
+    private const int _visitsPageSize = 20;
+    private int _visitsTotal;
     private string _exclName = "";
     private string _exclReason = "";
     private bool _exclBusy;
@@ -539,6 +602,7 @@ else if (CanViewDashboard)
             await RefreshOnSiteAsync();
             await SeedFeedFromJournalAsync();
             await RefreshPendingConfirmationsAsync();
+            await ChangeVisitsPageAsync(1);
 
             await ConnectHubAsync();
             await SubscribeToPushAsync();
@@ -800,6 +864,47 @@ else if (CanViewDashboard)
         _searchPage = 1;
         _searchTotal = 0;
     }
+
+    private Task SearchVisitsAsync() => ChangeVisitsPageAsync(1);
+
+    private async Task ChangeVisitsPageAsync(int page)
+    {
+        _visitsPage = page;
+        try
+        {
+            var result = await Api.GetSiteVisitsAsync(page, _visitsPageSize, _visitsSearchTerm);
+            _visits = result.Items;
+            _visitsTotal = result.TotalCount;
+        }
+        catch { /* best-effort */ }
+    }
+
+    private Task ClearVisitsSearchAsync()
+    {
+        _visitsSearchTerm = "";
+        return ChangeVisitsPageAsync(1);
+    }
+
+    // Même mapping que HotePortal.razor (StatusBadgeClass/StatusLabel) : pas
+    // de classe CSS "badge-consumed", et les libellés doivent rester ceux
+    // déjà appris par les utilisateurs sur le portail hôte.
+    private static string VisitStatusBadgeClass(string status) => status switch
+    {
+        "Valid" => "badge-valid",
+        "Consumed" => "badge-used",
+        "Revoked" => "badge-revoked",
+        "Expired" => "badge-expired",
+        _ => "badge-pending",
+    };
+
+    private static string VisitStatusLabel(string status) => status switch
+    {
+        "Valid" => "Valide",
+        "Consumed" => "Utilisée",
+        "Revoked" => "Révoquée",
+        "Expired" => "Expirée",
+        _ => status
+    };
 
     private async Task ExportCsvAsync()
     {

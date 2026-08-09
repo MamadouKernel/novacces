@@ -112,6 +112,40 @@ public sealed class VisitRepository : IVisitRepository
             .ToListAsync(ct);
     }
 
+    public async Task<(IReadOnlyCollection<Visit> Items, int TotalCount)> GetPagedAsync(
+        int page, int pageSize, string? query, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        var q = _db.Visits.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var term = query.Trim().ToLower();
+            q = q.Where(v => v.VisitorName.ToLower().Contains(term)
+                           || v.VisitorCompany.ToLower().Contains(term)
+                           || v.Motif.ToLower().Contains(term));
+        }
+
+        q = q.OrderByDescending(v => v.CreatedAt);
+        var total = await q.CountAsync(ct);
+        var items = await q.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        return (items, total);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetHostUserIdsByVisitIdsAsync(
+        IReadOnlyCollection<Guid> visitIds, CancellationToken ct)
+    {
+        await _db.EnsureTenantResolvedAsync(ct);
+        if (visitIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        return await _db.Visits
+            .AsNoTracking()
+            .Where(v => visitIds.Contains(v.Id))
+            .Select(v => new { v.Id, v.HostUserId })
+            .ToDictionaryAsync(v => v.Id, v => v.HostUserId, ct);
+    }
+
     public async Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);

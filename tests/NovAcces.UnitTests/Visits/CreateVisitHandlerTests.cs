@@ -36,6 +36,10 @@ file sealed class FakeVisitRepository : IVisitRepository
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
     public Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<Visit>>(Array.Empty<Visit>());
+    public Task<(IReadOnlyCollection<Visit> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, string? query, CancellationToken ct)
+        => Task.FromResult<(IReadOnlyCollection<Visit>, int)>((Array.Empty<Visit>(), 0));
+    public Task<IReadOnlyDictionary<Guid, string>> GetHostUserIdsByVisitIdsAsync(IReadOnlyCollection<Guid> visitIds, CancellationToken ct)
+        => Task.FromResult<IReadOnlyDictionary<Guid, string>>(new Dictionary<Guid, string>());
     public Task<IReadOnlyCollection<KnownVisitor>> GetKnownVisitorsAsync(int limit, CancellationToken ct)
         => Task.FromResult<IReadOnlyCollection<KnownVisitor>>(Array.Empty<KnownVisitor>());
     public Task<bool> HasActiveVisitForVisitorAsync(string visitorName, string visitorCompany, CancellationToken ct)

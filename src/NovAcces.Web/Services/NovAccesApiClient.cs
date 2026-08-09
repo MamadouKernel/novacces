@@ -241,6 +241,21 @@ public sealed class NovAccesApiClient
         return result ?? new PagedResultDto<ScanJournalEntryDto>(Array.Empty<ScanJournalEntryDto>(), page, pageSize, 0);
     }
 
+    /// <summary>
+    /// Toutes les demandes de visite du site (tout statut, tout hôte),
+    /// paginées, avec l'hôte créateur — distinct de GetJournalPagedAsync
+    /// (scans effectués) et de GetOnSiteAsync (présents maintenant).
+    /// </summary>
+    public async Task<PagedResultDto<VisitListEntryDto>> GetSiteVisitsAsync(
+        int page, int pageSize, string? query = null)
+    {
+        var url = $"/api/dashboard/visits?page={page}&pageSize={pageSize}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&q={Uri.EscapeDataString(query.Trim())}";
+        var result = await CreateClient(true).GetFromJsonAsync<PagedResultDto<VisitListEntryDto>>(url);
+        return result ?? new PagedResultDto<VisitListEntryDto>(Array.Empty<VisitListEntryDto>(), page, pageSize, 0);
+    }
+
     /// <summary>Visiteurs actuellement présents sur le site.</summary>
     public async Task<IReadOnlyList<OnSiteVisitorDto>> GetOnSiteAsync()
     {

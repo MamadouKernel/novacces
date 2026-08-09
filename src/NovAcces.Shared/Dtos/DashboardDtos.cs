@@ -25,7 +25,37 @@ public sealed record ScanJournalEntryDto(
     bool WasCheckOut,
     bool IsSecurityEvent,
     string Detail,
-    string AuthMethod = "Qr");
+    string AuthMethod = "Qr",
+    // Nom d'affichage de l'hôte qui a créé la demande de visite scannée —
+    // distinct d'AgentId (l'agent qui a scanné au poste). Null si l'hôte est
+    // introuvable (compte supprimé, compte de service) : jamais une erreur.
+    string? CreatedByDisplayName = null);
+
+/// <summary>
+/// Ligne de la vue « toutes les demandes du site » (dashboard sûreté) : à la
+/// différence du journal (scans effectués) ou de « présents » (sur site MAINTENANT),
+/// couvre TOUTE demande créée, quel que soit son statut ou si elle a même été
+/// scannée — et indique qui l'a créée (moindre privilège : l'hôte lui-même ne
+/// voit que SES propres demandes via /api/visits/mine, la Sûreté voit celles
+/// de TOUT le site).
+/// </summary>
+public sealed record VisitListEntryDto(
+    Guid VisitId,
+    string VisitorName,
+    string VisitorCompany,
+    string Motif,
+    string Mode,
+    string Status,
+    DateTimeOffset CreatedAt,
+    string CreatedByDisplayName,
+    string? CreatedByEmail,
+    DateTimeOffset? ScheduledAt,
+    int PlannedDurationMinutes,
+    bool IsOnSite,
+    DateTimeOffset? CheckedInAt,
+    DateTimeOffset? CheckedOutAt,
+    string? RevokedBy,
+    DateTimeOffset? RevokedAt);
 
 /// <summary>
 /// Visiteur actuellement présent sur site (avec état de dépassement).

@@ -51,6 +51,24 @@ public interface IVisitRepository
     Task<IReadOnlyCollection<Visit>> GetByHostAsync(string hostUserId, int limit, CancellationToken ct);
 
     /// <summary>
+    /// TOUTES les demandes de visite du site, paginées (les plus récentes
+    /// d'abord) — vue « toutes les demandes » du dashboard sûreté, distincte
+    /// de GetOnSiteAsync (présents seulement) et GetByHostAsync (un seul
+    /// hôte) : ici, tout statut, tout hôte. Recherche optionnelle sur nom,
+    /// société ou motif du visiteur (même portée que IScanLogRepository.GetPagedAsync).
+    /// </summary>
+    Task<(IReadOnlyCollection<Visit> Items, int TotalCount)> GetPagedAsync(
+        int page, int pageSize, string? query, CancellationToken ct);
+
+    /// <summary>
+    /// Résout l'hôte créateur de chaque visite demandée — utilisé pour
+    /// enrichir le journal des scans (ScanLogEntry n'a que VisitId, pas
+    /// HostUserId) sans recharger l'entité Visit complète par ligne.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, string>> GetHostUserIdsByVisitIdsAsync(
+        IReadOnlyCollection<Guid> visitIds, CancellationToken ct);
+
+    /// <summary>
     /// Visiteurs déjà connus du site, avec leurs dernières valeurs (entreprise,
     /// motif, durée) pour le pré-remplissage à l'autocomplétion (§8 maquette).
     /// </summary>

@@ -208,6 +208,58 @@ public sealed class DashboardTests
         Assert.Contains(byCompany!.Items, e => e.VisitorName == visitorName);
     }
 
+    [SkippableFact]
+    public async Task AllVisits_ListsEveryRequest_WithCreatorHost_RegardlessOfScanStatus()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Une demande jamais scannée doit quand même apparaître — distinct du
+        // journal (qui ne porte que sur les scans effectués).
+        var hote = await LoginNewUserAsync("Hote");
+        var visitorName = $"JamaisScanne-{Guid.NewGuid():N}";
+        var createResp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            visitorName, "ACME", "Test liste", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+
+        var surete = await LoginNewUserAsync("Surete");
+        var list = await surete.GetFromJsonAsync<PagedResultDto<VisitListEntryDto>>(
+            $"/api/dashboard/visits?q={visitorName}", Json);
+
+        var entry = Assert.Single(list!.Items);
+        Assert.Equal(visitorName, entry.VisitorName);
+        Assert.Equal("Valid", entry.Status);
+        Assert.False(entry.IsOnSite);
+        Assert.Null(entry.CheckedInAt);
+        // L'hôte créateur est résolu à un nom d'affichage, pas au GUID brut
+        // (HostUserId) que le domaine manipule en interne.
+        Assert.False(string.IsNullOrWhiteSpace(entry.CreatedByDisplayName));
+        Assert.NotEqual("Hôte inconnu", entry.CreatedByDisplayName);
+
+        // Un Hôte n'a pas accès à la vue « tout le site » (moindre privilège) :
+        // seule la Sûreté/Admin peut lister les demandes de TOUS les hôtes.
+        var refused = await hote.GetAsync("/api/dashboard/visits");
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Journal_ExposesCreatingHost_DistinctFromScanningAgent()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var visitorName = $"AvecHote-{Guid.NewGuid():N}";
+        await CreateVisitAndCheckInAsync(visitorName);
+
+        var surete = await LoginNewUserAsync("Surete");
+        var journal = await surete.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(
+            $"/api/dashboard/journal?q={visitorName}", Json);
+
+        var entry = Assert.Single(journal!.Items);
+        Assert.False(string.IsNullOrWhiteSpace(entry.CreatedByDisplayName));
+        // L'hôte (qui a INVITÉ) et l'agent (qui a SCANNÉ) sont deux identités
+        // distinctes dans ce test — l'API ne doit jamais les confondre.
+        Assert.NotEqual(entry.AgentId, entry.CreatedByDisplayName);
+    }
+
     // ---- Aides ----
 
     private async Task<Guid> CreateVisitAndCheckInAsync(

@@ -15,6 +15,16 @@ public interface IHostDirectory
     /// une erreur : la notification est simplement abandonnée.
     /// </summary>
     Task<HostContact?> FindAsync(string hostUserId, CancellationToken ct);
+
+    /// <summary>
+    /// Même résolution que <see cref="FindAsync"/>, mais pour plusieurs hôtes
+    /// en une seule requête — évite un aller-retour par ligne quand une page
+    /// affiche plusieurs demandes d'hôtes différents (dashboard sûreté :
+    /// journal, liste des demandes). Les identifiants introuvables sont
+    /// simplement absents du résultat, jamais une erreur.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, HostContact>> FindManyAsync(
+        IReadOnlyCollection<string> hostUserIds, CancellationToken ct);
 }
 
 /// <summary>Coordonnées d'un hôte destinataire d'une notification.</summary>

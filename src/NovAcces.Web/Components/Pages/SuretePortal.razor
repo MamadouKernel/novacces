@@ -401,8 +401,13 @@ else if (CanViewDashboard)
         <section class="card" style="margin-top:1.2rem;">
             <h2>Liste d'exclusion (@_exclusions.Count)</h2>
             <p class="muted">Ces personnes se voient refuser toute nouvelle demande. Le motif reste interne à la sûreté.</p>
+            <p class="hint">
+                L'email est optionnel : sans lui, l'exclusion vise tout le monde portant ce nom (filet large). Si vous
+                le connaissez, il précise l'exclusion pour ne viser QUE cette personne — utile en cas d'homonyme.
+            </p>
             <div class="row">
                 <div class="field"><label>Nom</label><input @bind="_exclName" /></div>
+                <div class="field"><label>Email (optionnel, précise l'exclusion)</label><input @bind="_exclEmail" placeholder="ex. jean.dupont@exemple.com" /></div>
                 <div class="field"><label>Motif (interne)</label><input @bind="_exclReason" /></div>
             </div>
             <button class="btn-primary" @onclick="AddExclusionAsync" disabled="@_exclBusy" style="max-width:220px;">Ajouter à l'exclusion</button>
@@ -411,12 +416,22 @@ else if (CanViewDashboard)
             {
                 <div class="table-wrap table-cards" style="margin-top:1rem;">
                 <table class="visits">
-                    <thead><tr><th>Nom</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
+                    <thead><tr><th>Nom</th><th>Email</th><th>Motif</th><th>Ajouté par</th><th>Le</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var e in PagedExclusions)
                         {
                             <tr>
                                 <td data-label="Nom">@e.DisplayName</td>
+                                <td class="muted" data-label="Email">
+                                    @if (string.IsNullOrWhiteSpace(e.Email))
+                                    {
+                                        <span title="Aucun email : vise tout le monde portant ce nom.">— (filet large)</span>
+                                    }
+                                    else
+                                    {
+                                        @e.Email
+                                    }
+                                </td>
                                 <td class="muted" data-label="Motif">@e.Reason</td>
                                 <td class="muted" data-label="Ajouté par">@e.AddedBy</td>
                                 <td class="muted" data-label="Le">@e.CreatedAt.LocalDateTime.ToString("dd/MM HH:mm")</td>
@@ -518,6 +533,7 @@ else if (CanViewDashboard)
     private const int _visitsPageSize = 20;
     private int _visitsTotal;
     private string _exclName = "";
+    private string _exclEmail = "";
     private string _exclReason = "";
     private bool _exclBusy;
     private HubConnection? _hub;
@@ -724,10 +740,11 @@ else if (CanViewDashboard)
         _exclBusy = true;
         try
         {
-            if (await Api.AddExclusionAsync(_exclName.Trim(), _exclReason.Trim()))
+            var email = string.IsNullOrWhiteSpace(_exclEmail) ? null : _exclEmail.Trim();
+            if (await Api.AddExclusionAsync(_exclName.Trim(), _exclReason.Trim(), email))
             {
                 Toasts.Success($"« {_exclName.Trim()} » ajouté à la liste d'exclusion.");
-                _exclName = _exclReason = "";
+                _exclName = _exclEmail = _exclReason = "";
                 await RefreshExclusionsAsync();
             }
             else { Toasts.Error("Ajout à l'exclusion refusé."); }

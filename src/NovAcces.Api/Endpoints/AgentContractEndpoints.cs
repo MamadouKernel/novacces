@@ -96,7 +96,7 @@ public static class AgentContractEndpoints
             var today = await visits.GetTodayActiveVisitsAsync(issuedAt, ct);
 
             // Exclusion évaluée à l'ÉMISSION, pas figée à la création (REQ-F-11).
-            var excluded = await exclusions.GetExcludedNormalizedNamesAsync(ct);
+            var excluded = await exclusions.GetMatchKeysAsync(ct);
 
             var entries = today.Select(v => new OfflineListEntry(
                 v.Id, v.VisitToken, v.ScheduledAt, AgentEndpoints.IsExcluded(v, excluded), v.IsOnSite,

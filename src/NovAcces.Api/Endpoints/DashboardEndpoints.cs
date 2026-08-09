@@ -66,10 +66,11 @@ public static class DashboardEndpoints
 
             var hostContacts = await hosts.FindManyAsync(items.Select(v => v.HostUserId).Distinct().ToList(), ct);
             // Un seul aller-retour pour toute la page (pas un IsExcludedAsync par
-            // ligne) : mêmes noms normalisés que ScanExecutionCore, comparés en
-            // mémoire — signale les homonymes potentiels à la sûreté et permet
-            // d'afficher l'action de contournement (voir /visits/{id}/exclusion-override).
-            var excludedNames = await exclusionList.GetExcludedNormalizedNamesAsync(ct);
+            // ligne) — même logique nom+email que ScanExecutionCore (voir
+            // ExclusionMatchKey.Matches), comparée en mémoire : signale les
+            // correspondances à la sûreté et permet d'afficher l'action de
+            // contournement (voir /visits/{id}/exclusion-override).
+            var exclusionKeys = await exclusionList.GetMatchKeysAsync(ct);
             var now = clock.UtcNow;
 
             var dto = items.Select(v =>
@@ -80,7 +81,7 @@ public static class DashboardEndpoints
                     v.CreatedAt, contact?.DisplayName ?? "Hôte inconnu", contact?.Email,
                     v.ScheduledAt, v.PlannedDurationMinutes, v.IsOnSite, v.CheckedInAt, v.CheckedOutAt,
                     v.RevokedBy, v.RevokedAt,
-                    excludedNames.Contains(ExclusionEntry.Normalize(v.VisitorName)));
+                    ExclusionMatchKey.AnyMatches(exclusionKeys, v.VisitorName, v.VisitorEmail));
             }).ToList();
 
             return Results.Ok(new PagedResultDto<VisitListEntryDto>(dto, p, size, total));

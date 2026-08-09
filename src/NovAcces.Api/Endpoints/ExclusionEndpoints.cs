@@ -25,7 +25,7 @@ public static class ExclusionEndpoints
             var list = await exclusions.ListAsync(ct);
             var names = await ActorDisplayNames.ResolveAsync(identityDb, list.Select(e => e.AddedBy), ct);
             var dto = list
-                .Select(e => new ExclusionDto(e.Id, e.DisplayName, e.Reason, names.GetValueOrDefault(e.AddedBy, e.AddedBy), e.CreatedAt))
+                .Select(e => new ExclusionDto(e.Id, e.DisplayName, e.Reason, names.GetValueOrDefault(e.AddedBy, e.AddedBy), e.CreatedAt, e.Email))
                 .ToList();
             return Results.Ok(dto);
         })
@@ -42,7 +42,8 @@ public static class ExclusionEndpoints
             if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.Reason))
                 return Results.BadRequest(new { error = "Nom et motif requis." });
 
-            var entryId = await exclusions.AddAsync(request.DisplayName, request.Reason, user.HostIdentifier(), ct);
+            var entryId = await exclusions.AddAsync(
+                request.DisplayName, request.Reason, user.HostIdentifier(), request.Email, ct);
 
             // Traçabilité §8.5 : l'ajout à la liste d'exclusion est un paramétrage
             // de sûreté — inscrit au journal d'audit inaltérable. Minimisation :
@@ -51,12 +52,14 @@ public static class ExclusionEndpoints
             // consultable par la Sûreté tant que l'entrée existe).
             await audit.RecordAsync(
                 AdminAuditAction.ExclusionAdded, user.HostIdentifier(), entryId.ToString(),
-                "Ajout d'une entrée à la liste d'exclusion.", ct);
+                string.IsNullOrWhiteSpace(request.Email)
+                    ? "Ajout d'une entrée à la liste d'exclusion (nom seul)."
+                    : "Ajout d'une entrée à la liste d'exclusion (précisée par email).", ct);
 
             return Results.Ok(new { message = "Ajouté à la liste d'exclusion." });
         })
         .WithName("AddExclusion")
-        .WithSummary("Ajoute une personne à la liste d'exclusion.");
+        .WithSummary("Ajoute une personne à la liste d'exclusion, avec un email optionnel pour préciser (homonymes).");
 
         group.MapPost("/{id:guid}/remove", async (
             Guid id,

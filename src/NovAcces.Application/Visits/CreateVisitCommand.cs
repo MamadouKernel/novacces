@@ -61,7 +61,7 @@ public sealed class CreateVisitHandler
     public async Task<CreateVisitResult> HandleAsync(CreateVisitCommand command, CancellationToken ct)
     {
         var now = _clock.UtcNow;
-        var isExcluded = await _exclusionList.IsExcludedAsync(command.VisitorName, ct);
+        var isExcluded = await _exclusionList.IsExcludedAsync(command.VisitorName, command.VisitorEmail, ct);
 
         var visit = Visit.Create(
             command.VisitorName, command.VisitorCompany, command.Motif, command.HostUserId,
@@ -115,21 +115,32 @@ public sealed class CreateVisitHandler
 /// </summary>
 public interface IExclusionListService
 {
-    Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct);
+    /// <summary>
+    /// Vrai si CE visiteur (nom, et email quand connu) correspond à une entrée
+    /// de la liste — voir ExclusionMatchKey.Matches pour la sémantique exacte
+    /// (email sur l'entrée = précision, jamais un relâchement du filet large).
+    /// </summary>
+    Task<bool> IsExcludedAsync(string visitorName, string? visitorEmail, CancellationToken ct);
 
     /// <summary>
-    /// Noms NORMALISÉS de toutes les personnes exclues du site. Sert à marquer
-    /// la liste hors-ligne signée sans une requête par visiteur : le mode
-    /// dégradé doit refuser une personne écartée après l'émission de son QR,
-    /// exactement comme le scan en ligne. Ne contient aucun motif (moindre
-    /// privilège : l'agent ne doit jamais voir pourquoi).
+    /// Forme comparable (nom + email normalisés) de toutes les entrées du
+    /// site. Sert à marquer la liste hors-ligne signée et la vue « toutes les
+    /// demandes » sûreté sans une requête par visiteur : le mode dégradé doit
+    /// refuser une personne écartée après l'émission de son QR, exactement
+    /// comme le scan en ligne. Ne contient aucun motif ni nom en clair
+    /// (moindre privilège : l'agent ne doit jamais voir pourquoi/qui).
     /// </summary>
-    Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct);
+    Task<IReadOnlyCollection<ExclusionMatchKey>> GetMatchKeysAsync(CancellationToken ct);
 
     Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct);
 
-    /// <summary>Ajoute (ou retrouve, si déjà présent) une entrée et retourne son identifiant.</summary>
-    Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct);
+    /// <summary>
+    /// Ajoute (ou retrouve, si déjà présent) une entrée et retourne son
+    /// identifiant. Idempotent sur le COUPLE (nom, email) — pas sur le nom
+    /// seul : une entrée large (sans email) et une entrée précise (avec
+    /// email) pour le même nom sont deux entrées distinctes et légitimes.
+    /// </summary>
+    Task<Guid> AddAsync(string displayName, string reason, string addedBy, string? email, CancellationToken ct);
 
     /// <summary>
     /// Retire une entrée et renvoie ce qu'elle contenait (null si introuvable).
@@ -143,4 +154,4 @@ public interface IExclusionListService
 
 /// <summary>Projection d'une entrée d'exclusion pour la sûreté (motif inclus).</summary>
 public sealed record ExclusionEntryView(
-    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt);
+    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt, string? Email = null);

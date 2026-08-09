@@ -92,15 +92,18 @@ internal sealed class FakeScanEventBroadcaster : IScanEventBroadcaster
 
 internal sealed class FakeExclusionList : IExclusionListService
 {
+    // Nom seul (comportement historique) : suffit pour les tests existants,
+    // qui n'exercent pas la précision par email (voir ExclusionMatchKeyTests).
     public HashSet<string> ExcludedNames { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct)
+    public Task<bool> IsExcludedAsync(string visitorName, string? visitorEmail, CancellationToken ct)
         => Task.FromResult(ExcludedNames.Contains(visitorName));
-    public Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct)
-        => Task.FromResult<IReadOnlySet<string>>(ExcludedNames);
+    public Task<IReadOnlyCollection<ExclusionMatchKey>> GetMatchKeysAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<ExclusionMatchKey>>(
+            ExcludedNames.Select(n => new ExclusionMatchKey(ExclusionEntry.Normalize(n), null)).ToList());
     public Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
         => Task.FromResult<IReadOnlyList<ExclusionEntryView>>(Array.Empty<ExclusionEntryView>());
-    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct)
+    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, string? email, CancellationToken ct)
         => Task.FromResult(Guid.NewGuid());
     public Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct)
         => Task.FromResult<ExclusionEntryView?>(null);

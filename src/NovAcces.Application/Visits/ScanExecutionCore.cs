@@ -94,7 +94,7 @@ internal sealed class ScanExecutionCore
             // création : une personne écartée après l'émission de son
             // QR/code doit être refusée au poste, sans qu'on ait à révoquer
             // sa demande à la main.
-            var isOnExclusionList = await _exclusionList.IsExcludedAsync(visit.VisitorName, token);
+            var isOnExclusionList = await _exclusionList.IsExcludedAsync(visit.VisitorName, visit.VisitorEmail, token);
 
             // Application de la règle métier (Domain) — jamais dupliquée ici.
             var outcome = visit.Scan(direction, isBusinessDayOverride, now, isOnExclusionList, exclusionOverrideBySecurity);

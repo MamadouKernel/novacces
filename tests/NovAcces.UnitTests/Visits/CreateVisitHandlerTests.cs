@@ -52,12 +52,12 @@ file sealed class FakeVisitRepository : IVisitRepository
 file sealed class FakeExclusionListService : IExclusionListService
 {
     public bool IsExcluded { get; set; }
-    public Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct) => Task.FromResult(IsExcluded);
-    public Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct)
-        => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
+    public Task<bool> IsExcludedAsync(string visitorName, string? visitorEmail, CancellationToken ct) => Task.FromResult(IsExcluded);
+    public Task<IReadOnlyCollection<ExclusionMatchKey>> GetMatchKeysAsync(CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<ExclusionMatchKey>>(Array.Empty<ExclusionMatchKey>());
     public Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
         => Task.FromResult<IReadOnlyList<ExclusionEntryView>>(Array.Empty<ExclusionEntryView>());
-    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
+    public Task<Guid> AddAsync(string displayName, string reason, string addedBy, string? email, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
     public Task<ExclusionEntryView?> RemoveAsync(Guid id, CancellationToken ct)
         => Task.FromResult<ExclusionEntryView?>(null);
 }

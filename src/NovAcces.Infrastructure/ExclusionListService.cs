@@ -16,20 +16,29 @@ public sealed class ExclusionListService : IExclusionListService
 
     public ExclusionListService(NovAccesDbContext db) => _db = db;
 
-    public async Task<bool> IsExcludedAsync(string visitorName, CancellationToken ct)
+    public async Task<bool> IsExcludedAsync(string visitorName, string? visitorEmail, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
-        var normalized = ExclusionEntry.Normalize(visitorName);
-        return await _db.ExclusionEntries.AnyAsync(e => e.NormalizedName == normalized, ct);
+        var normalizedName = ExclusionEntry.Normalize(visitorName);
+        var normalizedEmail = ExclusionEntry.NormalizeEmail(visitorEmail);
+
+        // Filtré par nom au niveau base (indexé, peu de candidats en pratique),
+        // puis la précision par email — s'il y en a une sur l'entrée — est
+        // appliquée en mémoire sur ce petit lot (voir ExclusionMatchKey.Matches).
+        var candidateEmails = await _db.ExclusionEntries
+            .Where(e => e.NormalizedName == normalizedName)
+            .Select(e => e.NormalizedEmail)
+            .ToListAsync(ct);
+
+        return candidateEmails.Any(entryEmail => entryEmail is null || entryEmail == normalizedEmail);
     }
 
-    public async Task<IReadOnlySet<string>> GetExcludedNormalizedNamesAsync(CancellationToken ct)
+    public async Task<IReadOnlyCollection<ExclusionMatchKey>> GetMatchKeysAsync(CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
-        var names = await _db.ExclusionEntries
-            .Select(e => e.NormalizedName)
+        return await _db.ExclusionEntries
+            .Select(e => new ExclusionMatchKey(e.NormalizedName, e.NormalizedEmail))
             .ToListAsync(ct);
-        return names.ToHashSet(StringComparer.Ordinal);
     }
 
     public async Task<IReadOnlyList<ExclusionEntryView>> ListAsync(CancellationToken ct)
@@ -37,23 +46,28 @@ public sealed class ExclusionListService : IExclusionListService
         await _db.EnsureTenantResolvedAsync(ct);
         return await _db.ExclusionEntries
             .OrderBy(e => e.DisplayName)
-            .Select(e => new ExclusionEntryView(e.Id, e.DisplayName, e.Reason, e.AddedBy, e.CreatedAt))
+            .Select(e => new ExclusionEntryView(e.Id, e.DisplayName, e.Reason, e.AddedBy, e.CreatedAt, e.Email))
             .ToListAsync(ct);
     }
 
-    public async Task<Guid> AddAsync(string displayName, string reason, string addedBy, CancellationToken ct)
+    public async Task<Guid> AddAsync(string displayName, string reason, string addedBy, string? email, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
 
-        var normalized = ExclusionEntry.Normalize(displayName);
+        var normalizedName = ExclusionEntry.Normalize(displayName);
+        var normalizedEmail = ExclusionEntry.NormalizeEmail(email);
+
+        // Idempotent sur (nom, email) — pas sur le nom seul : une entrée large
+        // et une entrée précisée par email pour le même nom sont deux entrées
+        // distinctes et légitimes (voir IExclusionListService.AddAsync).
         var existing = await _db.ExclusionEntries
-            .Where(e => e.NormalizedName == normalized)
+            .Where(e => e.NormalizedName == normalizedName && e.NormalizedEmail == normalizedEmail)
             .Select(e => (Guid?)e.Id)
             .FirstOrDefaultAsync(ct);
         if (existing is { } id)
             return id; // idempotent : déjà exclu
 
-        var entry = ExclusionEntry.Create(displayName, reason, addedBy, DateTimeOffset.UtcNow);
+        var entry = ExclusionEntry.Create(displayName, reason, addedBy, DateTimeOffset.UtcNow, email);
         _db.ExclusionEntries.Add(entry);
         await _db.SaveChangesAsync(ct);
         return entry.Id;

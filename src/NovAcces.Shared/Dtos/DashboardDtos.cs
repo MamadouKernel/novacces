@@ -141,7 +141,12 @@ public sealed record DashboardSummaryDto(
 
 /// <summary>Entrée de la liste d'exclusion (vue sûreté, motif inclus).</summary>
 public sealed record ExclusionDto(
-    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt);
+    Guid Id, string DisplayName, string Reason, string AddedBy, DateTimeOffset CreatedAt, string? Email = null);
 
-/// <summary>Ajout à la liste d'exclusion.</summary>
-public sealed record AddExclusionRequestDto(string DisplayName, string Reason);
+/// <summary>
+/// Ajout à la liste d'exclusion. Email optionnel : quand connu, précise
+/// l'exclusion pour ne viser que cette personne (nom + email doivent alors
+/// correspondre) — sans email, l'exclusion reste le filet large sur le nom
+/// seul (comportement historique). Voir ExclusionMatchKey côté Domain.
+/// </summary>
+public sealed record AddExclusionRequestDto(string DisplayName, string Reason, string? Email = null);

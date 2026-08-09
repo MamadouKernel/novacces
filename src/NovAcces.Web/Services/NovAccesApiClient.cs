@@ -331,10 +331,10 @@ public sealed class NovAccesApiClient
         return result ?? new List<ExclusionDto>();
     }
 
-    public async Task<bool> AddExclusionAsync(string displayName, string reason)
+    public async Task<bool> AddExclusionAsync(string displayName, string reason, string? email = null)
     {
         var response = await CreateClient(true)
-            .PostAsJsonAsync("/api/exclusions", new AddExclusionRequestDto(displayName, reason));
+            .PostAsJsonAsync("/api/exclusions", new AddExclusionRequestDto(displayName, reason, email));
         return response.IsSuccessStatusCode;
     }
 

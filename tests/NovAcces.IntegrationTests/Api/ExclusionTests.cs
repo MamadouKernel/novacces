@@ -54,6 +54,50 @@ public sealed class ExclusionTests
     }
 
     [SkippableFact]
+    public async Task ExclusionScopedByEmail_DoesNotBlockHomonymWithDifferentEmail()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Deux personnes DISTINCTES portant rigoureusement le même nom (cas
+        // discuté et validé le 09/08/2026) : la sûreté connaît l'email de la
+        // personne réellement visée et précise l'exclusion pour ne pas
+        // confondre l'homonyme innocent.
+        var name = $"Homonyme Test {Guid.NewGuid():N}"[..30];
+        var fraudsterEmail = $"fraudeur-{Guid.NewGuid():N}@test.local";
+        var innocentEmail = $"innocent-{Guid.NewGuid():N}@test.local";
+
+        var surete = await LoginNewUserAsync("Surete");
+        var add = await surete.PostAsJsonAsync("/api/exclusions",
+            new AddExclusionRequestDto(name, "Test précision email", fraudsterEmail));
+        add.EnsureSuccessStatusCode();
+
+        var hote = await LoginNewUserAsync("Hote");
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-Api-Key", NovAccesApiFactory.TestApiKey);
+
+        // L'homonyme innocent (email différent) doit pouvoir entrer normalement.
+        var innocentCreate = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, innocentEmail));
+        innocentCreate.EnsureSuccessStatusCode();
+        var innocentVisit = await innocentCreate.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+        var innocentScanResp = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(innocentVisit!.SignedQrPayload, "Entry", "ignore"));
+        var innocentScan = await innocentScanResp.Content.ReadFromJsonAsync<ScanResponseDto>(Json);
+        Assert.True(innocentScan!.IsGranted);
+
+        // La personne réellement exclue (même email que l'entrée) doit toujours être refusée.
+        var fraudsterCreate = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            name, "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, fraudsterEmail));
+        fraudsterCreate.EnsureSuccessStatusCode();
+        var fraudsterVisit = await fraudsterCreate.Content.ReadFromJsonAsync<CreateVisitResponseDto>(Json);
+        var fraudsterScanResp = await agent.PostAsJsonAsync("/api/scan",
+            new ScanRequestDto(fraudsterVisit!.SignedQrPayload, "Entry", "ignore"));
+        var fraudsterScan = await fraudsterScanResp.Content.ReadFromJsonAsync<ScanResponseDto>(Json);
+        Assert.False(fraudsterScan!.IsGranted);
+        Assert.Equal("DENIED_Excluded", fraudsterScan.VerdictCode);
+    }
+
+    [SkippableFact]
     public async Task ExclusionManagement_ForbiddenForHote()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

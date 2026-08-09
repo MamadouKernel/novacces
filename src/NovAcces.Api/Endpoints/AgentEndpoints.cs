@@ -147,7 +147,7 @@ public static class AgentEndpoints
             // Exclusion évaluée à l'ÉMISSION de la liste, pas figée à la création
             // de la visite : une personne écartée entre-temps doit être refusée
             // aussi en mode dégradé (REQ-F-11).
-            var excluded = await exclusions.GetExcludedNormalizedNamesAsync(ct);
+            var excluded = await exclusions.GetMatchKeysAsync(ct);
 
             var entries = today
                 .Select(v => new OfflineListEntry(
@@ -260,8 +260,8 @@ public static class AgentEndpoints
     /// présence courante sur la liste du site. Même règle que Visit.Scan côté
     /// domaine — les deux doivent rester alignées.
     /// </summary>
-    internal static bool IsExcluded(Visit v, IReadOnlySet<string> excludedNormalizedNames) =>
-        v.IsExcluded || excludedNormalizedNames.Contains(ExclusionEntry.Normalize(v.VisitorName));
+    internal static bool IsExcluded(Visit v, IReadOnlyCollection<ExclusionMatchKey> exclusionKeys) =>
+        v.IsExcluded || ExclusionMatchKey.AnyMatches(exclusionKeys, v.VisitorName, v.VisitorEmail);
 
     /// <summary>
     /// Statut affiché à l'agent (§11) : attendu / sur site / sorti / révoqué /

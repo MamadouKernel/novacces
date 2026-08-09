@@ -13,6 +13,8 @@ public sealed class ExclusionEntryConfiguration : IEntityTypeConfiguration<Exclu
 
         builder.Property(e => e.DisplayName).HasMaxLength(200).IsRequired();
         builder.Property(e => e.NormalizedName).HasMaxLength(200).IsRequired();
+        builder.Property(e => e.Email).HasMaxLength(320); // RFC 5321, nullable : précision optionnelle
+        builder.Property(e => e.NormalizedEmail).HasMaxLength(320);
         builder.Property(e => e.Reason).HasMaxLength(500).IsRequired();
         builder.Property(e => e.AddedBy).HasMaxLength(100).IsRequired();
 

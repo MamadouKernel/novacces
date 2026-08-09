@@ -125,53 +125,62 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(23rem,1fr));gap:1rem;">
         @foreach (var group in PagedGroupedTerminals)
         {
+            var expanded = _expandedGroups.Contains(group.Label);
             <div class="card" style="padding:1rem;margin:0;">
-                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;margin-bottom:.15rem;">
-                    <strong style="font-size:1rem;">@group.Label</strong>
-                    <span class="muted" style="font-size:.75rem;white-space:nowrap;">@group.Terminals.Count appareil@(group.Terminals.Count > 1 ? "s" : "")</span>
-                </div>
-                <p class="muted" style="font-size:.78rem;margin:0 0 .6rem;">@string.Join(", ", group.SiteIds)</p>
-                <div class="table-wrap">
-                <table class="visits">
-                    <thead><tr><th>Appareil</th><th>Poste</th><th>Statut</th><th></th></tr></thead>
-                    <tbody>
-                        @foreach (var t in group.Terminals)
-                        {
-                            <tr>
-                                <td class="muted" style="font-size:.75rem;max-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@(t.DeviceModel ?? "")">@(t.DeviceModel ?? "—")</td>
-                                <td>
-                                    <div style="display:flex;gap:.25rem;align-items:center;">
-                                        <input style="max-width:5rem;font-size:.78rem" placeholder="ex. entry"
-                                               value="@CheckpointEdit(t.Id, t.CheckpointId)"
-                                               @onchange="e => SetCheckpointEdit(t.Id, e.Value)" />
-                                        @if (CheckpointEdit(t.Id, t.CheckpointId) != (t.CheckpointId ?? ""))
-                                        {
-                                            <button class="btn-ghost" style="padding:.15rem .35rem;font-size:.72rem" disabled="@_busy"
-                                                    @onclick="() => SetCheckpointAsync(t.Id)">OK</button>
-                                        }
-                                    </div>
-                                </td>
-                                <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
-                                <td style="white-space:nowrap;">
-                                    <div style="display:flex;flex-direction:column;gap:.25rem;align-items:flex-start;">
-                                        @if (t.IsActive)
-                                        {
-                                            <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
-                                            <button class="btn-ghost" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">
-                                                @(StatusKey(t) == "expired_ticket" ? "Régénérer" : "Nouveau QR")
-                                            </button>
-                                        }
-                                        else
-                                        {
-                                            <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => DeleteTerminalAsync(t.Id)" disabled="@_busy">Supprimer</button>
-                                        }
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                </div>
+                <button type="button" @onclick="() => ToggleGroup(group.Label)"
+                        style="all:unset;cursor:pointer;display:flex;width:100%;justify-content:space-between;align-items:baseline;gap:.5rem;">
+                    <span style="display:flex;align-items:baseline;gap:.4rem;min-width:0;">
+                        <span class="muted" style="font-size:.7rem;">@(expanded ? "▾" : "▸")</span>
+                        <strong style="font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">@group.Label</strong>
+                    </span>
+                    <span class="muted" style="font-size:.75rem;white-space:nowrap;">@GroupSummary(group)</span>
+                </button>
+                <p class="muted" style="font-size:.78rem;margin:.15rem 0 0;">@string.Join(", ", group.SiteIds)</p>
+
+                @if (expanded)
+                {
+                    <div class="table-wrap" style="margin-top:.6rem;">
+                    <table class="visits">
+                        <thead><tr><th>Appareil</th><th>Poste</th><th>Statut</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var t in group.Terminals)
+                            {
+                                <tr>
+                                    <td class="muted" style="font-size:.75rem;max-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@(t.DeviceModel ?? "")">@(t.DeviceModel ?? "—")</td>
+                                    <td>
+                                        <div style="display:flex;gap:.25rem;align-items:center;">
+                                            <input style="max-width:5rem;font-size:.78rem" placeholder="ex. entry"
+                                                   value="@CheckpointEdit(t.Id, t.CheckpointId)"
+                                                   @onchange="e => SetCheckpointEdit(t.Id, e.Value)" />
+                                            @if (CheckpointEdit(t.Id, t.CheckpointId) != (t.CheckpointId ?? ""))
+                                            {
+                                                <button class="btn-ghost" style="padding:.15rem .35rem;font-size:.72rem" disabled="@_busy"
+                                                        @onclick="() => SetCheckpointAsync(t.Id)">OK</button>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
+                                    <td style="white-space:nowrap;">
+                                        <div style="display:flex;flex-direction:column;gap:.25rem;align-items:flex-start;">
+                                            @if (t.IsActive)
+                                            {
+                                                <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
+                                                <button class="btn-ghost" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">
+                                                    @(StatusKey(t) == "expired_ticket" ? "Régénérer" : "Nouveau QR")
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => DeleteTerminalAsync(t.Id)" disabled="@_busy">Supprimer</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    </div>
+                }
             </div>
         }
     </div>
@@ -191,6 +200,19 @@
 
     private string _search = "";
     private string _statusFilter = "all";
+
+    // Repliées par défaut (demande explicite : réduire le contenu affiché
+    // d'entrée) — un clic sur l'en-tête de la carte bascule son libellé
+    // dans cet ensemble. Par Label plutôt que par un identifiant de groupe :
+    // il n'y a pas d'entité "groupe" persistée, seulement un regroupement
+    // client de terminaux qui partagent le même libellé.
+    private readonly HashSet<string> _expandedGroups = new(StringComparer.Ordinal);
+
+    private void ToggleGroup(string label)
+    {
+        if (!_expandedGroups.Remove(label))
+            _expandedGroups.Add(label);
+    }
 
     // "expired_ticket" distingue un terminal encore en attente MAIS dont le
     // dernier QR d'enrôlement a expiré sans avoir été scanné — auparavant
@@ -244,6 +266,32 @@
 
     private IReadOnlyList<TerminalGroup> PagedGroupedTerminals =>
         GroupedTerminals.Skip((_terminalsPage - 1) * _groupsPageSize).Take(_groupsPageSize).ToList();
+
+    // Résumé affiché carte repliée : nombre d'appareils + décompte par
+    // statut, dans le même ordre que les filtres (actif, en attente,
+    // ticket expiré, révoqué) — seuls les statuts présents apparaissent.
+    private static string GroupSummary(TerminalGroup group)
+    {
+        var counts = group.Terminals
+            .GroupBy(StatusKey)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var parts = new List<string>();
+        foreach (var (key, singular, plural) in new[]
+        {
+            ("active", "actif", "actifs"),
+            ("pending", "en attente", "en attente"),
+            ("expired_ticket", "ticket expiré", "tickets expirés"),
+            ("revoked", "révoqué", "révoqués"),
+        })
+        {
+            if (counts.TryGetValue(key, out var count) && count > 0)
+                parts.Add($"{count} {(count == 1 ? singular : plural)}");
+        }
+
+        var deviceWord = group.Terminals.Count > 1 ? "appareils" : "appareil";
+        return $"{group.Terminals.Count} {deviceWord} · {string.Join(", ", parts)}";
+    }
 
     private List<ArchivedTerminalSummaryDto> FilteredArchivedTerminals =>
         _archivedTerminals

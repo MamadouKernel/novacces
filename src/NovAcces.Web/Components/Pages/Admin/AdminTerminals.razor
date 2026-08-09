@@ -116,63 +116,66 @@
         <Pagination Page="_archivedPage" PageSize="_terminalsPageSize" TotalCount="FilteredArchivedTerminals.Count"
                     OnPageChanged="p => _archivedPage = p" />
     }
+    else if (GroupedTerminals.Count == 0)
+    {
+        <p class="muted">@(_terminals.Count == 0 ? "Aucun terminal enrôlé." : "Aucun terminal ne correspond à ce filtre.")</p>
+    }
     else
     {
-    <div class="table-wrap">
-    <table class="visits">
-        <thead><tr>
-            <SortableTh Column="libelle" SortColumn="@_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Libellé</SortableTh>
-            <th>Sites</th>
-            <th>Poste</th>
-            <th>Appareil</th>
-            <SortableTh Column="statut" SortColumn="@_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Statut</SortableTh>
-            <SortableTh Column="cree" SortColumn="@_sortColumn" SortAscending="_sortAscending" OnSort="SortBy">Créé le</SortableTh>
-            <th></th>
-        </tr></thead>
-        <tbody>
-            @foreach (var t in PagedTerminals)
-            {
-                <tr>
-                    <td><strong>@t.Label</strong></td>
-                    <td class="muted">@string.Join(", ", t.SiteIds)</td>
-                    <td>
-                        <div style="display:flex;gap:.35rem;align-items:center;">
-                            <input style="max-width:9rem" placeholder="ex. entry"
-                                   value="@CheckpointEdit(t.Id, t.CheckpointId)"
-                                   @onchange="e => SetCheckpointEdit(t.Id, e.Value)" />
-                            @if (CheckpointEdit(t.Id, t.CheckpointId) != (t.CheckpointId ?? ""))
-                            {
-                                <button class="btn-ghost" style="padding:.2rem .5rem" disabled="@_busy"
-                                        @onclick="() => SetCheckpointAsync(t.Id)">OK</button>
-                            }
-                        </div>
-                    </td>
-                    <td class="muted" style="font-size:.8rem">@(t.DeviceModel ?? "—")</td>
-                    <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
-                    <td class="muted">@t.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy")</td>
-                    <td>
-                        @if (t.IsActive)
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(23rem,1fr));gap:1rem;">
+        @foreach (var group in PagedGroupedTerminals)
+        {
+            <div class="card" style="padding:1rem;margin:0;">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;margin-bottom:.15rem;">
+                    <strong style="font-size:1rem;">@group.Label</strong>
+                    <span class="muted" style="font-size:.75rem;white-space:nowrap;">@group.Terminals.Count appareil@(group.Terminals.Count > 1 ? "s" : "")</span>
+                </div>
+                <p class="muted" style="font-size:.78rem;margin:0 0 .6rem;">@string.Join(", ", group.SiteIds)</p>
+                <div class="table-wrap">
+                <table class="visits">
+                    <thead><tr><th>Appareil</th><th>Poste</th><th>Statut</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var t in group.Terminals)
                         {
-                            <button class="btn-danger" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
-                            <button class="btn-ghost" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">
-                                @(StatusKey(t) == "expired_ticket" ? "Régénérer le QR" : "Nouveau QR")
-                            </button>
+                            <tr>
+                                <td class="muted" style="font-size:.75rem;max-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@(t.DeviceModel ?? "")">@(t.DeviceModel ?? "—")</td>
+                                <td>
+                                    <div style="display:flex;gap:.25rem;align-items:center;">
+                                        <input style="max-width:5rem;font-size:.78rem" placeholder="ex. entry"
+                                               value="@CheckpointEdit(t.Id, t.CheckpointId)"
+                                               @onchange="e => SetCheckpointEdit(t.Id, e.Value)" />
+                                        @if (CheckpointEdit(t.Id, t.CheckpointId) != (t.CheckpointId ?? ""))
+                                        {
+                                            <button class="btn-ghost" style="padding:.15rem .35rem;font-size:.72rem" disabled="@_busy"
+                                                    @onclick="() => SetCheckpointAsync(t.Id)">OK</button>
+                                        }
+                                    </div>
+                                </td>
+                                <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
+                                <td style="white-space:nowrap;">
+                                    <div style="display:flex;flex-direction:column;gap:.25rem;align-items:flex-start;">
+                                        @if (t.IsActive)
+                                        {
+                                            <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => RevokeTerminalAsync(t.Id)" disabled="@_busy">Révoquer</button>
+                                            <button class="btn-ghost" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => CreateEnrollmentTicketForTerminalAsync(t.Id)" disabled="@_busy">
+                                                @(StatusKey(t) == "expired_ticket" ? "Régénérer" : "Nouveau QR")
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-danger" style="padding:.15rem .4rem;font-size:.72rem" @onclick="() => DeleteTerminalAsync(t.Id)" disabled="@_busy">Supprimer</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
                         }
-                        else
-                        {
-                            <button class="btn-danger" @onclick="() => DeleteTerminalAsync(t.Id)" disabled="@_busy">Supprimer</button>
-                        }
-                    </td>
-                </tr>
-            }
-            @if (FilteredTerminals.Count == 0)
-            {
-                <tr><td colspan="7" class="muted">@(_terminals.Count == 0 ? "Aucun terminal enrôlé." : "Aucun terminal ne correspond à ce filtre.")</td></tr>
-            }
-        </tbody>
-    </table>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        }
     </div>
-    <Pagination Page="_terminalsPage" PageSize="_terminalsPageSize" TotalCount="FilteredTerminals.Count"
+    <Pagination Page="_terminalsPage" PageSize="_groupsPageSize" TotalCount="GroupedTerminals.Count"
                 OnPageChanged="p => _terminalsPage = p" />
     }
 </section>
@@ -182,11 +185,12 @@
     private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
     private int _terminalsPage = 1;
     private const int _terminalsPageSize = 20;
+    // Distinct de _terminalsPageSize (tableau archivé, une ligne par terminal) :
+    // une carte occupe bien plus de place verticale qu'une ligne de tableau.
+    private const int _groupsPageSize = 12;
 
     private string _search = "";
     private string _statusFilter = "all";
-    private string? _sortColumn;
-    private bool _sortAscending = true;
 
     // "expired_ticket" distingue un terminal encore en attente MAIS dont le
     // dernier QR d'enrôlement a expiré sans avoir été scanné — auparavant
@@ -225,16 +229,21 @@
                 || t.SiteIds.Any(s => s.Contains(_search, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-    private IEnumerable<TerminalSummaryDto> SortedTerminals => _sortColumn switch
-    {
-        "libelle" => _sortAscending ? FilteredTerminals.OrderBy(t => t.Label) : FilteredTerminals.OrderByDescending(t => t.Label),
-        "statut" => _sortAscending ? FilteredTerminals.OrderBy(t => StatusKey(t)) : FilteredTerminals.OrderByDescending(t => StatusKey(t)),
-        "cree" => _sortAscending ? FilteredTerminals.OrderBy(t => t.CreatedAt) : FilteredTerminals.OrderByDescending(t => t.CreatedAt),
-        _ => FilteredTerminals
-    };
+    // Un poste enrôlé via un ticket réutilisable (09/08/2026) produit N
+    // terminaux qui partagent le même libellé — regroupés en une carte au
+    // lieu de répéter la ligne N fois dans un tableau plat. Groupes triés
+    // alphabétiquement ; à l'intérieur, l'appareil le plus récent en premier.
+    private sealed record TerminalGroup(string Label, IReadOnlyList<string> SiteIds, List<TerminalSummaryDto> Terminals);
 
-    private IReadOnlyList<TerminalSummaryDto> PagedTerminals =>
-        SortedTerminals.Skip((_terminalsPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
+    private List<TerminalGroup> GroupedTerminals =>
+        FilteredTerminals
+            .GroupBy(t => t.Label, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new TerminalGroup(g.Key, g.First().SiteIds, g.OrderByDescending(t => t.CreatedAt).ToList()))
+            .ToList();
+
+    private IReadOnlyList<TerminalGroup> PagedGroupedTerminals =>
+        GroupedTerminals.Skip((_terminalsPage - 1) * _groupsPageSize).Take(_groupsPageSize).ToList();
 
     private List<ArchivedTerminalSummaryDto> FilteredArchivedTerminals =>
         _archivedTerminals
@@ -245,13 +254,6 @@
 
     private IReadOnlyList<ArchivedTerminalSummaryDto> PagedArchivedTerminals =>
         FilteredArchivedTerminals.Skip((_archivedPage - 1) * _terminalsPageSize).Take(_terminalsPageSize).ToList();
-
-    private void SortBy(string column)
-    {
-        if (_sortColumn == column) _sortAscending = !_sortAscending;
-        else { _sortColumn = column; _sortAscending = true; }
-        _terminalsPage = 1;
-    }
 
     private void SetStatusFilter(string filter)
     {

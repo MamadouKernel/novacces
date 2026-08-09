@@ -86,13 +86,26 @@ public sealed class ScanEventBroadcaster : IScanEventBroadcaster, IAgentEventBro
         return _hub.Clients.Group(HostGroup(evt.HostUserId)).SendAsync("HostVisitEvent", dto, ct);
     }
 
-    public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct) =>
-        _hub.Clients.Group(_tenant.SiteId).SendAsync(
+    public Task BroadcastVisitCreatedAsync(Guid visitId, string visitorName, DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        var siteTask = _hub.Clients.Group(_tenant.SiteId).SendAsync(
             "VisitCreated", new AgentVisitEventDto(visitId, visitorName, occurredAt), ct);
+        // Écho au canal Admin global (sans nom, comme AdminActivity) : la vue
+        // « Toutes les demandes » côté console Admin (AdminVisitors.razor) doit
+        // se rafraîchir sans que l'Admin ait à resélectionner son site.
+        var adminTask = _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(
+            "AdminEntityChanged", new AdminEntityChangedDto("visits", occurredAt), ct);
+        return Task.WhenAll(siteTask, adminTask);
+    }
 
-    public Task BroadcastVisitRevokedAsync(Guid visitId, DateTimeOffset occurredAt, CancellationToken ct) =>
-        _hub.Clients.Group(_tenant.SiteId).SendAsync(
+    public Task BroadcastVisitRevokedAsync(Guid visitId, DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        var siteTask = _hub.Clients.Group(_tenant.SiteId).SendAsync(
             "VisitRevoked", new AgentVisitEventDto(visitId, null, occurredAt), ct);
+        var adminTask = _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(
+            "AdminEntityChanged", new AdminEntityChangedDto("visits", occurredAt), ct);
+        return Task.WhenAll(siteTask, adminTask);
+    }
 
     public Task NotifyEntityChangedAsync(string kind, CancellationToken ct) =>
         _hub.Clients.Group(ScanEventsHub.GlobalGroup).SendAsync(

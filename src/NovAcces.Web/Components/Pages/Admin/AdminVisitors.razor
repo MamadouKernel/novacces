@@ -1,7 +1,9 @@
 @page "/admin/visiteurs"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Visiteurs</PageTitle>
 
@@ -181,6 +183,46 @@ else
     protected override async Task OnInitializedAsync()
     {
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
+        Live.ScanActivity += OnScanActivity;
+    }
+
+    // "visits" : une demande a été créée ou révoquée quelque part (voir
+    // ScanEventBroadcaster.BroadcastVisitCreatedAsync/RevokedAsync) — sans
+    // savoir sur quel site précisément (signal volontairement anonymisé),
+    // donc on rafraîchit si un site est actuellement affiché.
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "visits" || string.IsNullOrEmpty(_siteId)) return;
+        _ = InvokeAsync(async () =>
+        {
+            await ChangePageAsync(_page);
+            await ChangeJournalPageAsync(_journalPage);
+            StateHasChanged();
+        });
+    }
+
+    // Écho de chaque scan (entrée/sortie/refus) : celui-ci PORTE le site, donc
+    // on ne rafraîchit que si c'est celui actuellement affiché — évite un
+    // aller-retour réseau inutile pour l'activité d'un autre site.
+    private void OnScanActivity(AdminScanActivityDto dto)
+    {
+        if (!string.Equals(dto.SiteId, _siteId, StringComparison.OrdinalIgnoreCase)) return;
+        _ = InvokeAsync(async () =>
+        {
+            await ChangePageAsync(_page);
+            await ChangeJournalPageAsync(_journalPage);
+            try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort, tuiles */ }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Live.EntityChanged -= OnEntityChanged;
+        Live.ScanActivity -= OnScanActivity;
     }
 
     private async Task RefreshAsync()

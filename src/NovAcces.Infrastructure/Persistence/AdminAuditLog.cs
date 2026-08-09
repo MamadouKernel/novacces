@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NovAcces.Application.Abstractions;
 using NovAcces.Domain.Entities;
 using NovAcces.Domain.Enums;
@@ -15,11 +16,17 @@ public sealed class AdminAuditLog : IAdminAuditLog
 {
     private readonly NovAccesDbContext _db;
     private readonly IDateTimeProvider _clock;
+    private readonly IAdminActivityBroadcaster _broadcaster;
+    private readonly ILogger<AdminAuditLog> _logger;
 
-    public AdminAuditLog(NovAccesDbContext db, IDateTimeProvider clock)
+    public AdminAuditLog(
+        NovAccesDbContext db, IDateTimeProvider clock,
+        IAdminActivityBroadcaster broadcaster, ILogger<AdminAuditLog> logger)
     {
         _db = db;
         _clock = clock;
+        _broadcaster = broadcaster;
+        _logger = logger;
     }
 
     public async Task RecordAsync(
@@ -28,6 +35,19 @@ public sealed class AdminAuditLog : IAdminAuditLog
         await _db.EnsureTenantResolvedAsync(ct);
         _db.AdminAudit.Add(AdminAuditEntry.Create(actor, action, targetId, detail, _clock.UtcNow));
         await _db.SaveChangesAsync(ct);
+
+        // Choc unique en écriture pour TOUTE action privilégiée (agent créé,
+        // terminal révoqué, exclusion ajoutée, etc.) : un seul signal ici
+        // couvre /admin/audit sans avoir à instrumenter chaque appelant.
+        // Best-effort — ne doit jamais remettre en cause l'écriture déjà faite.
+        try
+        {
+            await _broadcaster.NotifyEntityChangedAsync("audit", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Échec de diffusion temps réel de l'écriture au journal d'audit.");
+        }
     }
 
     public async Task<IReadOnlyList<AdminAuditEntry>> GetRecentAsync(int limit, CancellationToken ct)

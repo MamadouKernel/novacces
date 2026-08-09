@@ -1,9 +1,11 @@
 @page "/admin/audit"
 @layout AdminLayout
+@implements IDisposable
 @inject NovAccesApiClient Api
 @inject AuthState Auth
 @inject IJSRuntime JS
 @inject ToastService Toasts
+@inject AdminLiveUpdates Live
 
 <PageTitle>SigasAcces — Administration · Audit</PageTitle>
 
@@ -131,7 +133,29 @@ else
         {
             await ChangeAppAuditPageAsync(1);
         }
+
+        await Live.EnsureConnectedAsync();
+        Live.EntityChanged += OnEntityChanged;
     }
+
+    // "audit" : diffusé depuis le SEUL point d'écriture du journal d'audit
+    // (AdminAuditLog.RecordAsync), quel que soit le site concerné — le signal
+    // ne porte pas le site (comme "terminals"/"sites"/etc., voir
+    // AdminEntityChangedDto), donc on rafraîchit le site actuellement affiché
+    // sans savoir si c'est précisément lui qui vient de changer. Léger
+    // sur-rafraîchissement occasionnel accepté pour rester simple — même
+    // compromis que AdminTerminals.razor.
+    private void OnEntityChanged(string kind)
+    {
+        if (kind != "audit" || string.IsNullOrEmpty(_auditSite)) return;
+        _ = InvokeAsync(async () =>
+        {
+            await ChangeSiteAuditPageAsync(_siteAuditPage);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Live.EntityChanged -= OnEntityChanged;
 
     private async Task RefreshSiteAuditAsync() => await ChangeSiteAuditPageAsync(1);
 

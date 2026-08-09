@@ -24,6 +24,16 @@ public sealed class AdminLiveUpdates : IAsyncDisposable
     /// abonné doit passer par InvokeAsync avant de toucher son état.</summary>
     public event Action<string>? EntityChanged;
 
+    /// <summary>
+    /// Écho anonymisé (sans nom de visiteur, voir AdminScanActivityDto) de
+    /// CHAQUE scan, tous sites confondus — déjà diffusé par ScanEventBroadcaster
+    /// pour AdminOverview, réutilisé ici pour qu'une page comme AdminVisitors
+    /// sache qu'un scan vient d'avoir lieu sur le site qu'elle affiche (sans
+    /// avoir besoin du détail, juste de savoir qu'il faut se rafraîchir).
+    /// Même garde que EntityChanged : se déclenche hors synchronisation Blazor.
+    /// </summary>
+    public event Action<AdminScanActivityDto>? ScanActivity;
+
     public AdminLiveUpdates(IConfiguration config, AuthState auth, IWebHostEnvironment env)
     {
         _config = config;
@@ -58,6 +68,7 @@ public sealed class AdminLiveUpdates : IAsyncDisposable
             .Build();
 
         hub.On<AdminEntityChangedDto>("AdminEntityChanged", dto => EntityChanged?.Invoke(dto.Kind));
+        hub.On<AdminScanActivityDto>("AdminActivity", dto => ScanActivity?.Invoke(dto));
 
         try { await hub.StartAsync(); }
         catch { /* best-effort : les tableaux restent utilisables sans temps réel */ }

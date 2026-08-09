@@ -390,7 +390,87 @@ public sealed class DashboardTests
         Assert.Contains(list!.Items, v => v.VisitorName == visitorName);
     }
 
+    [SkippableFact]
+    public async Task VisitCreated_BroadcastsAdminEntityChanged_ToGlobalAdminChannel()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // AdminVisitors.razor (console Admin) doit se rafraîchir en direct
+        // quand une demande est créée — sans savoir sur quel site (signal
+        // anonymisé, comme AdminActivity/AdminOverstayAlert).
+        var adminToken = await GetAdminBootstrapTokenAsync();
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "hubs/scan?global=1"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(adminToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<AdminEntityChangedDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<AdminEntityChangedDto>("AdminEntityChanged", e =>
+        {
+            if (e.Kind == "visits") received.TrySetResult(e);
+        });
+        await hub.StartAsync();
+
+        var hote = await LoginNewUserAsync("Hote");
+        var createResp = await hote.PostAsJsonAsync("/api/visits", new CreateVisitRequestDto(
+            $"AdminLiveVisit-{Guid.NewGuid():N}", "ACME", "Test", "Unique", DateTimeOffset.UtcNow, 60, null, null));
+        createResp.EnsureSuccessStatusCode();
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("visits", evt.Kind);
+    }
+
+    [SkippableFact]
+    public async Task ExclusionAdded_BroadcastsAdminEntityChanged_Audit()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // AdminAudit.razor doit se rafraîchir en direct dès qu'une action
+        // privilégiée est journalisée, quelle que soit son origine (ici
+        // l'ajout d'une exclusion) — signal diffusé au SEUL point d'écriture
+        // du journal (AdminAuditLog.RecordAsync), pas instrumenté par action.
+        var adminToken = await GetAdminBootstrapTokenAsync();
+
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "hubs/scan?global=1"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(adminToken);
+            })
+            .Build();
+
+        var received = new TaskCompletionSource<AdminEntityChangedDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        hub.On<AdminEntityChangedDto>("AdminEntityChanged", e =>
+        {
+            if (e.Kind == "audit") received.TrySetResult(e);
+        });
+        await hub.StartAsync();
+
+        var surete = await LoginNewUserAsync("Surete");
+        var add = await surete.PostAsJsonAsync("/api/exclusions",
+            new AddExclusionRequestDto($"AuditLive-{Guid.NewGuid():N}", "Test diffusion audit"));
+        add.EnsureSuccessStatusCode();
+
+        var evt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("audit", evt.Kind);
+    }
+
     // ---- Aides ----
+
+    private async Task<string> GetAdminBootstrapTokenAsync()
+    {
+        var admin = _factory.CreateClient();
+        var adminLogin = await admin.PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword));
+        adminLogin.EnsureSuccessStatusCode();
+        return (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+    }
 
     private async Task<Guid> CreateVisitAndCheckInAsync(
         string visitorName, string company = "ACME")

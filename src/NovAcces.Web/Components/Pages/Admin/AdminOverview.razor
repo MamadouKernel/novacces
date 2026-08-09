@@ -180,7 +180,10 @@
                 }
             </ol>
         }
-        <p class="hint">Voir le <a href="/admin/audit">journal complet</a>.</p>
+        @if (IsSuperAdmin)
+        {
+            <p class="hint">Voir le <a href="/admin/audit">journal complet</a>.</p>
+        }
     </section>
 </div>
 
@@ -463,16 +466,20 @@
                 $"« {s.SiteId} » : {s.TerminalsEnrolled - s.TerminalsActive} poste(s) sur {s.TerminalsEnrolled} silencieux depuis plus de 30 min.",
                 "/admin/terminaux", "Voir les terminaux"));
 
+        // Vers le journal des SCANS (/admin/visiteurs), pas le journal
+        // d'audit des actions privilégiées (/admin/audit, réservé SuperAdmin
+        // et sans rapport avec les scans) — ancien lien mal ciblé, corrigé au
+        // passage en restreignant l'accès à /admin/audit.
         foreach (var s in _overview.Where(s => s.DegradedScansToday > 0))
             alerts.Add(new Alert("warn",
                 $"« {s.SiteId} » : {s.DegradedScansToday} scan(s) validé(s) en mode dégradé aujourd'hui.",
-                "/admin/audit", "Voir le journal"));
+                "/admin/visiteurs", "Voir le journal"));
 
         if (_trends is not null)
             foreach (var d in _trends.RepeatedDenials)
                 alerts.Add(new Alert("security",
                     $"« {d.SiteId} » : « {d.VisitorName} » refusé {d.Count} fois sur les dernières 24h — QR copié ou personne écartée qui insiste ?",
-                    "/admin/audit", "Voir le journal"));
+                    "/admin/visiteurs", "Voir le journal"));
 
         var pendingActivation = _users.Count(u =>
             !u.IsDeactivated && !u.TwoFactorEnabled

@@ -7,6 +7,19 @@
 
 <PageTitle>SigasAcces — Administration · Audit</PageTitle>
 
+@if (!Auth.Initialized)
+{
+    <p class="muted" style="padding:2rem">Chargement…</p>
+}
+else if (!Auth.IsInRole(NovAccesRoles.SuperAdmin))
+{
+    @* Garde d'affichage en plus de la policy serveur, pour qu'un Admin
+       ordinaire ne voie même pas cet écran se remplir (défense en
+       profondeur, même patron que AdminDatabase.razor). *@
+    <p class="error" style="padding:2rem">Réservé au SuperAdmin.</p>
+}
+else
+{
 <header class="portal-header">
     <div>
         <h1>Audit</h1>
@@ -57,43 +70,43 @@
     }
 </section>
 
-@if (Auth.IsInRole(NovAccesRoles.SuperAdmin))
-{
-    <section class="card">
-        <h2>Journal technique global</h2>
-        <p class="muted">Une ligne par requête API, tous sites confondus — réservé au SuperAdmin.</p>
-        <button class="btn-ghost" @onclick="ExportCsvAsync" disabled="@_busy">⬇ Exporter (CSV)</button>
+@* Plus besoin de revérifier SuperAdmin ici : toute la page (voir le
+   @if/else en tête de fichier) n'est déjà rendue que pour un SuperAdmin. *@
+<section class="card">
+    <h2>Journal technique global</h2>
+    <p class="muted">Une ligne par requête API, tous sites confondus — réservé au SuperAdmin.</p>
+    <button class="btn-ghost" @onclick="ExportCsvAsync" disabled="@_busy">⬇ Exporter (CSV)</button>
 
-        @if (_appAudit.Count == 0)
-        {
-            <div class="empty" style="margin-top:1rem">@EmptyIcon()<p>Aucune entrée.</p></div>
-        }
-        else
-        {
-            <div class="table-wrap" style="margin-top:1rem">
-            <table class="visits">
-                <thead><tr><th>Horodatage</th><th>Acteur</th><th>Méthode</th><th>Chemin</th><th>Statut</th><th>Site</th><th>IP</th></tr></thead>
-                <tbody>
-                    @foreach (var e in _appAudit)
-                    {
-                        <tr>
-                            <td class="mono">@e.Timestamp.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
-                            <td class="muted">@e.Actor</td>
-                            <td class="mono">@e.Method</td>
-                            <td class="mono">@e.Path</td>
-                            <td>@e.StatusCode</td>
-                            <td class="muted">@(e.SiteId ?? "—")</td>
-                            <td class="mono muted">@(e.IpAddress ?? "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-            </div>
-            <Pagination Page="_appAuditPage" PageSize="_appAuditPageSize" TotalCount="_appAuditTotal"
-                        OnPageChanged="ChangeAppAuditPageAsync" />
-            <p class="hint">Export CSV pour une extraction plus large que la pagination à l'écran.</p>
-        }
-    </section>
+    @if (_appAudit.Count == 0)
+    {
+        <div class="empty" style="margin-top:1rem">@EmptyIcon()<p>Aucune entrée.</p></div>
+    }
+    else
+    {
+        <div class="table-wrap" style="margin-top:1rem">
+        <table class="visits">
+            <thead><tr><th>Horodatage</th><th>Acteur</th><th>Méthode</th><th>Chemin</th><th>Statut</th><th>Site</th><th>IP</th></tr></thead>
+            <tbody>
+                @foreach (var e in _appAudit)
+                {
+                    <tr>
+                        <td class="mono">@e.Timestamp.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                        <td class="muted">@e.Actor</td>
+                        <td class="mono">@e.Method</td>
+                        <td class="mono">@e.Path</td>
+                        <td>@e.StatusCode</td>
+                        <td class="muted">@(e.SiteId ?? "—")</td>
+                        <td class="mono muted">@(e.IpAddress ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+        <Pagination Page="_appAuditPage" PageSize="_appAuditPageSize" TotalCount="_appAuditTotal"
+                    OnPageChanged="ChangeAppAuditPageAsync" />
+        <p class="hint">Export CSV pour une extraction plus large que la pagination à l'écran.</p>
+    }
+</section>
 }
 
 @code {

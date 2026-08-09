@@ -218,7 +218,7 @@ else if (CanViewDashboard)
         {
             <div class="table-wrap table-cards">
             <table class="visits">
-                <thead><tr><th>Visiteur</th><th>Société</th><th>Mode</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th></tr></thead>
+                <thead><tr><th>Visiteur</th><th>Société</th><th>Motif</th><th>Mode</th><th>Rendez-vous</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th></tr></thead>
                 <tbody>
                     @foreach (var v in _visits)
                     {
@@ -227,7 +227,15 @@ else if (CanViewDashboard)
                                 <button class="btn-ghost" style="padding:0;font:inherit;text-decoration:underline;" @onclick="() => _historyVisitId = v.VisitId">@v.VisitorName</button>
                             </td>
                             <td class="muted" data-label="Société">@v.VisitorCompany</td>
+                            <td class="muted" data-label="Motif" style="white-space:normal">@v.Motif</td>
                             <td class="muted" data-label="Mode">@(v.Mode == "Unique" ? "Passage unique" : "30 jours")</td>
+                            <td class="muted" data-label="Rendez-vous">
+                                @(v.ScheduledAt is { } sch ? sch.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")
+                                @if (v.Mode == "Unique")
+                                {
+                                    <div style="font-size:.75rem;">durée prévue @v.PlannedDurationMinutes min</div>
+                                }
+                            </td>
                             <td data-label="Statut"><span class="badge @VisitStatusBadgeClass(v.Status)">@VisitStatusLabel(v.Status)</span></td>
                             <td data-label="Créé par">
                                 @v.CreatedByDisplayName

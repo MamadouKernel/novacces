@@ -589,7 +589,10 @@ else if (Auth.IsInRole(NovAccesRoles.Hote))
             .Concat(_myVisits.Where(v => IsExpectedToday(v) && !ArrivedToday(v)).OrderBy(v => v.ScheduledAt))
             .ToList();
 
-    private int TodayLateCount => _myVisits.Count(TodayIsLate);
+    // Même périmètre que TodayRows (IsExpectedToday) : sans ce filtre, une
+    // ancienne demande jamais honorée un jour précédent (jamais révoquée)
+    // gonflait ce compteur alors qu'elle n'apparaît pas dans "Aujourd'hui".
+    private int TodayLateCount => _myVisits.Count(v => IsExpectedToday(v) && TodayIsLate(v));
 
     private static string TodayStatusLabel(HostVisitDto v)
     {

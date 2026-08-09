@@ -318,6 +318,32 @@ public sealed class DashboardTests
         Assert.Contains(journal!.Items, e => e.WasGranted && e.IsSecurityEvent && e.AuthMethod == "ExclusionOverride");
     }
 
+    [SkippableFact]
+    public async Task AllVisits_GlobalAdmin_CanTargetAnySite_ViaExplicitSiteHeader()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        // Le compte Admin de test (NovAccesApiFactory.AdminEmail) est un
+        // compte global — sans claim SiteId — exactement le cas d'usage de
+        // la console Admin (AdminVisitors.razor) : il cible un site via
+        // X-Site-Id plutôt que via un claim de rattachement.
+        var visitorName = $"VuParAdmin-{Guid.NewGuid():N}";
+        await CreateVisitAndCheckInAsync(visitorName);
+
+        var admin = _factory.CreateClient();
+        var adminLogin = await admin.PostAsJsonAsync("/api/auth/login",
+            new LoginRequestDto(NovAccesApiFactory.AdminEmail, NovAccesApiFactory.AdminPassword));
+        adminLogin.EnsureSuccessStatusCode();
+        var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>(Json))!.AccessToken;
+        admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        admin.DefaultRequestHeaders.Add("X-Site-Id", NovAccesApiFactory.TestSite);
+
+        var list = await admin.GetFromJsonAsync<PagedResultDto<VisitListEntryDto>>(
+            $"/api/dashboard/visits?q={visitorName}", Json);
+
+        Assert.Contains(list!.Items, v => v.VisitorName == visitorName);
+    }
+
     // ---- Aides ----
 
     private async Task<Guid> CreateVisitAndCheckInAsync(

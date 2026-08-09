@@ -1,0 +1,193 @@
+@page "/admin/visiteurs"
+@layout AdminLayout
+@inject NovAccesApiClient Api
+@inject AuthState Auth
+
+<PageTitle>SigasAcces — Administration · Visiteurs</PageTitle>
+
+<header class="portal-header">
+    <div>
+        <h1>Visiteurs</h1>
+        <p class="muted">Toutes les demandes de visite d'un site, avec l'hôte créateur — vue en lecture seule.</p>
+    </div>
+</header>
+
+<section class="card">
+    <h2>Choisir un site</h2>
+    <div class="field" style="max-width:22rem"><label>Site</label>
+        <select @bind="_siteId" @bind:after="RefreshAsync">
+            <option value="">— choisir un site —</option>
+            @foreach (var s in _overview)
+            {
+                <option value="@s.SiteId">@s.SiteId</option>
+            }
+        </select>
+    </div>
+</section>
+
+@if (string.IsNullOrEmpty(_siteId))
+{
+    <section class="card">
+        <div class="empty">
+            @SiteIcon()
+            <p>Choisissez un site pour voir ses demandes de visite.</p>
+        </div>
+    </section>
+}
+else
+{
+    @if (SelectedOverview is { } ov)
+    {
+        <div class="tiles">
+            <div class="tile"><span class="tile-n">@_total</span><span class="tile-l">Demande@(_total > 1 ? "s" : "") trouvée@(_total > 1 ? "s" : "")</span></div>
+            <div class="tile tile-in"><span class="tile-n">@ov.OnSite</span><span class="tile-l">Présents</span></div>
+            <div class="tile"><span class="tile-n">@ov.ScansToday</span><span class="tile-l">Scans aujourd'hui</span></div>
+        </div>
+    }
+
+    <section class="card">
+        <h2>Demandes — @_siteId</h2>
+        <div class="toolbar">
+            <input class="search" placeholder="Rechercher (visiteur, société, motif)…"
+                   @bind="_search" @bind:event="oninput"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SearchAsync(); })" />
+            <button class="btn-ghost" @onclick="SearchAsync">Rechercher</button>
+            @if (!string.IsNullOrWhiteSpace(_search))
+            {
+                <button class="btn-ghost" @onclick="ClearSearchAsync">Effacer</button>
+            }
+        </div>
+
+        @if (_visits.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucune demande ne correspond.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap table-cards">
+            <table class="visits">
+                <thead><tr><th>Visiteur</th><th>Société</th><th>Motif</th><th>Mode</th><th>Rendez-vous</th><th>Statut</th><th>Créé par</th><th>Créé le</th><th>Entrée</th><th>Sortie</th><th>Exclusion</th></tr></thead>
+                <tbody>
+                    @foreach (var v in _visits)
+                    {
+                        <tr class="@(v.MatchesExclusionList ? "row-security" : "")">
+                            <td data-label="Visiteur"><strong>@v.VisitorName</strong></td>
+                            <td class="muted" data-label="Société">@v.VisitorCompany</td>
+                            <td class="muted" data-label="Motif" style="white-space:normal">@v.Motif</td>
+                            <td class="muted" data-label="Mode">@(v.Mode == "Unique" ? "Passage unique" : "30 jours")</td>
+                            <td class="muted" data-label="Rendez-vous">
+                                @(v.ScheduledAt is { } sch ? sch.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : "—")
+                                @if (v.Mode == "Unique")
+                                {
+                                    <div style="font-size:.75rem;">durée prévue @v.PlannedDurationMinutes min</div>
+                                }
+                            </td>
+                            <td data-label="Statut"><span class="badge @StatusBadgeClass(v.Status)">@StatusLabel(v.Status)</span></td>
+                            <td data-label="Créé par">
+                                @v.CreatedByDisplayName
+                                @if (!string.IsNullOrWhiteSpace(v.CreatedByEmail))
+                                {
+                                    <div class="muted" style="font-size:.75rem;">@v.CreatedByEmail</div>
+                                }
+                            </td>
+                            <td class="muted" data-label="Créé le">@v.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="muted" data-label="Entrée">@(v.CheckedInAt is { } ci ? ci.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
+                            <td class="muted" data-label="Sortie">@(v.CheckedOutAt is { } co ? co.LocalDateTime.ToString("dd/MM HH:mm") : "—")</td>
+                            <td data-label="Exclusion">
+                                @if (v.MatchesExclusionList)
+                                {
+                                    <span class="badge badge-revoked" title="Le nom de ce visiteur correspond à la liste d'exclusion du site.">⚠ Exclu</span>
+                                }
+                                else
+                                {
+                                    <span class="muted">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <Pagination Page="_page" PageSize="_pageSize" TotalCount="_total" OnPageChanged="ChangePageAsync" />
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<AdminSiteOverviewDto> _overview = Array.Empty<AdminSiteOverviewDto>();
+    private string _siteId = "";
+    private string _search = "";
+
+    private IReadOnlyList<VisitListEntryDto> _visits = Array.Empty<VisitListEntryDto>();
+    private int _page = 1;
+    private const int _pageSize = 20;
+    private int _total;
+
+    // Réutilise l'aperçu déjà chargé (présents, scans du jour) plutôt qu'un
+    // second appel : cette vue n'a pas besoin d'une fraîcheur seconde par
+    // seconde, contrairement au dashboard sûreté temps réel.
+    private AdminSiteOverviewDto? SelectedOverview =>
+        _overview.FirstOrDefault(s => s.SiteId == _siteId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
+    }
+
+    private Task RefreshAsync() => ChangePageAsync(1);
+    private Task SearchAsync() => ChangePageAsync(1);
+
+    private Task ClearSearchAsync()
+    {
+        _search = "";
+        return ChangePageAsync(1);
+    }
+
+    private async Task ChangePageAsync(int page)
+    {
+        _page = page;
+        if (string.IsNullOrEmpty(_siteId))
+        {
+            _visits = Array.Empty<VisitListEntryDto>();
+            _total = 0;
+            return;
+        }
+        try
+        {
+            var result = await Api.GetSiteVisitsAsync(_siteId, page, _pageSize, _search);
+            _visits = result.Items;
+            _total = result.TotalCount;
+        }
+        catch { /* best-effort */ }
+    }
+
+    // Même mapping que HotePortal.razor/SuretePortal.razor (StatusBadgeClass/
+    // StatusLabel) : pas de classe CSS "badge-consumed", et les libellés
+    // doivent rester ceux déjà appris par les utilisateurs ailleurs dans l'app.
+    private static string StatusBadgeClass(string status) => status switch
+    {
+        "Valid" => "badge-valid",
+        "Consumed" => "badge-used",
+        "Revoked" => "badge-revoked",
+        "Expired" => "badge-expired",
+        _ => "badge-pending",
+    };
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Valid" => "Valide",
+        "Consumed" => "Utilisée",
+        "Revoked" => "Révoquée",
+        "Expired" => "Expirée",
+        _ => status
+    };
+
+    private static RenderFragment SiteIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>
+            <path d='M12 21s-7-6.5-7-11.5a7 7 0 0 1 14 0C19 14.5 12 21 12 21z'/><circle cx='12' cy='9.5' r='2.5'/></svg>");
+
+    private static RenderFragment EmptyIcon() => builder =>
+        builder.AddMarkupContent(0, @"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'
+            stroke-width='1.6' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>");
+}

@@ -256,6 +256,25 @@ public sealed class NovAccesApiClient
         return result ?? new PagedResultDto<VisitListEntryDto>(Array.Empty<VisitListEntryDto>(), page, pageSize, 0);
     }
 
+    /// <summary>
+    /// Même lecture que <see cref="GetSiteVisitsAsync(int, int, string?)"/>, mais
+    /// pour un Admin/SuperAdmin qui cible explicitement UN site parmi tous ceux
+    /// qu'il administre (pas de claim SiteId sur son propre jeton — voir
+    /// TenantResolutionMiddleware, même mécanisme que GetAdminAuditPagedAsync).
+    /// </summary>
+    public async Task<PagedResultDto<VisitListEntryDto>> GetSiteVisitsAsync(
+        string siteId, int page, int pageSize, string? query = null)
+    {
+        var url = $"/api/dashboard/visits?page={page}&pageSize={pageSize}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&q={Uri.EscapeDataString(query.Trim())}";
+        var client = CreateClient(true);
+        client.DefaultRequestHeaders.Remove("X-Site-Id");
+        client.DefaultRequestHeaders.Add("X-Site-Id", siteId);
+        var result = await client.GetFromJsonAsync<PagedResultDto<VisitListEntryDto>>(url);
+        return result ?? new PagedResultDto<VisitListEntryDto>(Array.Empty<VisitListEntryDto>(), page, pageSize, 0);
+    }
+
     /// <summary>Visiteurs actuellement présents sur le site.</summary>
     public async Task<IReadOnlyList<OnSiteVisitorDto>> GetOnSiteAsync()
     {

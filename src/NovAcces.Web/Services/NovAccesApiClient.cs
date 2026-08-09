@@ -242,6 +242,24 @@ public sealed class NovAccesApiClient
     }
 
     /// <summary>
+    /// Même lecture que <see cref="GetJournalPagedAsync(int, int, string?)"/>,
+    /// mais pour un Admin/SuperAdmin qui cible explicitement un site (voir
+    /// GetSiteVisitsAsync(string, ...) — même mécanisme X-Site-Id).
+    /// </summary>
+    public async Task<PagedResultDto<ScanJournalEntryDto>> GetJournalPagedAsync(
+        string siteId, int page, int pageSize, string? query = null)
+    {
+        var url = $"/api/dashboard/journal?page={page}&pageSize={pageSize}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&q={Uri.EscapeDataString(query.Trim())}";
+        var client = CreateClient(true);
+        client.DefaultRequestHeaders.Remove("X-Site-Id");
+        client.DefaultRequestHeaders.Add("X-Site-Id", siteId);
+        var result = await client.GetFromJsonAsync<PagedResultDto<ScanJournalEntryDto>>(url);
+        return result ?? new PagedResultDto<ScanJournalEntryDto>(Array.Empty<ScanJournalEntryDto>(), page, pageSize, 0);
+    }
+
+    /// <summary>
     /// Toutes les demandes de visite du site (tout statut, tout hôte),
     /// paginées, avec l'hôte créateur — distinct de GetJournalPagedAsync
     /// (scans effectués) et de GetOnSiteAsync (présents maintenant).

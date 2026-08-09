@@ -111,6 +111,49 @@ else
             <Pagination Page="_page" PageSize="_pageSize" TotalCount="_total" OnPageChanged="ChangePageAsync" />
         }
     </section>
+
+    <section class="card">
+        <h2>Journal des scans — @_siteId</h2>
+        <p class="hint" style="margin-top:0">Chaque tentative de scan (entrée, sortie, refus) — distinct de la liste des demandes ci-dessus.</p>
+        <div class="toolbar">
+            <input class="search" placeholder="Rechercher (visiteur, agent, détail)…"
+                   @bind="_journalSearch" @bind:event="oninput"
+                   @onkeydown="@(e => { if (e.Key == "Enter") _ = SearchJournalAsync(); })" />
+            <button class="btn-ghost" @onclick="SearchJournalAsync">Rechercher</button>
+            @if (!string.IsNullOrWhiteSpace(_journalSearch))
+            {
+                <button class="btn-ghost" @onclick="ClearJournalSearchAsync">Effacer</button>
+            }
+        </div>
+
+        @if (_journal.Count == 0)
+        {
+            <div class="empty">@EmptyIcon()<p>Aucun scan ne correspond.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap table-cards">
+            <table class="visits">
+                <thead><tr><th>Heure</th><th>Visiteur</th><th>Agent</th><th>Accès</th><th>Créé par</th><th>Détail</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _journal)
+                    {
+                        <tr class="@(e.IsSecurityEvent ? "row-security" : "")">
+                            <td class="muted" data-label="Heure">@e.Timestamp.LocalDateTime.ToString("dd/MM HH:mm:ss")</td>
+                            <td data-label="Visiteur">@e.VisitorName</td>
+                            <td class="muted" data-label="Agent">@e.AgentId</td>
+                            <td class="muted" data-label="Accès">@AuthMethodLabel(e.AuthMethod)</td>
+                            <td class="muted" data-label="Créé par">@(e.CreatedByDisplayName ?? "—")</td>
+                            <td class="muted" data-label="Détail" style="white-space:normal">@e.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <Pagination Page="_journalPage" PageSize="_journalPageSize" TotalCount="_journalTotal"
+                        OnPageChanged="ChangeJournalPageAsync" />
+        }
+    </section>
 }
 
 @code {
@@ -123,6 +166,12 @@ else
     private const int _pageSize = 20;
     private int _total;
 
+    private string _journalSearch = "";
+    private IReadOnlyList<ScanJournalEntryDto> _journal = Array.Empty<ScanJournalEntryDto>();
+    private int _journalPage = 1;
+    private const int _journalPageSize = 20;
+    private int _journalTotal;
+
     // Réutilise l'aperçu déjà chargé (présents, scans du jour) plutôt qu'un
     // second appel : cette vue n'a pas besoin d'une fraîcheur seconde par
     // seconde, contrairement au dashboard sûreté temps réel.
@@ -134,7 +183,12 @@ else
         try { _overview = await Api.GetSiteOverviewAsync(); } catch { /* best-effort */ }
     }
 
-    private Task RefreshAsync() => ChangePageAsync(1);
+    private async Task RefreshAsync()
+    {
+        await ChangePageAsync(1);
+        await ChangeJournalPageAsync(1);
+    }
+
     private Task SearchAsync() => ChangePageAsync(1);
 
     private Task ClearSearchAsync()
@@ -161,6 +215,32 @@ else
         catch { /* best-effort */ }
     }
 
+    private Task SearchJournalAsync() => ChangeJournalPageAsync(1);
+
+    private Task ClearJournalSearchAsync()
+    {
+        _journalSearch = "";
+        return ChangeJournalPageAsync(1);
+    }
+
+    private async Task ChangeJournalPageAsync(int page)
+    {
+        _journalPage = page;
+        if (string.IsNullOrEmpty(_siteId))
+        {
+            _journal = Array.Empty<ScanJournalEntryDto>();
+            _journalTotal = 0;
+            return;
+        }
+        try
+        {
+            var result = await Api.GetJournalPagedAsync(_siteId, page, _journalPageSize, _journalSearch);
+            _journal = result.Items;
+            _journalTotal = result.TotalCount;
+        }
+        catch { /* best-effort */ }
+    }
+
     // Même mapping que HotePortal.razor/SuretePortal.razor (StatusBadgeClass/
     // StatusLabel) : pas de classe CSS "badge-consumed", et les libellés
     // doivent rester ceux déjà appris par les utilisateurs ailleurs dans l'app.
@@ -180,6 +260,16 @@ else
         "Revoked" => "Révoquée",
         "Expired" => "Expirée",
         _ => status
+    };
+
+    // Même mapping que SuretePortal.razor.
+    private static string AuthMethodLabel(string authMethod) => authMethod switch
+    {
+        "ManualCode" => "Code de secours",
+        "DashboardOverride" => "Manuel (dashboard)",
+        "ExclusionOverride" => "Contournement exclusion",
+        "SureteConfirmation" => "Confirmation sûreté",
+        _ => "QR",
     };
 
     private static RenderFragment SiteIcon() => builder =>

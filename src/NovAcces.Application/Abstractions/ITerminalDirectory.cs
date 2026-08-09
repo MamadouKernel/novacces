@@ -23,11 +23,15 @@ public sealed record ArchivedTerminalSummary(
 /// <summary>
 /// Ticket brut remis une seule fois à la console d'administration.
 /// <paramref name="ManualCode"/> est une alternative de secours au QR (même
-/// ticket, même expiration, même usage unique) pour le cas où la caméra du
-/// terminal est hors service.
+/// ticket, même expiration) pour le cas où la caméra du terminal est hors
+/// service. <paramref name="TerminalId"/> est nul pour un ticket de POSTE
+/// (voir CreatePosteEnrollmentTicketAsync) : aucun terminal précis n'existe
+/// encore avant le premier scan, et contrairement au ticket historique, ce
+/// n'est PAS un usage unique — le même QR reste scannable par plusieurs
+/// appareils jusqu'à son expiration, chacun créant son propre terminal.
 /// </summary>
 public sealed record TerminalEnrollmentTicket(
-    Guid TerminalId,
+    Guid? TerminalId,
     string Label,
     IReadOnlyList<string> SiteIds,
     string Ticket,
@@ -71,13 +75,26 @@ public interface ITerminalDirectory
     /// <summary>Liste les terminaux supprimés (archivés), en lecture seule, pour l'administration.</summary>
     Task<IReadOnlyList<ArchivedTerminalSummary>> ListArchivedAsync(CancellationToken ct);
 
-    /// <summary>Crée un ticket d'enrôlement temporaire, à usage unique.</summary>
+    /// <summary>Crée un ticket d'enrôlement temporaire pour un terminal PRÉCRÉÉ, à usage unique.</summary>
     Task<TerminalEnrollmentTicket?> CreateEnrollmentTicketAsync(
         Guid terminalId, string createdBy, TimeSpan lifetime, CancellationToken ct);
 
     /// <summary>
+    /// Crée un ticket d'enrôlement de POSTE (09/08/2026) : réutilisable dans sa
+    /// fenêtre de validité, sans terminal précréé — chaque scan (voir
+    /// ActivateAsync) crée un nouveau Terminal à partir de ce gabarit
+    /// (label + sites + poste), permettant d'enrôler N appareils physiques
+    /// pour un même poste depuis un seul QR.
+    /// </summary>
+    Task<TerminalEnrollmentTicket?> CreatePosteEnrollmentTicketAsync(
+        string label, IReadOnlyList<string> siteIds, string? checkpointId,
+        string createdBy, TimeSpan lifetime, CancellationToken ct);
+
+    /// <summary>
     /// Consomme le ticket et lie le device. Une nouvelle clé API est générée et
-    /// remise une seule fois au mobile.
+    /// remise une seule fois au mobile. Pour un ticket de poste, le ticket
+    /// N'EST PAS consommé (reste scannable par d'autres appareils) : c'est un
+    /// nouveau Terminal qui est créé et lié à ce device.
     /// </summary>
     Task<TerminalActivation?> ActivateAsync(
         string ticket, string deviceInstanceId, string devicePublicKeyPem, CancellationToken ct);

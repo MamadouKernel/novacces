@@ -21,7 +21,7 @@
         <div class="field" style="background:#fff8e6;border:1px solid var(--brand-amber, #F5A300);border-radius:8px;padding:1rem;margin-bottom:1rem;text-align:center;">
             <p style="margin:0 0 .4rem;font-weight:600;">QR d'enrôlement — « @_lastEnrollmentTicket.Label »</p>
             <img class="qr" style="width:220px;height:220px;margin:.7rem auto;background:#fff;padding:.5rem;" src="@QrImage.ToDataUri(_lastEnrollmentTicket.QrPayload)" alt="QR d'enrôlement du terminal" />
-            <p class="hint" style="margin:.5rem 0 0;">Scannez ce QR depuis l'application mobile. Il expire le @_lastEnrollmentTicket.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy à HH:mm:ss") et ne peut être utilisé qu'une seule fois.</p>
+            <p class="hint" style="margin:.5rem 0 0;">Scannez ce QR depuis l'application mobile — un par appareil physique à enrôler. Réutilisable jusqu'à son expiration le @_lastEnrollmentTicket.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy à HH:mm:ss") : chaque scan crée son propre terminal sous ce même poste.</p>
             <p class="hint" style="margin:.5rem 0 0;">Caméra hors service ? Dans l'app mobile, choisissez « Saisir le code manuellement » et entrez : <code>@_lastEnrollmentTicket.ManualCode</code></p>
             <button class="btn-ghost" style="margin-top:.7rem" @onclick="() => _lastEnrollmentTicket = null">Fermer</button>
         </div>
@@ -30,7 +30,13 @@
     <div class="row">
         <div class="field"><label>Libellé</label>
             <input @bind="_newTerminal.Label" placeholder="ex. Poste Entrée A" /></div>
+        <div class="field"><label>Poste (optionnel)</label>
+            <input @bind="_newTerminal.CheckpointId" placeholder="ex. entry" /></div>
     </div>
+    <p class="hint" style="margin-top:-.4rem;margin-bottom:.6rem;">
+        Un seul QR pour ce poste : scannez-le depuis chaque appareil physique à enrôler (principal, secours…),
+        chacun devient automatiquement un terminal séparé, tous affectés à ce poste.
+    </p>
     <div class="field">
         <label>@(_multiSite ? "Sites autorisés" : "Site")</label>
         @if (_overview.Count == 0)
@@ -254,7 +260,7 @@
         _archivedPage = 1;
     }
 
-    private sealed class NewTerminal { public string Label = ""; public HashSet<string> SiteIds = new(); }
+    private sealed class NewTerminal { public string Label = ""; public string CheckpointId = ""; public HashSet<string> SiteIds = new(); }
     private readonly NewTerminal _newTerminal = new();
     private bool _multiSite;
     private string _singleSiteId = "";
@@ -354,33 +360,30 @@
         _busy = true; _terminalMsg = null;
         try
         {
-            var (ok, result, error) = await Api.CreateTerminalAsync(
-                _newTerminal.Label.Trim(), _newTerminal.SiteIds.ToList());
+            // Ticket de poste (09/08/2026) : plus de pré-création de terminal
+            // vide — le QR est réutilisable, chaque scan enrôle un appareil.
+            var checkpointId = string.IsNullOrWhiteSpace(_newTerminal.CheckpointId) ? null : _newTerminal.CheckpointId.Trim();
+            var ticket = await Api.CreatePosteEnrollmentTicketAsync(
+                _newTerminal.Label.Trim(), _newTerminal.SiteIds.ToList(), checkpointId);
 
-            _terminalOk = ok;
-            _terminalMsg = ok ? null : error;
-            if (ok && result is not null)
+            _terminalOk = ticket.Success;
+            if (!ticket.Success || ticket.Result is null)
             {
-                var ticket = await Api.CreateEnrollmentTicketAsync(result.Id);
-                if (!ticket.Success || ticket.Result is null)
-                {
-                    _terminalOk = false;
-                    _terminalMsg = ticket.Error ?? "Impossible de générer le QR d'enrôlement.";
-                    Toasts.Error(_terminalMsg);
-                }
-                else
-                {
-                    _lastEnrollmentTicket = ticket.Result;
-                    Toasts.Success($"Terminal « {_newTerminal.Label.Trim()} » créé : scannez le QR pour l'activer.");
-                    _terminalMsg = null;
-                }
+                _terminalMsg = ticket.Error ?? "Impossible de générer le QR d'enrôlement.";
+                Toasts.Error(_terminalMsg);
+            }
+            else
+            {
+                _lastEnrollmentTicket = ticket.Result;
+                Toasts.Success($"Poste « {_newTerminal.Label.Trim()} » créé : scannez le QR depuis chaque appareil à enrôler.");
+                _terminalMsg = null;
                 _newTerminal.Label = "";
+                _newTerminal.CheckpointId = "";
                 _newTerminal.SiteIds.Clear();
                 _singleSiteId = "";
                 _multiSite = false;
                 await RefreshAsync();
             }
-            else { Toasts.Error(error ?? "Enrôlement refusé."); }
         }
         catch { Toasts.Error("Service indisponible, réessayez."); }
         finally { _busy = false; }

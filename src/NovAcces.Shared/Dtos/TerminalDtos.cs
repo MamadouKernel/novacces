@@ -28,6 +28,15 @@ public sealed record TerminalSummaryDto(
 /// <summary>Affectation (Admin) d'un terminal à un poste — un poste peut regrouper plusieurs terminaux. CheckpointId null/vide retire l'affectation.</summary>
 public sealed record SetTerminalCheckpointRequestDto(string? CheckpointId);
 
+/// <summary>
+/// Création d'un ticket de POSTE (09/08/2026) : libellé + sites + poste
+/// optionnel — AUCUN terminal précréé, contrairement à CreateTerminalRequestDto.
+/// Le ticket qui en résulte est réutilisable (voir EnrollmentTicketResponseDto),
+/// chaque scan crée son propre terminal sous ce gabarit.
+/// </summary>
+public sealed record CreatePosteEnrollmentTicketRequestDto(
+    string Label, IReadOnlyList<string> SiteIds, string? CheckpointId = null);
+
 /// <summary>Modèle/OS de l'appareil, remonté par l'app agent après connexion (expo-device) — purement informatif.</summary>
 public sealed record AgentDeviceInfoRequestDto(string DeviceModel);
 
@@ -40,9 +49,11 @@ public sealed record ArchivedTerminalSummaryDto(
 /// Le ticket brut n'est jamais stocké par l'API : seul son hash est conservé.
 /// <paramref name="ManualCode"/> est une alternative de secours au QR (même
 /// ticket, même expiration) si la caméra du terminal est hors service.
+/// <paramref name="TerminalId"/> est nul pour un ticket de POSTE (réutilisable,
+/// pas encore lié à un terminal précis avant le premier scan).
 /// </summary>
 public sealed record EnrollmentTicketResponseDto(
-    Guid TerminalId,
+    Guid? TerminalId,
     string Label,
     IReadOnlyList<string> SiteIds,
     string QrPayload,

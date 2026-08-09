@@ -91,10 +91,16 @@ public sealed class NovAccesIdentityDbContext
             t.Property(x => x.ManualCodeHash).HasMaxLength(80);
             t.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
             t.Property(x => x.DeviceInstanceId).HasMaxLength(200);
+            // Gabarit "poste" (TerminalId nul) — voir TerminalEnrollmentTicketEntity.
+            t.Property(x => x.PosteLabel).HasMaxLength(120);
+            t.Property(x => x.PosteSiteIds).HasColumnType("text[]");
+            t.Property(x => x.PosteCheckpointId).HasMaxLength(80);
             t.HasIndex(x => x.TokenHash).IsUnique();
             t.HasIndex(x => x.ManualCodeHash).IsUnique().HasFilter("\"ManualCodeHash\" IS NOT NULL");
             t.HasIndex(x => new { x.TerminalId, x.ExpiresAt });
-            t.HasOne<Terminal>().WithMany().HasForeignKey(x => x.TerminalId).OnDelete(DeleteBehavior.Restrict);
+            // Nullable depuis le mode poste : un ticket réutilisable n'a pas
+            // de terminal précis avant le premier scan (voir CreateForPoste).
+            t.HasOne<Terminal>().WithMany().HasForeignKey(x => x.TerminalId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
         });
         builder.Entity<ApplicationAuditEntry>(a =>
         {

@@ -1188,36 +1188,17 @@ public static class AdminEndpoints
             if (ticket is null)
                 return Results.NotFound(new { error = "Terminal introuvable ou révoqué." });
 
-            var configuredBaseUrl = configuration["Api:PublicBaseUrl"]?.Trim();
-            string publicBaseUrl;
-            if (string.IsNullOrWhiteSpace(configuredBaseUrl))
-            {
-                if (environment.IsProduction())
-                    return Results.Problem("Api:PublicBaseUrl doit être configurée en production.", statusCode: StatusCodes.Status500InternalServerError);
-                publicBaseUrl = $"{http.Scheme}://{http.Host}";
-            }
-            else if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var baseUri)
-                || baseUri.Scheme is not ("https" or "http")
-                || !string.IsNullOrEmpty(baseUri.Query)
-                || !string.IsNullOrEmpty(baseUri.Fragment))
-            {
-                return Results.Problem("Api:PublicBaseUrl doit être une URL absolue sans query ni fragment.", statusCode: StatusCodes.Status500InternalServerError);
-            }
-            else if (environment.IsProduction() && !string.Equals(baseUri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.Problem("Api:PublicBaseUrl doit utiliser HTTPS en production.", statusCode: StatusCodes.Status500InternalServerError);
-            }
-            else
-            {
-                publicBaseUrl = configuredBaseUrl.TrimEnd('/');
-            }
+            var baseUrlResult = ResolvePublicBaseUrl(http, configuration, environment);
+            if (baseUrlResult.Error is not null)
+                return baseUrlResult.Error;
+
             // Format JSON, PAS l'ancien schéma d'URI "novacces://enroll?..." (hérité
             // du prototype MAUI abandonné) : l'app agent réelle est en React Native
             // (dépôt sigasacces-mobile), et son parseur de ticket (parseEnrollmentTicket)
             // n'accepte qu'un ticket brut ou ce JSON — jamais l'URI, qu'il aurait pris
             // tel quel pour un "ticket" invalide, faisant échouer l'activation à
             // chaque scan. Garder les deux formats synchronisés si l'un change.
-            var qrPayload = JsonSerializer.Serialize(new { ticket = ticket.Ticket, baseUrl = publicBaseUrl });
+            var qrPayload = JsonSerializer.Serialize(new { ticket = ticket.Ticket, baseUrl = baseUrlResult.Url });
 
             await RecordOnEachSiteAsync(scopeFactory, ticket.SiteIds,
                 AdminAuditAction.EnrollmentTicketCreated, user.HostIdentifier(), ticket.TerminalId.ToString(),
@@ -1229,6 +1210,69 @@ public static class AdminEndpoints
         .RequireRateLimiting("sensitive")
         .WithName("CreateTerminalEnrollmentTicket")
         .WithSummary("Génère un QR d'enrôlement temporaire, à usage unique.");
+
+        // Ticket de POSTE (09/08/2026) : un seul QR, réutilisable dans sa
+        // fenêtre de validité, qui enrôle N appareils physiques d'un coup —
+        // chaque scan crée son propre Terminal (voir ActivateAsync), sans
+        // étape préalable de création manuelle contrairement au flux ci-dessus.
+        group.MapPost("/terminals/poste-enrollment-ticket", async (
+            CreatePosteEnrollmentTicketRequestDto request,
+            ITerminalDirectory terminals,
+            ISiteCatalog sites,
+            IServiceScopeFactory scopeFactory,
+            ClaimsPrincipal user,
+            HttpRequest http,
+            IConfiguration configuration,
+            IHostEnvironment environment,
+            CancellationToken ct) =>
+        {
+            var label = request.Label?.Trim();
+            if (string.IsNullOrWhiteSpace(label) || label.Length > 120)
+                return Results.BadRequest(new { error = "Libellé requis (120 caractères maximum)." });
+
+            var siteIds = (request.SiteIds ?? Array.Empty<string>())
+                .Select(s => s.Trim().ToLowerInvariant())
+                .Distinct()
+                .ToList();
+
+            if (siteIds.Count == 0)
+                return Results.BadRequest(new { error = "Au moins un site requis." });
+
+            if (siteIds.Any(s => !CurrentTenant.IsValidSiteId(s)))
+                return Results.BadRequest(new { error = "Un des identifiants de site est invalide." });
+
+            var provisioned = await sites.GetSiteIdsAsync(ct);
+            if (siteIds.Any(site => !provisioned.Contains(site, StringComparer.OrdinalIgnoreCase)))
+                return Results.BadRequest(new { error = "Tous les sites doivent être provisionnés avant l'enrôlement." });
+
+            var checkpointId = request.CheckpointId?.Trim();
+            if (checkpointId is { Length: > 80 })
+                return Results.BadRequest(new { error = "Identifiant de poste trop long (80 caractères maximum)." });
+
+            var minutes = configuration.GetValue<double?>("Enrollment:TicketLifetimeMinutes") ?? 60d;
+            minutes = Math.Clamp(minutes, 1d, 60d);
+            var ticket = await terminals.CreatePosteEnrollmentTicketAsync(
+                label!, siteIds, string.IsNullOrWhiteSpace(checkpointId) ? null : checkpointId,
+                user.HostIdentifier(), TimeSpan.FromMinutes(minutes), ct);
+            if (ticket is null)
+                return Results.Problem("Échec de la création du ticket de poste.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var publicBaseUrlResult = ResolvePublicBaseUrl(http, configuration, environment);
+            if (publicBaseUrlResult.Error is not null)
+                return publicBaseUrlResult.Error;
+
+            var qrPayload = JsonSerializer.Serialize(new { ticket = ticket.Ticket, baseUrl = publicBaseUrlResult.Url });
+
+            await RecordOnEachSiteAsync(scopeFactory, siteIds,
+                AdminAuditAction.EnrollmentTicketCreated, user.HostIdentifier(), null,
+                $"Ticket QR de poste créé pour « {label} » (réutilisable jusqu'à {ticket.ExpiresAt:O}).", ct);
+
+            return Results.Ok(new EnrollmentTicketResponseDto(
+                ticket.TerminalId, ticket.Label, ticket.SiteIds, qrPayload, ticket.ManualCode, ticket.ExpiresAt));
+        })
+        .RequireRateLimiting("sensitive")
+        .WithName("CreatePosteEnrollmentTicket")
+        .WithSummary("Génère un QR de poste réutilisable — chaque scan enrôle un nouveau terminal, sans création manuelle préalable.");
 
         group.MapGet("/terminals", async (ITerminalDirectory terminals, CancellationToken ct) =>
         {
@@ -1351,6 +1395,36 @@ public static class AdminEndpoints
     // plusieurs) : on inscrit l'action dans le journal d'audit de CHAQUE site
     // concerné, un scope + une résolution de tenant par site (même schéma que
     // la création d'agent, ci-dessus).
+    /// <summary>
+    /// URL publique à encoder dans le QR d'enrôlement — factorisé entre le
+    /// ticket par terminal précréé et le ticket de poste (09/08/2026), même
+    /// validation dans les deux cas (HTTPS obligatoire en production, etc.).
+    /// </summary>
+    private static (string? Url, IResult? Error) ResolvePublicBaseUrl(
+        HttpRequest http, IConfiguration configuration, IHostEnvironment environment)
+    {
+        var configuredBaseUrl = configuration["Api:PublicBaseUrl"]?.Trim();
+        if (string.IsNullOrWhiteSpace(configuredBaseUrl))
+        {
+            if (environment.IsProduction())
+                return (null, Results.Problem("Api:PublicBaseUrl doit être configurée en production.", statusCode: StatusCodes.Status500InternalServerError));
+            return ($"{http.Scheme}://{http.Host}", null);
+        }
+
+        if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var baseUri)
+            || baseUri.Scheme is not ("https" or "http")
+            || !string.IsNullOrEmpty(baseUri.Query)
+            || !string.IsNullOrEmpty(baseUri.Fragment))
+        {
+            return (null, Results.Problem("Api:PublicBaseUrl doit être une URL absolue sans query ni fragment.", statusCode: StatusCodes.Status500InternalServerError));
+        }
+
+        if (environment.IsProduction() && !string.Equals(baseUri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+            return (null, Results.Problem("Api:PublicBaseUrl doit utiliser HTTPS en production.", statusCode: StatusCodes.Status500InternalServerError));
+
+        return (configuredBaseUrl.TrimEnd('/'), null);
+    }
+
     private static async Task RecordOnEachSiteAsync(
         IServiceScopeFactory scopeFactory, IReadOnlyList<string> siteIds,
         AdminAuditAction action, string actor, string? targetId, string detail, CancellationToken ct)

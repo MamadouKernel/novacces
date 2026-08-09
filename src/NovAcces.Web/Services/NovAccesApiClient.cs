@@ -680,6 +680,22 @@ public sealed class NovAccesApiClient
         return (true, await response.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(), null);
     }
 
+    /// <summary>
+    /// Ticket de POSTE réutilisable (09/08/2026) : un seul QR pour enrôler N
+    /// appareils physiques — aucun terminal précréé, chaque scan en crée un
+    /// nouveau. Remplace le duo CreateTerminalAsync + CreateEnrollmentTicketAsync
+    /// pour ce cas d'usage.
+    /// </summary>
+    public async Task<(bool Success, EnrollmentTicketResponseDto? Result, string? Error)> CreatePosteEnrollmentTicketAsync(
+        string label, IReadOnlyList<string> siteIds, string? checkpointId)
+    {
+        var response = await CreateClient(true).PostAsJsonAsync("/api/admin/terminals/poste-enrollment-ticket",
+            new CreatePosteEnrollmentTicketRequestDto(label, siteIds, checkpointId));
+        if (!response.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(response));
+        return (true, await response.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(), null);
+    }
+
     public async Task<(bool Success, string? Error)> RevokeTerminalAsync(Guid id)
     {
         var response = await CreateClient(true).PostAsync($"/api/admin/terminals/{id}/revoke", null);

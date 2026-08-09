@@ -160,6 +160,69 @@ public sealed class AdminTests
     }
 
     [SkippableFact]
+    public async Task PosteEnrollmentTicket_IsReusableAndCreatesSeparateTerminals()
+    {
+        Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);
+
+        var admin = await AdminClientAsync();
+        var label = $"Poste-{Guid.NewGuid():N}";
+        var ticketResponse = await admin.PostAsJsonAsync("/api/admin/terminals/poste-enrollment-ticket",
+            new CreatePosteEnrollmentTicketRequestDto(label, new[] { NovAccesApiFactory.TestSite }, "entry"));
+        Assert.Equal(HttpStatusCode.OK, ticketResponse.StatusCode);
+        var ticket = await ticketResponse.Content.ReadFromJsonAsync<EnrollmentTicketResponseDto>(Json);
+        Assert.NotNull(ticket);
+        // Aucun terminal précréé pour un ticket de poste — contrairement au
+        // flux historique (CreateTerminalAsync + enrollment-ticket).
+        Assert.Null(ticket!.TerminalId);
+        var rawTicket = TicketFromQr(ticket.QrPayload);
+
+        using var ecdsa1 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var device1 = Guid.NewGuid().ToString("D");
+        var activation1 = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate", EnrollmentRequest(ecdsa1, rawTicket, device1));
+        Assert.Equal(HttpStatusCode.OK, activation1.StatusCode);
+        var activated1 = await activation1.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
+        Assert.NotNull(activated1);
+
+        // MÊME ticket, DEUXIÈME appareil : doit fonctionner (réutilisable),
+        // contrairement au ticket historique (410 Gone au second scan — voir
+        // TerminalEnrollmentTicket_IsOneTimeAndActivatesDevice ci-dessus).
+        using var ecdsa2 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var device2 = Guid.NewGuid().ToString("D");
+        var activation2 = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate", EnrollmentRequest(ecdsa2, rawTicket, device2));
+        Assert.Equal(HttpStatusCode.OK, activation2.StatusCode);
+        var activated2 = await activation2.Content.ReadFromJsonAsync<DeviceEnrollmentActivationDto>(Json);
+        Assert.NotNull(activated2);
+
+        // Deux TERMINAUX DISTINCTS, chacun sa propre clé, même gabarit (label/poste).
+        Assert.NotEqual(activated1!.TerminalId, activated2!.TerminalId);
+        Assert.NotEqual(activated1.ApiKey, activated2.ApiKey);
+
+        var listed = await admin.GetFromJsonAsync<List<TerminalSummaryDto>>("/api/admin/terminals", Json);
+        var t1 = listed!.Single(t => t.Id == activated1.TerminalId);
+        var t2 = listed!.Single(t => t.Id == activated2.TerminalId);
+        Assert.Equal(label, t1.Label);
+        Assert.Equal(label, t2.Label);
+        Assert.Equal("entry", t1.CheckpointId);
+        Assert.Equal("entry", t2.CheckpointId);
+
+        // Chaque clé fonctionne indépendamment de l'autre.
+        var client1 = _factory.CreateClient();
+        client1.DefaultRequestHeaders.Add("X-Api-Key", activated1.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, (await client1.GetAsync("/api/agent/sites")).StatusCode);
+
+        var client2 = _factory.CreateClient();
+        client2.DefaultRequestHeaders.Add("X-Api-Key", activated2.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, (await client2.GetAsync("/api/agent/sites")).StatusCode);
+
+        // Le MÊME appareil ne peut pas rescanner pour créer un doublon fantôme.
+        var replay = await _factory.CreateClient().PostAsJsonAsync(
+            "/api/device-enrollments/activate", EnrollmentRequest(ecdsa1, rawTicket, device1));
+        Assert.Equal(HttpStatusCode.Gone, replay.StatusCode);
+    }
+
+    [SkippableFact]
     public async Task TerminalEnrollmentTicket_ManualCode_ActivatesSameTicketAsQr()
     {
         Skip.IfNot(_factory.DatabaseAvailable, _factory.SkipReason);

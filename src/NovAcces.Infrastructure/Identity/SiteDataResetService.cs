@@ -89,7 +89,7 @@ public sealed class SiteDataResetService : ISiteDataResetService
         {
             var dedicatedIds = dedicated.Select(t => t.Id).ToList();
             var tickets = await _identityDb.TerminalEnrollmentTickets
-                .Where(k => dedicatedIds.Contains(k.TerminalId)).ToListAsync(ct);
+                .Where(k => k.TerminalId != null && dedicatedIds.Contains(k.TerminalId.Value)).ToListAsync(ct);
             _identityDb.TerminalEnrollmentTickets.RemoveRange(tickets);
             _identityDb.Terminals.RemoveRange(dedicated);
         }

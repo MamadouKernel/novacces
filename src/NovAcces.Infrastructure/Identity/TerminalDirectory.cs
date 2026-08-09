@@ -132,6 +132,22 @@ public sealed class TerminalDirectory : ITerminalDirectory
             terminal.Id, terminal.Label, terminal.SiteIds.ToList(), rawTicket, rawManualCode, expiresAt);
     }
 
+    public async Task<TerminalEnrollmentTicket?> CreatePosteEnrollmentTicketAsync(
+        string label, IReadOnlyList<string> siteIds, string? checkpointId,
+        string createdBy, TimeSpan lifetime, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.Add(lifetime);
+        var rawTicket = GenerateSecret();
+        var (rawManualCode, manualCodeHash) = _manualCodes.GenerateCode();
+
+        _db.TerminalEnrollmentTickets.Add(TerminalEnrollmentTicketEntity.CreateForPoste(
+            label, siteIds, checkpointId, ComputeKeyHash(rawTicket), manualCodeHash, createdBy, now, expiresAt));
+        await _db.SaveChangesAsync(ct);
+
+        return new TerminalEnrollmentTicket(null, label, siteIds, rawTicket, rawManualCode, expiresAt);
+    }
+
     public async Task<TerminalActivation?> ActivateAsync(
         string ticket, string deviceInstanceId, string devicePublicKeyPem, CancellationToken ct)
     {
@@ -139,8 +155,11 @@ public sealed class TerminalDirectory : ITerminalDirectory
             || string.IsNullOrWhiteSpace(devicePublicKeyPem))
             return null;
 
+        var trimmedDeviceId = deviceInstanceId.Trim();
+
         // Serializable + relecture dans la transaction : deux téléphones qui
-        // scanneraient le même QR ne peuvent pas tous les deux l'activer.
+        // scanneraient le même QR (ou le même appareil qui le scanne deux fois)
+        // ne peuvent pas tous les deux l'activer / créer un doublon.
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = DateTimeOffset.UtcNow;
         var trimmedTicket = ticket.Trim();
@@ -158,13 +177,43 @@ public sealed class TerminalDirectory : ITerminalDirectory
         if (ticketEntity is null || !ticketEntity.IsUsable(now))
             return null;
 
+        // Mode POSTE (ticket réutilisable, voir CreatePosteEnrollmentTicketAsync)
+        // : chaque scan crée un NOUVEAU terminal à partir du gabarit — le
+        // ticket lui-même n'est jamais consommé (reste scannable jusqu'à
+        // expiration par d'autres appareils).
+        if (ticketEntity.TerminalId is null)
+        {
+            // Un même appareil physique qui rescanne (double-scan caméra,
+            // reprise après coupure) ne doit pas créer un second terminal
+            // fantôme — DeviceInstanceId est de toute façon unique en base
+            // (index partiel), mais on le vérifie ici pour retourner un refus
+            // net plutôt qu'une exception de contrainte.
+            var alreadyEnrolled = await _db.Terminals
+                .AnyAsync(t => t.DeviceInstanceId == trimmedDeviceId && t.DeletedAt == null, ct);
+            if (alreadyEnrolled)
+                return null;
+
+            var posteApiKey = GenerateSecret();
+            var newTerminal = Terminal.Create(
+                ticketEntity.PosteLabel!, ComputeKeyHash(posteApiKey), ticketEntity.PosteSiteIds!, now);
+            newTerminal.BindDevice(trimmedDeviceId, devicePublicKeyPem.Trim(), ComputeKeyHash(posteApiKey), now);
+            newTerminal.SetCheckpoint(ticketEntity.PosteCheckpointId);
+
+            _db.Terminals.Add(newTerminal);
+            await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return new TerminalActivation(
+                newTerminal.Id, newTerminal.Label, newTerminal.SiteIds.ToList(), posteApiKey, now);
+        }
+
         var terminal = await _db.Terminals.FirstOrDefaultAsync(t => t.Id == ticketEntity.TerminalId, ct);
         if (terminal is null || !terminal.IsActive)
             return null;
 
         var apiKey = GenerateSecret();
-        terminal.BindDevice(deviceInstanceId.Trim(), devicePublicKeyPem.Trim(), ComputeKeyHash(apiKey), now);
-        ticketEntity.Consume(now, deviceInstanceId.Trim());
+        terminal.BindDevice(trimmedDeviceId, devicePublicKeyPem.Trim(), ComputeKeyHash(apiKey), now);
+        ticketEntity.Consume(now, trimmedDeviceId);
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 

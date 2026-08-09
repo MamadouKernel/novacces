@@ -16,6 +16,12 @@ window.novaccesDownload = (filename, text, mimeType) => {
 // Copie un texte dans le presse-papiers (ex. codes de récupération 2FA).
 window.novaccesCopyToClipboard = (text) => navigator.clipboard.writeText(text);
 
+// Bascule le thème clair/sombre (mode nuit poste de garde, SuretePortal.razor).
+// Fonction nommée plutôt qu'un JS.InvokeVoidAsync("eval", ...) : la CSP de
+// production (script-src 'self', sans 'unsafe-eval') rejette eval() et
+// plantait le circuit Blazor Server à chaque bascule.
+window.novaccesToggleDarkMode = () => document.documentElement.classList.toggle('dark');
+
 // Comme novaccesDownload, mais pour un contenu BINAIRE reçu en base64 depuis
 // .NET (ex. export ZIP d'un site) — un ZIP ne peut pas transiter tel quel via
 // l'interop JS, qui sérialise les chaînes en UTF-16/JSON.

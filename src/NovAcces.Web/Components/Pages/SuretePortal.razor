@@ -785,7 +785,7 @@ else if (CanViewDashboard)
     private async Task ToggleDarkMode()
     {
         _darkMode = !_darkMode;
-        await JS.InvokeVoidAsync("eval", "document.documentElement.classList.toggle('dark')");
+        await JS.InvokeVoidAsync("novaccesToggleDarkMode");
     }
 
     // Abonnement WebPush (§7) : réveille l'onglet même FERMÉ pour l'alerte de

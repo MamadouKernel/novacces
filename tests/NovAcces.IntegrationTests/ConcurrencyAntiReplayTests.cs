@@ -128,7 +128,7 @@ public sealed class ConcurrencyAntiReplayTests
 
         return await uow.ExecuteInTransactionAsync(async ct =>
         {
-            var visit = await repo.GetForUpdateByManualCodeHashAsync(codeHash, ct);
+            var visit = await repo.GetForUpdateByManualCodeHashAsync(new[] { codeHash }, ct);
             Assert.NotNull(visit);
 
             var outcome = visit!.Scan(CheckpointDirection.Entry, true, now, isOnExclusionList: false);

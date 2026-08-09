@@ -35,14 +35,19 @@ public sealed class VisitRepository : IVisitRepository
             .SingleOrDefaultAsync(ct);
     }
 
-    public async Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct)
+    public async Task<Visit?> GetForUpdateByManualCodeHashAsync(IReadOnlyList<string> candidateHashes, CancellationToken ct)
     {
         await _db.EnsureTenantResolvedAsync(ct);
 
         // Même verrou FOR UPDATE que GetForUpdateAsync, même raisonnement
-        // (REQ-SEC-03) — juste résolu par l'empreinte du code de secours.
+        // (REQ-SEC-03) — résolu par l'empreinte du code de secours, parmi
+        // PLUSIEURS empreintes candidates (courante + legacy, voir
+        // IVisitRepository). ANY(...) reste un index scan simple sur l'index
+        // unique partiel de ManualCodeHash, pas un coût supplémentaire notable
+        // pour 1-2 candidats.
+        var candidates = candidateHashes.ToArray();
         return await _db.Visits
-            .FromSqlInterpolated($"SELECT * FROM visits WHERE \"ManualCodeHash\" = {manualCodeHash} FOR UPDATE")
+            .FromSqlInterpolated($"SELECT * FROM visits WHERE \"ManualCodeHash\" = ANY({candidates}) FOR UPDATE")
             .SingleOrDefaultAsync(ct);
     }
 

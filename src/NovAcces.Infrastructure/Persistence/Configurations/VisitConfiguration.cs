@@ -17,7 +17,9 @@ public sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
         builder.Property(v => v.HostUserId).HasMaxLength(100).IsRequired();
         builder.Property(v => v.VisitorPhone).HasMaxLength(30);
         builder.Property(v => v.VisitorEmail).HasMaxLength(200);
-        builder.Property(v => v.ManualCodeHash).HasMaxLength(64);
+        // 80, pas 64 : depuis le 09/08/2026 l'empreinte durcie porte un préfixe
+        // de format ("v2$" + 64 hex = 67 caractères) — voir ManualCodeService.
+        builder.Property(v => v.ManualCodeHash).HasMaxLength(80);
 
         // Contrainte d'unicité qui matérialise l'anti-rejeu au niveau base :
         // même en cas de bug applicatif, PostgreSQL refuserait un doublon

@@ -33,13 +33,14 @@ internal sealed class FakeManualCodeService : IManualCodeService
     public string ComputedHash { get; set; } = "fake-hash";
     public (string RawCode, string CodeHash) GenerateCode() => ("ABCD-2345", ComputedHash);
     public string ComputeHash(string rawCode) => ComputedHash;
+    public string ComputeLegacyHash(string rawCode) => ComputedHash;
 }
 
 internal sealed class FakeVisitRepository : IVisitRepository
 {
     public Visit? VisitToReturn { get; set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult(VisitToReturn);
-    public Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct) => Task.FromResult(VisitToReturn);
+    public Task<Visit?> GetForUpdateByManualCodeHashAsync(IReadOnlyList<string> candidateHashes, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult(VisitToReturn);
     public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);

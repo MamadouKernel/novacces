@@ -148,7 +148,8 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
         var payload = new OfflineListPayload(
             entries.Select(e => new OfflineEntryDto(
                 e.VisitId, e.VisitToken, e.ScheduledAt?.ToUnixTimeSeconds(), e.IsExcluded, e.IsOnSite,
-                e.VisitorName, e.Mode, e.WindowStart?.ToUnixTimeSeconds(), e.WindowEnd?.ToUnixTimeSeconds(), e.Status)).ToArray(),
+                e.VisitorName, e.Mode, e.WindowStart?.ToUnixTimeSeconds(), e.WindowEnd?.ToUnixTimeSeconds(), e.Status,
+                e.ManualCodeHash)).ToArray(),
             issuedAt.ToUnixTimeSeconds(),
             expiresAt.ToUnixTimeSeconds());
 
@@ -171,7 +172,7 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
                 e.IsExcluded, e.IsOnSite, e.VisitorName, e.Mode,
                 e.WindowStartUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.WindowStartUnix.Value) : null,
                 e.WindowEndUnix.HasValue ? DateTimeOffset.FromUnixTimeSeconds(e.WindowEndUnix.Value) : null,
-                e.Status))
+                e.Status, e.ManualCodeHash))
             .ToArray();
 
         return new OfflineListVerificationResult(true, isExpired, entries);
@@ -277,6 +278,6 @@ public sealed class Es256QrSigningService : IQrSigningService, IDisposable
     private sealed record OfflineEntryDto(
         Guid VisitId, Guid VisitToken, long? ScheduledAtUnix, bool IsExcluded, bool IsOnSite = false,
         string? VisitorName = null, string? Mode = null, long? WindowStartUnix = null,
-        long? WindowEndUnix = null, string? Status = null);
+        long? WindowEndUnix = null, string? Status = null, string? ManualCodeHash = null);
     private sealed record OfflineListPayload(OfflineEntryDto[] Entries, long IssuedAt, long Exp);
 }

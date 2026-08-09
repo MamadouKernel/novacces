@@ -32,13 +32,23 @@ public sealed record ContractOfflineVisitDto(
     // 0 si non présent ou pas en dépassement.
     int OverstayMinutes = 0);
 
-/// <summary>Scan remonté par l'application après une période hors-ligne.</summary>
+/// <summary>
+/// Scan remonté par l'application après une période hors-ligne. Deux formes,
+/// distinguées par <see cref="ManualCode"/> :
+///   - QR (par défaut) : <see cref="SignedQrPayload"/> renseigné, rejoué via
+///     ScanQrHandler ;
+///   - code de secours (§9 étendu le 09/08/2026) : <see cref="ManualCode"/>
+///     renseigné (le code EN CLAIR, comme pour un envoi en ligne — voir
+///     ScanManualCodeHandler, qui recalcule lui-même l'empreinte), rejoué via
+///     ScanManualCodeHandler. SignedQrPayload est alors vide.
+/// </summary>
 public sealed record ContractOfflineScanDto(
     string SignedQrPayload,
     string Direction,
     string AgentId,
     DateTimeOffset ScannedAtUtc,
-    string OfflineVerdict);
+    string OfflineVerdict,
+    string? ManualCode = null);
 
 public sealed record ContractSyncConflictDto(Guid VisitId, string Raison);
 

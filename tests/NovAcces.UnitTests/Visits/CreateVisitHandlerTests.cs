@@ -25,7 +25,7 @@ file sealed class FakeVisitRepository : IVisitRepository
 {
     public Visit? AddedVisit { get; private set; }
     public Task<Visit?> GetForUpdateAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
-    public Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct) => Task.FromResult<Visit?>(null);
+    public Task<Visit?> GetForUpdateByManualCodeHashAsync(IReadOnlyList<string> candidateHashes, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetForUpdateByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByIdAsync(Guid visitId, CancellationToken ct) => Task.FromResult<Visit?>(null);
     public Task<Visit?> GetByTokenAsync(Guid visitToken, CancellationToken ct) => Task.FromResult<Visit?>(null);
@@ -62,6 +62,7 @@ file sealed class FakeManualCodeService : IManualCodeService
 {
     public (string RawCode, string CodeHash) GenerateCode() => ("ABCD-2345", "fake-hash");
     public string ComputeHash(string rawCode) => "fake-hash";
+    public string ComputeLegacyHash(string rawCode) => "fake-legacy-hash";
 }
 
 file sealed class FakeCurrentTenant : ICurrentTenant

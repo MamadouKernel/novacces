@@ -21,7 +21,12 @@ public sealed record ScanQrResult(
     string VerdictCode,   // "GRANTED" | "CHECKED_OUT" | "DENIED_xxx" | "INVALID_SIGNATURE" | "INVALID_CODE"
     string? VisitorName,
     int? OverstayMinutes,
-    int? PresenceMinutes = null   // durée de présence à la sortie (§1.6)
+    int? PresenceMinutes = null,   // durée de présence à la sortie (§1.6)
+    // Visite résolue par ScanExecutionCore (null si introuvable) — permet à
+    // l'appelant (ex. /api/scan/sync) de rapporter un conflit sans dépendre
+    // d'une vérification indépendante côté QR (impossible pour un code de
+    // secours, qui n'a pas d'équivalent hors-base à la signature ES256).
+    Guid? VisitId = null
 );
 
 /// <summary>

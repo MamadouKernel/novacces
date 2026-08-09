@@ -13,7 +13,15 @@ public interface IManualCodeService
 
     /// <summary>
     /// Normalise (espaces/tirets retirés, majuscules) puis hache une saisie
-    /// utilisateur, pour comparaison avec l'empreinte persistée.
+    /// utilisateur avec l'algorithme COURANT (PBKDF2, préfixe "v2$"), pour
+    /// comparaison avec l'empreinte persistée.
     /// </summary>
     string ComputeHash(string rawCode);
+
+    /// <summary>
+    /// Ancien algorithme (SHA-256 nu, sans préfixe) — repli de vérification EN
+    /// LIGNE uniquement, pour les codes émis avant le 09/08/2026 (voir
+    /// ManualCodeService). Jamais utilisé pour la liste hors ligne.
+    /// </summary>
+    string ComputeLegacyHash(string rawCode);
 }

@@ -41,6 +41,14 @@ public sealed record OfflineListEntry(
     string? Mode = null,
     DateTimeOffset? WindowStart = null,
     DateTimeOffset? WindowEnd = null,
-    string? Status = null);
+    string? Status = null,
+    /// <summary>
+    /// Empreinte PBKDF2 durcie du code de secours ("v2$..." — voir
+    /// ManualCodeService), null si la visite n'en a pas ou si son empreinte
+    /// est encore au format legacy (jamais exposée hors ligne, voir
+    /// AgentContractEndpoints./offline-list). Permet la vérification hors
+    /// ligne du code au même titre que le QR (REQ-SEC-06 étendu le 09/08/2026).
+    /// </summary>
+    string? ManualCodeHash = null);
 
 public sealed record OfflineListVerificationResult(bool IsValid, bool IsExpired, IReadOnlyCollection<OfflineListEntry> Entries);

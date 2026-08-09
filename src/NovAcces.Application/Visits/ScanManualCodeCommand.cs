@@ -53,10 +53,15 @@ public sealed class ScanManualCodeHandler
     public async Task<ScanQrResult> HandleAsync(ScanManualCodeCommand command, CancellationToken ct)
     {
         var now = _clock.UtcNow;
-        var hash = _manualCode.ComputeHash(command.Code);
+
+        // Deux empreintes candidates (courante + legacy) — voir
+        // IVisitRepository.GetForUpdateByManualCodeHashAsync : un même code
+        // ne peut matcher qu'AU PLUS une visite, la présence des deux formats
+        // ne crée donc pas d'ambiguïté.
+        var candidates = new[] { _manualCode.ComputeHash(command.Code), _manualCode.ComputeLegacyHash(command.Code) };
 
         return await _core.ExecuteAsync(
-            token => _visits.GetForUpdateByManualCodeHashAsync(hash, token),
+            token => _visits.GetForUpdateByManualCodeHashAsync(candidates, token),
             ScanAuthMethod.ManualCode, ScanDenialReason.InvalidManualCode, "INVALID_CODE",
             "Code inconnu", "Code de secours introuvable ou mal saisi",
             command.Direction, command.AgentId, command.IsDegradedMode, command.IsBusinessDayOverride,

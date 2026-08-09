@@ -17,9 +17,14 @@ public interface IVisitRepository
     /// <summary>
     /// Même verrou pessimiste que <see cref="GetForUpdateAsync"/>, mais résolu
     /// par l'empreinte du code de secours plutôt que par le VisitToken —
-    /// alternative au QR (voir Visit.ManualCodeHash).
+    /// alternative au QR (voir Visit.ManualCodeHash). Plusieurs empreintes
+    /// candidates (jamais une seule) : le format d'empreinte a changé le
+    /// 09/08/2026 (PBKDF2 durci, préfixe "v2$") — l'appelant fournit
+    /// l'empreinte courante ET l'empreinte legacy (SHA-256 nu) pour rester
+    /// compatible avec les codes émis avant la migration (voir
+    /// ManualCodeService, IManualCodeService.ComputeLegacyHash).
     /// </summary>
-    Task<Visit?> GetForUpdateByManualCodeHashAsync(string manualCodeHash, CancellationToken ct);
+    Task<Visit?> GetForUpdateByManualCodeHashAsync(IReadOnlyList<string> candidateHashes, CancellationToken ct);
 
     /// <summary>
     /// Même verrou pessimiste que <see cref="GetForUpdateAsync"/>, résolu par

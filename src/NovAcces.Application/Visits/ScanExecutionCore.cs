@@ -139,7 +139,8 @@ internal sealed class ScanExecutionCore
                 outcome.IsGranted, outcome.IsCheckOut, outcome.IsSecurityEvent,
                 verdictCode, visit.VisitorName,
                 outcome.IsCheckOut ? outcome.OverstayMinutesAtCheckOut : null,
-                outcome.IsCheckOut ? outcome.PresenceMinutesAtCheckOut : null);
+                outcome.IsCheckOut ? outcome.PresenceMinutesAtCheckOut : null,
+                visit.Id);
         }, ct);
 
         // REQ-F-06 : diffusion temps réel (dashboard sûreté / portail hôte),

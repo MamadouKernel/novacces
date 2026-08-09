@@ -87,7 +87,8 @@ public sealed class NovAccesIdentityDbContext
             t.ToTable("terminal_enrollment_tickets");
             t.HasKey(x => x.Id);
             t.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
-            t.Property(x => x.ManualCodeHash).HasMaxLength(64);
+            // 80, pas 64 : voir ManualCodeService (empreinte durcie "v2$" + 64 hex).
+            t.Property(x => x.ManualCodeHash).HasMaxLength(80);
             t.Property(x => x.CreatedBy).HasMaxLength(200).IsRequired();
             t.Property(x => x.DeviceInstanceId).HasMaxLength(200);
             t.HasIndex(x => x.TokenHash).IsUnique();

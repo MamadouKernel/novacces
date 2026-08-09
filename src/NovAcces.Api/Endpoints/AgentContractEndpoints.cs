@@ -101,7 +101,13 @@ public static class AgentContractEndpoints
             var entries = today.Select(v => new OfflineListEntry(
                 v.Id, v.VisitToken, v.ScheduledAt, AgentEndpoints.IsExcluded(v, excluded), v.IsOnSite,
                 v.VisitorName, v.Mode.ToString(),
-                v.ScheduledAt?.AddMinutes(-20), v.ScheduledAt?.AddMinutes(15), v.Status.ToString())).ToList();
+                v.ScheduledAt?.AddMinutes(-20), v.ScheduledAt?.AddMinutes(15), v.Status.ToString(),
+                // Seule l'empreinte durcie (préfixe "v2$") est exposable hors
+                // ligne — jamais une empreinte legacy (SHA-256 nu), même si
+                // elle est fonctionnellement inutilisable par le client (qui ne
+                // calcule que le nouveau format) : défense en profondeur, on ne
+                // met jamais un secret faiblement haché en cache sur un terminal.
+                v.ManualCodeHash is { } h && h.StartsWith("v2$", StringComparison.Ordinal) ? h : null)).ToList();
             var signed = signing.SignDailyOfflineList(entries, issuedAt, expiresAt);
             var visitsDto = today.Select(v => new ContractOfflineVisitDto(
                 v.Id, v.VisitorName, v.Mode.ToString(),
@@ -203,6 +209,7 @@ public static class AgentContractEndpoints
             HttpRequest http,
             IQrSigningService signing,
             ScanQrHandler handler,
+            ScanManualCodeHandler manualCodeHandler,
             IBusinessDayService businessDays,
             IDateTimeProvider clock,
             CancellationToken ct) =>
@@ -228,12 +235,31 @@ public static class AgentContractEndpoints
                 if (!Enum.TryParse<CheckpointDirection>(scan.Direction, true, out var direction))
                     return Results.BadRequest(new { error = "Direction invalide : 'Entry' ou 'Exit' attendu." });
 
-                var verification = signing.VerifySignedToken(scan.SignedQrPayload);
-                var result = await handler.HandleAsync(new ScanQrCommand(
-                    scan.SignedQrPayload, direction, agentId,
-                    IsDegradedMode: true, isBusinessDay, CheckpointId: null), ct);
+                Guid? verifiedVisitId;
+                ScanQrResult result;
 
-                var verifiedVisitId = verification.VisitId;
+                // Code de secours (§9 étendu le 09/08/2026) : ScanManualCodeHandler
+                // recalcule lui-même l'empreinte (courante + legacy) à partir du
+                // code en clair — aucune vérification indépendante possible côté
+                // serveur avant l'appel (contrairement au QR, pas de signature
+                // hors-base). result.VisitId (nouveau) sert alors seul à détecter
+                // un conflit.
+                if (!string.IsNullOrWhiteSpace(scan.ManualCode))
+                {
+                    result = await manualCodeHandler.HandleAsync(new ScanManualCodeCommand(
+                        scan.ManualCode, direction, agentId,
+                        IsDegradedMode: true, isBusinessDay, CheckpointId: null), ct);
+                    verifiedVisitId = result.VisitId;
+                }
+                else
+                {
+                    var verification = signing.VerifySignedToken(scan.SignedQrPayload);
+                    result = await handler.HandleAsync(new ScanQrCommand(
+                        scan.SignedQrPayload, direction, agentId,
+                        IsDegradedMode: true, isBusinessDay, CheckpointId: null), ct);
+                    verifiedVisitId = verification.VisitId;
+                }
+
                 if (IsOfflineGrant(scan.OfflineVerdict)
                     && !result.IsGranted
                     && verifiedVisitId.HasValue)

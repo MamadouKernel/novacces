@@ -141,24 +141,12 @@
                 {
                     <div class="table-wrap" style="margin-top:.6rem;">
                     <table class="visits">
-                        <thead><tr><th>Appareil</th><th>Poste</th><th>Statut</th><th></th></tr></thead>
+                        <thead><tr><th>Appareil</th><th>Statut</th><th></th></tr></thead>
                         <tbody>
                             @foreach (var t in group.Terminals)
                             {
                                 <tr>
                                     <td class="muted" style="font-size:.75rem;max-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="@(t.DeviceModel ?? "")">@(t.DeviceModel ?? "—")</td>
-                                    <td>
-                                        <div style="display:flex;gap:.25rem;align-items:center;">
-                                            <input style="max-width:5rem;font-size:.78rem" placeholder="ex. entry"
-                                                   value="@CheckpointEdit(t.Id, t.CheckpointId)"
-                                                   @onchange="e => SetCheckpointEdit(t.Id, e.Value)" />
-                                            @if (CheckpointEdit(t.Id, t.CheckpointId) != (t.CheckpointId ?? ""))
-                                            {
-                                                <button class="btn-ghost" style="padding:.15rem .35rem;font-size:.72rem" disabled="@_busy"
-                                                        @onclick="() => SetCheckpointAsync(t.Id)">OK</button>
-                                            }
-                                        </div>
-                                    </td>
                                     <td><span class="badge @StatusBadgeClass(t)">@StatusLabel(t)</span></td>
                                     <td style="white-space:nowrap;">
                                         <div style="display:flex;flex-direction:column;gap:.25rem;align-items:flex-start;">
@@ -320,16 +308,6 @@
     private string? _terminalMsg; private bool _terminalOk;
     private EnrollmentTicketResponseDto? _lastEnrollmentTicket;
 
-    // Édition en ligne du poste (CheckpointId) — pas de validation contre une
-    // liste de postes : ce champ n'est PAS un catalogue, un terminal peut
-    // servir plusieurs sites dont les postes configurés diffèrent (voir
-    // AgentSiteConfig, même logique). Transporté tel quel, informatif.
-    private readonly Dictionary<Guid, string> _checkpointEdits = new();
-    private string CheckpointEdit(Guid terminalId, string? current) =>
-        _checkpointEdits.TryGetValue(terminalId, out var edited) ? edited : (current ?? "");
-    private void SetCheckpointEdit(Guid terminalId, object? value) =>
-        _checkpointEdits[terminalId] = value as string ?? "";
-
     protected override async Task OnInitializedAsync()
     {
         await RefreshAsync();
@@ -457,24 +435,6 @@
         finally { _busy = false; }
     }
 
-    private async Task SetCheckpointAsync(Guid id)
-    {
-        var checkpointId = _checkpointEdits.TryGetValue(id, out var v) ? v.Trim() : "";
-        _busy = true;
-        try
-        {
-            var (ok, error) = await Api.SetTerminalCheckpointAsync(id, string.IsNullOrWhiteSpace(checkpointId) ? null : checkpointId);
-            if (ok)
-            {
-                Toasts.Success("Poste mis à jour.");
-                _checkpointEdits.Remove(id);
-                await RefreshAsync();
-            }
-            else { Toasts.Error(error ?? "Mise à jour refusée."); }
-        }
-        catch { Toasts.Error("Service indisponible, réessayez."); }
-        finally { _busy = false; }
-    }
 
     private async Task RevokeTerminalAsync(Guid id)
     {

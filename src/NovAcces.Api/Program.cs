@@ -133,6 +133,7 @@ builder.Services.AddHostedService<OverstayMonitor>();
 
 // Purge des données au-delà de la durée de conservation (§7.3) : service de fond.
 builder.Services.AddHostedService<RetentionMonitor>();
+builder.Services.AddHostedService<BackupScheduler>();
 
 // Rate limiting natif .NET 8 sur les endpoints sensibles (section 8.2 du CDC).
 // Politique nommée appliquée explicitement sur /api/scan et /api/visits ci-dessous.
@@ -170,6 +171,28 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+// Ajouté le 10/08/2026 (revue d'écart contractuel, §7/§4) : la seconde
+// barrière d'inaltérabilité du journal (deux rôles PostgreSQL — propriétaire
+// pour le DDL, applicatif restreint pour le runtime, voir
+// tools/provisionner-roles-postgres.sql) n'a d'effet QUE si "PostgresOwner"
+// est réellement une chaîne de connexion distincte de "Postgres" — sinon un
+// REVOKE reste sans effet sur le propriétaire d'une table et l'inaltérabilité
+// repose uniquement sur les triggers. Avertissement bruyant plutôt qu'échec
+// au démarrage : ne pas casser un déploiement pilote existant qui tourne
+// encore en rôle unique, mais le signaler clairement à chaque démarrage tant
+// que ce n'est pas corrigé.
+if (!app.Environment.IsDevelopment())
+{
+    var ownerConn = builder.Configuration.GetConnectionString("PostgresOwner");
+
+    if (!PostgresAdminConnectionResolver.IsUsable(ownerConn))
+        app.Logger.LogWarning(
+            "SÉCURITÉ : ConnectionStrings:PostgresOwner n'est pas configuré avec un rôle distinct de "
+            + "ConnectionStrings:Postgres — la seconde barrière d'inaltérabilité du journal (rôles PostgreSQL "
+            + "séparés, §4/§7 CLAUDE.md) n'est PAS active. Voir tools/provisionner-roles-postgres.sql "
+            + "et `dotnet run -- grant-app-role`.");
+}
 
 // --- Commande d'administration hors-ligne : provisionnement d'un site ---
 //   dotnet run -- provision-site <siteId>

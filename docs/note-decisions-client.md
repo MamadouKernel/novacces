@@ -116,6 +116,28 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
   `rapport-recette-securite.md` désormais comblé. Rien n'est stocké côté
   serveur : le fichier est généré et transmis au moment du clic.
 
+## 7. Canal de notification push (agent mobile) — apparu le 08/08/2026
+
+- **Constat** : en plus du canal email (§1 `accord-commercial.md` — seul canal
+  contractuel pour l'hôte et le visiteur), l'app agent (React Native/Expo)
+  reçoit désormais des notifications **push** (Expo Push Service) pour deux
+  événements opérationnels : un dépassement de durée de visite sur le site du
+  terminal, et la résolution d'une demande de confirmation sûreté (accès sans
+  QR ni code). Voir `OverstayPushNotifier`, `ConfirmationNotifier`,
+  `ExpoPushSender`.
+- **Pourquoi ce n'est pas un retour à WhatsApp** : aucune donnée nominative de
+  visiteur ne transite par un tiers externe pour CE canal (titre/corps
+  génériques, ex. « Dépassement de durée » — voir le code, pas de nom de
+  visiteur dans le payload push envoyé au terminal). C'est un canal
+  opérationnel interne à l'app agent, pas un canal de notification au
+  visiteur ou à l'hôte (qui restent email uniquement, §1).
+- **Statut** : n'a fait l'objet d'aucune validation écrite explicite avec
+  Sigasécurité — identifié en creusant le code lors de la revue du
+  10/08/2026, pas anticipé au moment de la rédaction de cette note. Recommandé
+  de le documenter auprès de M. Kodjo par transparence (extension mineure du
+  produit, pas un écart de périmètre contractuel au sens de l'avenant, mais
+  autant l'acter par écrit comme les points précédents).
+
 ## Synthèse
 
 | # | Évolution | Priorité | Indicatif (j-h) |
@@ -126,7 +148,8 @@ SICOPA. Cette note les présente pour décision ; les chiffrages sont **indicati
 | 4 | Renommage SigasAcces + domaine | ✅ Décidé/réalisé (02/08/2026) | < 1 |
 | 5 | 2FA optionnel pour tous les comptes | ⚠️ Décidé (02/08/2026), écart CDC §7.2 à confirmer par écrit | < 1 |
 | 6 | Désactivation d'un site + export complet (fin de contrat) | ✅ Réalisées (03/08/2026) | 1–2 |
+| 7 | Canal push agent (dépassement, confirmation) | ⚠️ Réalisé (08/08/2026), à documenter auprès du client | < 1 |
 
 **Décision attendue** : confirmer si l'une ou l'autre entre dans le périmètre du
 pilote (auquel cas avenant), ou est planifiée pour la phase de déploiement
-multi-clients. Le pilote SICOPA peut démarrer **sans** ces trois évolutions.
+multi-clients. Le pilote SICOPA peut démarrer **sans** ces évolutions.

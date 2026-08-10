@@ -26,6 +26,23 @@ public sealed class DatabaseBackupOptions
     /// et mettre l'application entière hors service).
     /// </summary>
     public int MaxBackupsToKeep { get; set; } = 14;
+
+    /// <summary>
+    /// Passphrase de chiffrement AES-256-GCM au repos (§7.4, voir
+    /// BackupEncryption). Vide = sauvegarde en clair — toléré en
+    /// développement uniquement ; la production l'exige (voir
+    /// ProductionConfigurationValidator). Jamais journalisée.
+    /// </summary>
+    public string EncryptionPassphrase { get; set; } = "";
+
+    /// <summary>Planification automatique (voir BackupScheduler) — désactivée par défaut.</summary>
+    public AutoBackupOptions AutoBackup { get; set; } = new();
+}
+
+public sealed class AutoBackupOptions
+{
+    public bool Enabled { get; set; }
+    public int IntervalHours { get; set; } = 24;
 }
 
 /// <summary>
@@ -43,17 +60,20 @@ public sealed class DatabaseBackupOptions
 public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
 {
     private static readonly Regex FileNamePattern =
-        new(@"^novacces_\d{8}_\d{6}\.dump$", RegexOptions.Compiled);
+        new(@"^novacces_\d{8}_\d{6}\.dump(\.enc)?$", RegexOptions.Compiled);
 
     private readonly string _connectionString;
     private readonly string _directory;
     private readonly int _maxBackupsToKeep;
+    private readonly string _encryptionPassphrase;
+    private readonly IBackupOffsiteUploader _offsite;
     private readonly ILogger<PgDumpDatabaseBackupService> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public PgDumpDatabaseBackupService(
         IConfiguration configuration,
         IOptions<DatabaseBackupOptions> options,
+        IBackupOffsiteUploader offsite,
         ILogger<PgDumpDatabaseBackupService> logger)
     {
         // Connexion PROPRIÉTAIRE si configurée : une sauvegarde/restauration
@@ -67,6 +87,8 @@ public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
             ? Path.Combine(AppContext.BaseDirectory, "backups")
             : opts.Directory;
         _maxBackupsToKeep = opts.MaxBackupsToKeep <= 0 ? 14 : opts.MaxBackupsToKeep;
+        _encryptionPassphrase = opts.EncryptionPassphrase;
+        _offsite = offsite;
         _logger = logger;
     }
 
@@ -107,13 +129,39 @@ public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
                     $"pg_dump a échoué (code {exitCode}). Voir les logs serveur pour le détail.");
             }
 
-            var info = new FileInfo(path);
+            var finalPath = path;
+            var finalFileName = fileName;
+            if (!string.IsNullOrEmpty(_encryptionPassphrase))
+            {
+                var encryptedPath = path + ".enc";
+                BackupEncryption.EncryptFile(path, encryptedPath, _encryptionPassphrase);
+                TryDelete(path);
+                finalPath = encryptedPath;
+                finalFileName = fileName + ".enc";
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Sauvegarde créée SANS chiffrement (DatabaseBackup:EncryptionPassphrase non configurée) — "
+                    + "acceptable en développement uniquement, cf. §7.4.");
+            }
+
+            var info = new FileInfo(finalPath);
             _logger.LogInformation(
-                "Sauvegarde de base créée : {FileName} ({SizeBytes} octets).", fileName, info.Length);
+                "Sauvegarde de base créée : {FileName} ({SizeBytes} octets).", finalFileName, info.Length);
 
             await PruneOldBackupsAsync(ct);
 
-            return new DatabaseBackupInfo(fileName, info.Length, DateTimeOffset.UtcNow);
+            try
+            {
+                await _offsite.UploadAsync(finalPath, finalFileName, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Échec de la réplication hors-site de la sauvegarde (best-effort) — la copie locale reste valide.");
+            }
+
+            return new DatabaseBackupInfo(finalFileName, info.Length, DateTimeOffset.UtcNow);
         }
         finally
         {
@@ -170,13 +218,26 @@ public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
         if (!await _gate.WaitAsync(0, ct))
             throw new DatabaseBackupInProgressException();
 
+        var restorePath = path;
+        var decryptedTempPath = fileName.EndsWith(".enc", StringComparison.OrdinalIgnoreCase) ? path + ".restoretmp" : null;
+
         try
         {
+            if (decryptedTempPath is not null)
+            {
+                if (string.IsNullOrEmpty(_encryptionPassphrase))
+                    throw new DatabaseBackupFailedException(
+                        "Sauvegarde chiffrée mais DatabaseBackup:EncryptionPassphrase non configurée — restauration impossible.");
+
+                BackupEncryption.DecryptFile(path, decryptedTempPath, _encryptionPassphrase);
+                restorePath = decryptedTempPath;
+            }
+
             _logger.LogWarning("Restauration de base démarrée depuis {FileName} — écrase les données courantes.", fileName);
 
             var (exitCode, stderr) = await RunPgToolAsync(
                 "pg_restore",
-                new[] { "--clean", "--if-exists", "--no-owner", "--no-privileges", path },
+                new[] { "--clean", "--if-exists", "--no-owner", "--no-privileges", restorePath },
                 ct);
 
             // pg_restore retourne parfois un code non nul pour de simples
@@ -194,6 +255,8 @@ public sealed class PgDumpDatabaseBackupService : IDatabaseBackupService
         }
         finally
         {
+            if (decryptedTempPath is not null)
+                TryDelete(decryptedTempPath);
             _gate.Release();
         }
     }

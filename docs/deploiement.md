@@ -129,11 +129,73 @@ aux terminaux via l'enrôlement (SecureStorage — voir `audit-mobile.md`).
 ## 8. Supervision (REQ-FIAB-05)
 
 - Monitoring de disponibilité (cible **≥ 99,5 %** mensuel hors maintenance
-  notifiée) + alerte automatique (ex. sonde HTTP sur un endpoint de santé).
-- Surveillance ressources (CPU/mémoire/disque) et espace PostgreSQL.
+  notifiée) + alerte automatique. `GET /health` (non authentifié) existe déjà
+  et fait une vraie sonde base (pas un simple "l'API répond") — voir
+  `Program.cs`, ajouté après l'incident du 03/08/2026 (schéma manquant faute
+  de migration rejouée, découvert manuellement au lieu d'être détecté en
+  secondes). Les trois services Docker (`postgres`, `api`, `web`) ont chacun
+  un `healthcheck` propre dans `docker-compose.yml`, mais celui-ci ne fait
+  redémarrer que le conteneur local — il ne prévient PERSONNE.
+- **Recommandation concrète (non mise en place — nécessite un compte que je
+  ne peux pas créer à la place de Mamadou)** : un moniteur externe gratuit
+  (ex. UptimeRobot, plan gratuit — 50 moniteurs, intervalle 5 min) pointé sur
+  `https://api.sigasacces.com/health`, avec alerte email/SMS si `status`
+  ≠ `"ok"` ou si la réponse dépasse un délai. 10 minutes de configuration,
+  aucun coût, couvre l'essentiel de REQ-FIAB-05 sans infrastructure
+  supplémentaire à maintenir. Alternative auto-hébergée si Sigasécurité
+  préfère ne rien confier à un tiers : Uptime Kuma (conteneur Docker de plus
+  dans `docker-compose.yml`, un seul binaire, aucune dépendance externe).
+- Surveillance ressources (CPU/mémoire/disque) et espace PostgreSQL — non
+  mise en place à ce jour, même remarque (nécessite un choix d'outil et des
+  identifiants que Mamadou doit fournir).
 - Les **événements de sécurité** (hors-fenêtre, QR consommé, conflit de resync)
   sont déjà remontés applicativement (journal + SignalR) : prévoir leur relève
   côté supervision.
+- **Sauvegardes (§7.4)** : `BackupScheduler` (ajouté le 10/08/2026) déclenche
+  une sauvegarde chiffrée (AES-256-GCM, `DatabaseBackup:EncryptionPassphrase`)
+  automatiquement si `DatabaseBackup:AutoBackup:Enabled=true` — désactivé par
+  défaut, à activer explicitement en `.env` (la production refuse de démarrer
+  avec l'automatique activé sans passphrase configurée, voir
+  `ProductionConfigurationValidator`). Réplication hors-site optionnelle vers
+  un compartiment S3-compatible (`DatabaseBackup:Offsite:*` — Contabo Object
+  Storage ou équivalent, identifiants à fournir par Mamadou, désactivée par
+  défaut) : condition d'isolement anti-rançongiciel, un volume Docker sur le
+  même serveur ne protège de rien si le VPS lui-même est compromis.
+
+## 8bis. Test de charge (REQ-FIAB-06)
+
+Outil dédié : `tools/NovAcces.LoadTest` (console .NET, ajouté le 10/08/2026).
+Provisionne N postes RÉELS (même parcours d'enrôlement qu'un vrai poste —
+ticket QR + preuve de possession de clé), une visite par poste, puis chaque
+poste scanne en boucle (alternance entrée/sortie) au rythme demandé pendant
+la durée demandée, et rapporte débit + latence (p50/p95/p99) + répartition
+des statuts HTTP.
+
+```bash
+dotnet run --project tools/NovAcces.LoadTest -- \
+  --base-url https://api.sigasacces.com \
+  --site sicopa \
+  --admin-email <compte admin réel> --admin-password <mot de passe réel> \
+  --terminals 5 --requests-per-minute-per-terminal 25 \
+  --duration-seconds 1800 \
+  --output tools/load-test-results-$(date +%F).md
+```
+
+- `--terminals` × `--requests-per-minute-per-terminal` doit rester **sous 30**
+  par poste (politique de débit "sensitive" de `/api/scan`, voir `Program.cs`)
+  sous peine de mesurer le plafonnement du rate limiter plutôt que le débit
+  soutenable réel — dimensionner selon le nombre de postes physiques
+  réellement prévus pour le site.
+- `--duration-seconds 1800` pour les 30 minutes exigées par le CDC §6 avant
+  bascule en production (le calibrage du 10/08/2026, voir §9 ci-dessous,
+  n'a couvert que 3 minutes en local — représentatif de la latence
+  applicative, PAS du réseau/matériel réels du VPS).
+- Contre `https://localhost:54980` avec `--no-insecure-tls` omis (défaut) :
+  accepte le certificat auto-signé de Kestrel en dev, à ne PAS utiliser tel
+  quel contre une URL de production (le flag existe justement pour empêcher
+  ce défaut silencieux — passer `--no-insecure-tls` explicitement, ou
+  simplement s'assurer que le certificat Let's Encrypt de Caddy est valide,
+  ce qui est déjà le cas en production).
 
 ## 9. Avant bascule pilote — check-list
 
@@ -143,7 +205,14 @@ aux terminaux via l'enrôlement (SecureStorage — voir `audit-mobile.md`).
 - [ ] Clés ES256 générées ; clé privée sur serveur uniquement.
 - [ ] Site pilote provisionné (schéma + triggers append-only vérifiés).
 - [ ] Sauvegarde quotidienne chiffrée + **un test de restauration réussi**.
-- [ ] **Test de charge** représentatif d'un pic exécuté (REQ-FIAB-06).
+- [x] **Test de charge** — calibrage réalisé le 10/08/2026 en local (5 postes
+      simulés × 25 scans/min, 3 min soutenues, 125 scans/min agrégé — cible
+      ≥ 100/min du CDC dépassée), 375/375 requêtes réussies, p95 91 ms, p99
+      165 ms. Outil réutilisable : `tools/NovAcces.LoadTest` (voir
+      `tools/load-test-results-2026-08-10.md`). **Reste à faire avant le
+      pilote** : rejouer la même commande contre le VPS réel (réseau/matériel
+      de production, pas un poste de développement) avec le nombre de postes
+      physiques réellement prévus pour SICOPA, sur une fenêtre de 30 min.
 - [ ] Supervision + alerte en place.
 - [ ] `recette-securite.md` remis et recommandations §5 traitées.
 - [ ] App agent compilée en VS et testée sur un terminal réel (mode dégradé inclus).

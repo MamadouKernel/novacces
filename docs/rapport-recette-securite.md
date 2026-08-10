@@ -18,11 +18,12 @@ dépôt séparé — le prototype MAUI d'origine a été abandonné et supprimé
 08/08/2026, cf. `CLAUDE.md` §5).
 
 > **Ce que ce rapport couvre — et ce qu'il ne couvre pas.** Il porte sur la
-> sécurité et la fiabilité du code livré. Il ne couvre PAS le test de charge
-> (REQ-FIAB-06), ni l'infrastructure de production complète (sauvegardes
-> automatiques/chiffrées/isolées, PRA testé, supervision, WAF, séparation
-> dev/recette/prod) — travaux du Jalon 3, **toujours non réalisés** à la date
-> du 10/08/2026. Voir §7 et §11.
+> sécurité et la fiabilité du code livré. Depuis le 10/08/2026 (§11), le code
+> de sauvegarde automatique/chiffrée/hors-site et un calibrage de charge
+> existent — mais rien de tout cela n'est encore ACTIVÉ ni exécuté en
+> conditions réelles sur le VPS de production. Ne sont toujours PAS traités :
+> PRA testé en réel, supervision externe effective (documentée, non
+> souscrite), WAF, séparation dev/recette/prod. Voir §7 et §11.
 
 ---
 
@@ -30,17 +31,18 @@ dépôt séparé — le prototype MAUI d'origine a été abandonné et supprimé
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **260 tests** au vert au 10/08/2026 (128 unitaires +
-  117 d'intégration + 15 de composants Blazor via bUnit), 0 avertissement de
-  compilation — en hausse depuis les 161 tests de la revue du 01/08 (+99),
-  proportionnelle aux fonctionnalités ajoutées depuis (code de secours,
-  notifications push, demandes de confirmation, synchronisation temps réel
-  étendue à l'admin). Les tests unitaires reproduisent scénario par scénario
+- **Tests automatisés** : **261 tests** au vert au 10/08/2026 (128 unitaires +
+  118 d'intégration + 15 de composants Blazor via bUnit, côté .NET, + 25 côté
+  app agent React Native), 0 avertissement de compilation — en hausse depuis
+  les 161 tests de la revue du 01/08 (+100), proportionnelle aux
+  fonctionnalités ajoutées depuis (code de secours, notifications push,
+  demandes de confirmation, synchronisation temps réel étendue à l'admin,
+  sauvegarde chiffrée testée par restauration réelle, couverture du moteur
+  hors ligne mobile). Les tests unitaires reproduisent scénario par scénario
   la maquette validée par le client le 22/07/2026
   (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
   réelle en mémoire (auth, RBAC, cloisonnement, temps réel) contre une base
-  PostgreSQL dédiée aux tests. **La couverture .NET ne s'étend pas à l'app
-  agent mobile** (React Native/Expo) — cf. §11.5.
+  PostgreSQL dédiée aux tests.
 - **Analyse OWASP** : cf. §5, mise en regard du Top 10.
 - **Recette fonctionnelle Web** : parcours rejoués dans un navigateur réel
   (connexion, enrôlement 2FA avec génération de codes TOTP valides, création de
@@ -176,19 +178,16 @@ lié à l'API Meta).
    client tiers de Sigasécurité (au-delà du site pilote SICOPA). Écarté pour
    cette phase par décision écrite du client, cf. en-tête de ce rapport.
 2. **Application agent (React Native/Expo)** : le cœur de décision hors-ligne
-   (`engine.ts`) reproduit fidèlement la logique du Domain .NET mais n'a
-   **aucun test automatisé** à ce jour (contrairement à son équivalent
-   `OfflineQrVerifier`/`OfflineScanEvaluator` côté serveur) — cf. §11.5.
-   Recette sur terminal réel (scan caméra, autofocus, luminosité) toujours à
-   mener.
+   (`engine.ts`) est désormais couvert par 25 tests automatisés (Jest,
+   ajoutés le 10/08/2026 — cf. §11.5). Recette sur terminal réel (scan
+   caméra, autofocus, luminosité) toujours à mener.
 3. ~~**Notifications WhatsApp**~~ — **abandonnées (01/08/2026)**, remplacées
    par un canal email unique (décision client, `accord-commercial.md`). Un
    canal push (Expo) est venu s'y ajouter depuis, cf. §11.4.
-4. **Test de charge (REQ-FIAB-06)** : toujours **non exécuté** à la date du
-   10/08/2026 — zéro script, zéro outil dans le dépôt. Exigé par le CDC §6
-   avant mise en production, **sans réserve écrite du client** contrairement
-   à l'audit d'intrusion (point 1) : ce n'est pas un écart négocié, c'est un
-   manque à combler. Cf. §11.1.
+4. **Test de charge (REQ-FIAB-06)** : outil et calibrage réalisés le
+   10/08/2026 (125 scans/min soutenus 3 min, 100 % de réussite — cible
+   ≥ 100/min dépassée). Reste à rejouer 30 min contre le VPS réel avant
+   bascule pilote. Cf. §11.1.
 5. **Infrastructure de production** : le mécanisme de sauvegarde (`pg_dump`)
    existe et est testé unitairement, mais reste **déclenché manuellement**
    (aucune planification quotidienne), **non chiffré au repos** et **stocké
@@ -408,13 +407,48 @@ des documents contractuels, vérification directe dans le code (recherche
 exhaustive, lecture de fichiers), `dotnet build` + suite non-intégration
 rejoués. Objectif explicite : ne rien arrondir vers « fait ».
 
-### 11.1 REQ-FIAB-06 — Test de charge : ❌ toujours absent
+### 11.1 REQ-FIAB-06 — Test de charge : ⚠️ calibré, pas encore validé en conditions réelles
 
-Aucun script (`k6`/`artillery`/`jmeter`), aucun workflow dédié. `docs/deploiement.md`
-§9 porte encore la case correspondante non cochée. **À ne pas confondre avec
-l'audit d'intrusion externe** (point 1 de §7) : celui-ci a été écarté par
-décision écrite du client ; le test de charge, lui, reste exigé sans réserve
-par le CDC §6 — c'est un manque, pas un arbitrage tranché.
+Comblé le 10/08/2026 : `tools/NovAcces.LoadTest` (console .NET, ajouté ce
+jour) provisionne des postes RÉELS (même parcours d'enrôlement qu'un vrai
+poste — ticket QR + preuve de possession de clé ES256, pas un raccourci) et
+scanne en boucle à un rythme cadencé, mesurant débit et latence.
+
+**Résultat du calibrage local** (5 postes simulés × 25 scans/min, 3 minutes
+soutenues, contre une instance locale réelle — `dotnet run`, pas un serveur
+de test en mémoire) :
+
+| Mesure | Valeur |
+|---|---|
+| Débit agrégé | **125 scans/minute** (cible CDC : ≥ 100/min) |
+| Requêtes réussies | 375/375 (100 %) |
+| Latence p50 | 66 ms |
+| Latence p95 | 91 ms |
+| Latence p99 | 165 ms |
+| Latence max | 202 ms |
+
+Détail complet : `tools/load-test-results-2026-08-10.md`.
+
+**Ce que ce résultat prouve et ce qu'il ne prouve pas** : le chemin critique
+applicatif (verrou anti-rejeu, écriture du journal append-only, diffusion
+SignalR, notifications) tient une charge dépassant la cible contractuelle
+avec une marge confortable, sans aucune erreur — un point positif réel, pas
+un exercice cosmétique. Mais 3 minutes en local (poste de développement, pas
+le VPS de production, réseau loopback) ne satisfont PAS l'exigence CDC d'un
+test représentatif d'un pic **avant mise en production**. Reste à faire,
+avec le même outil : rejouer `--duration-seconds 1800` (30 min) contre
+`https://api.sigasacces.com`, avec le nombre de postes physiques réellement
+prévus pour SICOPA — procédure documentée dans `docs/deploiement.md` §8bis.
+
+**Découverte utile issue du calibrage** : la politique de débit "sensitive"
+(30 req/min par IP+poste, voir `Program.cs`) plafonne mathématiquement le
+débit soutenable d'UN poste isolé à 30/min — un premier essai sans
+cadencement (postes hammering sans pause) a immédiatement saturé cette
+limite (99,7 % de réponses 429). Ce n'est pas un défaut : c'est la
+protection anti-abus qui fonctionne comme prévu. Mais ça signifie que le
+débit site dépend directement du nombre de postes physiques déployés
+(N postes × 30/min max) — à garder en tête pour le dimensionnement d'un
+site à fort trafic en phase de revente multi-clients.
 
 ### 11.2 Sauvegardes/PRA — REQ-FIAB-03/04 : ⚠️ mécanisme réel, promesses non tenues
 
@@ -458,16 +492,19 @@ aucun document contractuel — à documenter explicitement auprès du client
 (extension du canal « hôte notifié » déjà prévu, ou hors périmètre à faire
 valider selon la clause avenant de `accord-commercial.md`).
 
-### 11.5 App agent React Native — ⚠️ aucun test automatisé
+### 11.5 App agent React Native — ✅ corrigé (10/08/2026)
 
 Confirmé : migration MAUI → React Native propre (`git log -- src/NovAcces.Mobile`
 montre la suppression du 08/08/2026 ; `NovAcces.sln` ne référence plus le
-projet ; aucune dépendance résiduelle). Mais `sigasacces-mobile/package.json`
-ne déclare aucun framework de test (`jest` ou autre) et le dépôt ne contient
-aucun fichier de test. Le moteur de décision hors-ligne (`engine.ts`), qui
-rejoue localement les mêmes règles de sûreté que `Domain/Visit.cs`, n'a donc
-**aucune preuve automatisée de non-régression** — contrairement à son
-équivalent serveur (`OfflineQrVerifierTests`, `OfflineScanEvaluatorTests`).
+projet ; aucune dépendance résiduelle). `sigasacces-mobile` ne déclarait
+aucun framework de test — comblé le jour même : `jest` + `ts-jest`, 25 tests
+(`src/features/scan/__tests__/engine.test.ts`) reproduisant scénario par
+scénario les cas déjà couverts côté serveur (`OfflineQrVerifierTests`,
+`OfflineScanEvaluatorTests`) : cycle directionnel, exclusion prioritaire sur
+tout le reste, suspicion de copie (déjà présent), révocation, cycle unique
+déjà consommé/clos, fenêtre trop tôt/trop tard, sortie jamais bloquée même
+QR révoqué. `npm test` (25/25 verts), `npm run typecheck` et `npm run lint`
+tous vérifiés sans régression après l'ajout.
 
 ### 11.6 Séparation des rôles PostgreSQL — ⚠️ non activée par défaut
 
@@ -487,12 +524,13 @@ exécutée — déjà noté comme M2 ouvert dans `audit-securite-2026-08-05.md`)
   `appsettings.json`. Le mode dégradé (et le calcul jour ouvré en ligne)
   ignore les fériés tant que Sigasécurité ne fournit pas la liste du site
   pilote — gap opérationnel, pas de code.
-- **Supervision proactive (REQ-FIAB-05)** : `/health` existe, aucune sonde
-  externe ni alerting configuré ; la disponibilité mensuelle n'est mesurée par
-  aucun mécanisme automatisé.
-- **Tests d'intégration** : les 260 tests cités en §1/§6 ont été rejoués
+- **Supervision proactive (REQ-FIAB-05)** : `/health` existe (vraie sonde base,
+  pas un simple ping) ; recommandation concrète documentée le 10/08/2026
+  (`docs/deploiement.md` §8) — reste à **souscrire** un moniteur externe
+  (aucun compte ne peut être créé depuis cet environnement).
+- **Tests d'intégration** : les 261 tests cités en §1/§6/§12 ont été rejoués
   personnellement par Mamadou dans son environnement (avec PostgreSQL réel) le
-  10/08/2026, résultat 260/260 — nombre confirmé, pas seulement documentaire.
+  10/08/2026, résultat 261/261 — nombre confirmé, pas seulement documentaire.
 
 ### 11.8 Ce qui reste solide (vérifié, pas seulement documenté)
 
@@ -509,29 +547,36 @@ Le correctif SMTP du 01/08 (§9.1 point liste) est toujours en place.
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
 directionnel, cloisonnement multi-tenant, authentification/RBAC, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-260 tests automatisés au vert** (10/08/2026).
+261 tests automatisés au vert** (10/08/2026 — 128 unitaires, 15 composants
+Web, 118 d'intégration côté .NET, + 25 côté app agent React Native).
 
-Trois revues complémentaires ont suivi la recette initiale du 24/07 :
+Quatre revues complémentaires ont suivi la recette initiale du 24/07 :
 - celle du 25/07 (§8) a identifié et corrigé une fuite temps réel inter-tenant
   (hub SignalR), avec test de non-régression ;
 - celle du 01/08 (§9) a porté sur l'API dans son ensemble puis sur le Web
   écran par écran, corrigeant douze constats de sécurité côté API et un
   bloquant de production (parcours d'enrôlement 2FA absent) ;
 - celle du 10/08 (§11) a comparé systématiquement le CDC signé au code actuel
-  et identifié **six écarts non résolus** à traiter avant une livraison
-  contractuelle : test de charge absent (REQ-FIAB-06), sauvegardes non
-  automatisées/chiffrées/isolées, confirmation écrite manquante sur
-  l'assouplissement du 2FA privilégié (CDC §7.2), app agent sans test
-  automatisé, séparation des rôles PostgreSQL non activée en configuration de
-  référence, et jours fériés non renseignés.
+  et identifié six écarts, dont quatre ont été comblés le jour même.
+
+**État des six écarts identifiés le 10/08/2026, à cette date :**
+
+| # | Écart | État |
+|---|---|---|
+| 1 | Test de charge (REQ-FIAB-06) absent | ⚠️ **Calibré** (125 scans/min soutenus 3 min, 100 % réussite, outil réutilisable) — reste à rejouer 30 min contre le VPS réel avant bascule |
+| 2 | Sauvegardes non automatisées/chiffrées/isolées | ⚠️ **Codé et testé** (planification, AES-256-GCM, réplication S3 optionnelle, restauration prouvée par test réel) — reste à **activer** sur le VPS (passphrase + éventuels identifiants S3 en `.env`, aucune action possible depuis cet environnement) |
+| 3 | 2FA privilégié optionnel sans confirmation écrite (CDC §7.2) | ❌ **Toujours ouvert, intentionnellement non traité** — décision produit à garder telle quelle (instruction explicite du 10/08/2026), reste la confirmation écrite de Sigasécurité à obtenir |
+| 4 | App agent React Native sans test automatisé | ✅ **Résolu** — 25 tests Jest, `npm test`/`typecheck`/`lint` verts |
+| 5 | Séparation des rôles PostgreSQL non active par défaut | ⚠️ **Outillé** (avertissement au démarrage si non séparé, gabarit `.env`/`docker-compose.yml` prêt) — reste à **exécuter** `provisionner-roles-postgres.sql` sur le VPS réel |
+| 6 | Jours fériés vides | ✅ **Résolu pour les dates fixes/calculables** (Pâques et dérivés calculés par comput) — fériés musulmans et Journée de la Paix volontairement laissés de côté (dates non fiables sans confirmation officielle), à compléter avec Sigasécurité |
 
 Le périmètre **API + Web + App agent** est jugé conforme à la maquette
 validée et à un niveau de sécurité et de fiabilité satisfaisant pour la suite
 de la recette. Il **n'est toujours pas évalué prêt pour la mise en
-production** au sens strict du CDC : le test de charge (REQ-FIAB-06) n'a pas
-été exécuté, l'infrastructure de production (sauvegardes conformes, PRA
-testé, supervision, WAF, séparation des environnements) n'est pas en place,
-et un écart contractuel (2FA §7.2) attend une confirmation écrite du client.
-Ces points sont priorisés en §11 et doivent être soldés avant toute
-annonce de livraison au sens du Jalon 3. L'audit externe reste par ailleurs
-recommandé avant tout déploiement chez un client tiers de Sigasécurité.
+production** au sens strict du CDC : trois points (1, 2, 5 ci-dessus) sont
+désormais du code prêt mais **non activé/non exécuté en conditions réelles**
+sur le VPS — une distinction importante, ce n'est plus un manque de
+mécanisme mais une checklist d'activation ; le point 3 reste un écart
+contractuel non couvert par écrit, à traiter avec le client avant toute
+annonce de livraison. L'audit externe reste par ailleurs recommandé avant
+tout déploiement chez un client tiers de Sigasécurité.

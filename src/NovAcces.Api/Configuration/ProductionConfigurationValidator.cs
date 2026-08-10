@@ -29,6 +29,17 @@ public static class ProductionConfigurationValidator
         Require(configuration["Smtp:Username"], "Smtp:Username");
         Require(configuration["Smtp:Password"], "Smtp:Password");
         Require(configuration["Smtp:FromAddress"], "Smtp:FromAddress");
+
+        // Ajouté le 10/08/2026 (revue d'écart contractuel, §7.4) : si la
+        // sauvegarde automatique est activée, la passphrase de chiffrement au
+        // repos DOIT être configurée — sinon BackupScheduler produirait des
+        // sauvegardes complètes EN CLAIR de tous les clients de Sigasécurité,
+        // sans que personne ne s'en aperçoive avant un incident. Volontairement
+        // PAS requis si DatabaseBackup:AutoBackup:Enabled=false (déploiement
+        // pilote actuel) pour ne pas casser un redéploiement existant sans
+        // action préalable — voir docs/deploiement.md.
+        if (configuration.GetValue<bool>("DatabaseBackup:AutoBackup:Enabled"))
+            Require(configuration["DatabaseBackup:EncryptionPassphrase"], "DatabaseBackup:EncryptionPassphrase", minimumLength: 16);
     }
 
     private static void Require(string? value, string key, int minimumLength = 1)

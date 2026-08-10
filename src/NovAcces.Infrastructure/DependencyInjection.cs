@@ -34,12 +34,7 @@ public static class DependencyInjection
         // une chaîne vide n'est pas une chaîne de connexion utilisable.
         services.AddScoped<ITenantProvisioningService>(sp =>
         {
-            var ownerConnection = configuration.GetConnectionString("PostgresOwner");
-            if (string.IsNullOrWhiteSpace(ownerConnection))
-                ownerConnection = configuration.GetConnectionString("Postgres");
-            if (string.IsNullOrWhiteSpace(ownerConnection))
-                throw new InvalidOperationException("Chaîne de connexion 'Postgres' manquante.");
-
+            var ownerConnection = PostgresAdminConnectionResolver.Resolve(configuration);
             return new TenantProvisioningService(ownerConnection, configuration["Database:ApplicationRole"]);
         });
 
@@ -101,6 +96,8 @@ public static class DependencyInjection
         // 05/08/2026. Singleton : le sémaphore anti-concurrence n'a de sens
         // que partagé pour toute l'application, pas par requête.
         services.Configure<DatabaseBackupOptions>(configuration.GetSection("DatabaseBackup"));
+        services.Configure<OffsiteBackupOptions>(configuration.GetSection("DatabaseBackup:Offsite"));
+        services.AddSingleton<IBackupOffsiteUploader, S3BackupOffsiteUploader>();
         services.AddSingleton<IDatabaseBackupService, PgDumpDatabaseBackupService>();
         services.AddScoped<IDatabaseHealthService, PostgresDatabaseHealthService>();
         services.AddScoped<IDatabaseQueryService, PostgresReadOnlyQueryService>();

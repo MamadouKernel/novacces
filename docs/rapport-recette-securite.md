@@ -11,15 +11,18 @@
 > tiers de Sigasécurité.
 
 Date de rédaction initiale : 24/07/2026 · Revue complémentaire : 25/07/2026 ·
-**Revue étendue (API + Web) : 01/08/2026 — cf. §9.**
-Périmètre : API + Web (Jalon 2). L'application agent (MAUI) fera l'objet d'une
-recette dédiée sur terminal réel.
+Revue étendue (API + Web) : 01/08/2026 — cf. §9 ·
+**Revue d'écart contractuel (préparation Jalon 3) : 10/08/2026 — cf. §11.**
+Périmètre : API + Web + App agent (React Native/Expo, `sigasacces-mobile`,
+dépôt séparé — le prototype MAUI d'origine a été abandonné et supprimé le
+08/08/2026, cf. `CLAUDE.md` §5).
 
 > **Ce que ce rapport couvre — et ce qu'il ne couvre pas.** Il porte sur la
-> sécurité et la fiabilité du code livré pour le Jalon 2 (API + Web). Il ne
-> couvre PAS le test de charge (REQ-FIAB-06), ni l'infrastructure de production
-> (sauvegardes, PRA, supervision, WAF, séparation dev/recette/prod) — travaux du
-> Jalon 3, non réalisés à la date de cette revue. Voir §7.
+> sécurité et la fiabilité du code livré. Il ne couvre PAS le test de charge
+> (REQ-FIAB-06), ni l'infrastructure de production complète (sauvegardes
+> automatiques/chiffrées/isolées, PRA testé, supervision, WAF, séparation
+> dev/recette/prod) — travaux du Jalon 3, **toujours non réalisés** à la date
+> du 10/08/2026. Voir §7 et §11.
 
 ---
 
@@ -27,12 +30,17 @@ recette dédiée sur terminal réel.
 
 - **Recette interne documentée** : ce rapport, par exigence, avec renvoi au code
   et aux tests.
-- **Tests automatisés** : **161 tests** au vert (62 unitaires + 84 d'intégration
-  + 15 de composants Blazor via bUnit), 0 avertissement de compilation. Les
-  tests unitaires reproduisent scénario par scénario la maquette validée par le
-  client le 22/07/2026 (`docs/scenarios-fonctionnels.md`) ; les tests
-  d'intégration exercent l'API réelle en mémoire (auth, RBAC, cloisonnement,
-  temps réel) contre une base PostgreSQL dédiée aux tests.
+- **Tests automatisés** : **260 tests** au vert au 10/08/2026 (128 unitaires +
+  117 d'intégration + 15 de composants Blazor via bUnit), 0 avertissement de
+  compilation — en hausse depuis les 161 tests de la revue du 01/08 (+99),
+  proportionnelle aux fonctionnalités ajoutées depuis (code de secours,
+  notifications push, demandes de confirmation, synchronisation temps réel
+  étendue à l'admin). Les tests unitaires reproduisent scénario par scénario
+  la maquette validée par le client le 22/07/2026
+  (`docs/scenarios-fonctionnels.md`) ; les tests d'intégration exercent l'API
+  réelle en mémoire (auth, RBAC, cloisonnement, temps réel) contre une base
+  PostgreSQL dédiée aux tests. **La couverture .NET ne s'étend pas à l'app
+  agent mobile** (React Native/Expo) — cf. §11.5.
 - **Analyse OWASP** : cf. §5, mise en regard du Top 10.
 - **Recette fonctionnelle Web** : parcours rejoués dans un navigateur réel
   (connexion, enrôlement 2FA avec génération de codes TOTP valides, création de
@@ -65,11 +73,13 @@ cf. §9.1.
 
 - **Authentification** : JWT (portail web) + clé API par terminal (agents).
   Politique de mot de passe durcie (≥ 12, mixte), verrouillage après 5 échecs.
-  **2FA TOTP obligatoire pour les comptes à privilèges** (Admin, SuperAdmin,
-  Sûreté), avec codes de récupération. Persistance de session chiffrée
-  (ProtectedSessionStorage). Le parcours d'enrôlement initial (première
-  connexion d'un compte privilégié) est désormais implémenté de bout en bout
-  côté Web — cf. §9.3, bloquant corrigé.
+  2FA TOTP disponible en self-service pour tous les rôles, avec codes de
+  récupération, et le parcours d'enrôlement est implémenté de bout en bout
+  côté Web — cf. §9.3, bloquant corrigé. **⚠️ Écart au CDC §7.2 depuis le
+  02/08/2026** : le 2FA n'est **plus obligatoire** pour les comptes à
+  privilèges (Admin/SuperAdmin/Sûreté), `RequireTwoFactorForPrivileged=false`
+  en configuration — décision du prestataire, **non encore confirmée par
+  écrit par Sigasécurité** à la date de cette revue. Voir §11.3.
 - **RBAC** : policies ASP.NET Core (Hôte / Agent / Sûreté / Admin). **Moindre
   privilège** appliqué : un Hôte ne révoque que ses propres demandes ; le motif
   d'exclusion n'est visible que de la Sûreté/Admin ; le journal du site
@@ -134,7 +144,9 @@ cf. §9.1.
 
 Non directement applicables au périmètre code : A06 (dépendances — parc réduit,
 zéro dépendance cryptographique tierce), A10 (SSRF — pas d'appel serveur piloté
-par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
+par l'utilisateur ; les notifications WhatsApp ont été abandonnées le
+01/08/2026 au profit d'un canal email unique, cf. §11.4 — aucun code résiduel
+lié à l'API Meta).
 
 ---
 
@@ -161,28 +173,49 @@ par l'utilisateur, hormis WhatsApp vers l'API Meta officielle).
 ## 7. Limites connues et recommandations
 
 1. **Audit d'intrusion externe** recommandé avant tout déploiement chez un
-   client tiers de Sigasécurité (au-delà du site pilote SICOPA).
-2. **Application agent (MAUI)** : le cœur cryptographique hors-ligne est fourni
-   et testé ; l'app elle-même doit être construite et **recettée sur terminal
-   réel** (scan caméra, autofocus, luminosité).
-3. **Notifications WhatsApp** : nécessite les identifiants Meta Cloud API de
-   production (configuration, pas code) ; les démarches d'approbation de
-   template (24-72h, avec risque de refus) sont à initier au plus tôt.
-4. **Test de charge (REQ-FIAB-06)** : non exécuté à la date de cette revue.
-   Exigé par le CDC avant mise en production. Hors périmètre de ce rapport
-   (Jalon 3).
-5. **Infrastructure de production** (sauvegardes chiffrées + test de
-   restauration, PRA, supervision, WAF, séparation dev/recette/prod) : non
-   réalisée à la date de cette revue. Hors périmètre de ce rapport (Jalon 3),
-   documentée dans `docs/deploiement.md`.
-6. **Fériés hors-ligne** : la vérification de jour ouvré en mode dégradé ne
-   connaît pas les fériés (confrontés au retour en ligne lors de la resync).
-7. ~~**Réversibilité des données**~~ — **corrigé (03/08/2026)** : export complet
+   client tiers de Sigasécurité (au-delà du site pilote SICOPA). Écarté pour
+   cette phase par décision écrite du client, cf. en-tête de ce rapport.
+2. **Application agent (React Native/Expo)** : le cœur de décision hors-ligne
+   (`engine.ts`) reproduit fidèlement la logique du Domain .NET mais n'a
+   **aucun test automatisé** à ce jour (contrairement à son équivalent
+   `OfflineQrVerifier`/`OfflineScanEvaluator` côté serveur) — cf. §11.5.
+   Recette sur terminal réel (scan caméra, autofocus, luminosité) toujours à
+   mener.
+3. ~~**Notifications WhatsApp**~~ — **abandonnées (01/08/2026)**, remplacées
+   par un canal email unique (décision client, `accord-commercial.md`). Un
+   canal push (Expo) est venu s'y ajouter depuis, cf. §11.4.
+4. **Test de charge (REQ-FIAB-06)** : toujours **non exécuté** à la date du
+   10/08/2026 — zéro script, zéro outil dans le dépôt. Exigé par le CDC §6
+   avant mise en production, **sans réserve écrite du client** contrairement
+   à l'audit d'intrusion (point 1) : ce n'est pas un écart négocié, c'est un
+   manque à combler. Cf. §11.1.
+5. **Infrastructure de production** : le mécanisme de sauvegarde (`pg_dump`)
+   existe et est testé unitairement, mais reste **déclenché manuellement**
+   (aucune planification quotidienne), **non chiffré au repos** et **stocké
+   sur le même volume que la production** (pas d'isolement anti-rançongiciel)
+   — écart avec les termes de `accord-commercial.md`/`deploiement.md`. Aucun
+   test de restauration réel exécuté à ce jour. PRA, supervision active, WAF,
+   séparation dev/recette/prod : non réalisés. Cf. §11.2 et §11.7.
+6. **Fériés hors-ligne** : la liste des jours fériés (`Holidays`/`SiteHolidays`
+   en configuration) est **vide** — le calcul de jour ouvré reste lundi-
+   vendredi pur, en ligne comme en mode dégradé, tant que Sigasécurité ne
+   fournit pas la liste du site pilote. Gap opérationnel, pas de code.
+7. **Séparation des rôles PostgreSQL (owner/app)** : le mécanisme existe et
+   est testé, mais **n'est pas activé par défaut** — `.env.example` la
+   qualifie encore d'amélioration ultérieure. L'inaltérabilité du journal
+   repose donc aujourd'hui sur les triggers seuls, pas sur la double barrière
+   documentée en §4. Cf. `CLAUDE.md` §7 (M2 de `audit-securite-2026-08-05.md`,
+   toujours ouvert).
+8. **2FA obligatoire pour comptes à privilèges** : rendu optionnel le
+   02/08/2026, confirmation écrite du client toujours manquante à ce jour.
+   Cf. §3 et §11.3.
+9. ~~**Réversibilité des données**~~ — **corrigé (03/08/2026)** : export complet
    d'un tenant (visites, journal, audit — CSV zippé) à la demande, console
    Admin → Sites, voir `note-decisions-client.md` §6.
-8. ~~**Énumération de comptes par canal temporel**~~ — **corrigé (25/07/2026)**.
-9. ~~**Enrôlement 2FA obligatoire pour Sûreté/Admin : parcours incomplet**~~ —
-   **corrigé (01/08/2026)**, cf. §9.3.
+10. ~~**Énumération de comptes par canal temporel**~~ — **corrigé (25/07/2026)**.
+11. ~~**Enrôlement 2FA obligatoire pour Sûreté/Admin : parcours incomplet**~~ —
+    **corrigé (01/08/2026)**, cf. §9.3 (le parcours reste disponible en
+    self-service, seul le caractère obligatoire a changé, cf. point 8).
 
 ---
 
@@ -364,30 +397,141 @@ pertinents pour la recette :
 
 ---
 
-## 10. Conclusion
+## 11. Revue d'écart contractuel — préparation Jalon 3 (10/08/2026)
+
+Déclenchée par une question directe du prestataire (« le projet peut-il être
+livré ? »), cette revue compare systématiquement le CDC signé
+(`cahier-des-charges-original.md`), la note d'analyse et les scénarios
+fonctionnels validés au **code réellement présent aujourd'hui** — API, Web et
+app agent React Native — plutôt qu'aux rapports précédents. Méthode : lecture
+des documents contractuels, vérification directe dans le code (recherche
+exhaustive, lecture de fichiers), `dotnet build` + suite non-intégration
+rejoués. Objectif explicite : ne rien arrondir vers « fait ».
+
+### 11.1 REQ-FIAB-06 — Test de charge : ❌ toujours absent
+
+Aucun script (`k6`/`artillery`/`jmeter`), aucun workflow dédié. `docs/deploiement.md`
+§9 porte encore la case correspondante non cochée. **À ne pas confondre avec
+l'audit d'intrusion externe** (point 1 de §7) : celui-ci a été écarté par
+décision écrite du client ; le test de charge, lui, reste exigé sans réserve
+par le CDC §6 — c'est un manque, pas un arbitrage tranché.
+
+### 11.2 Sauvegardes/PRA — REQ-FIAB-03/04 : ⚠️ mécanisme réel, promesses non tenues
+
+Le service (`PgDumpDatabaseBackupService`, testé unitairement) fonctionne,
+mais au 10/08/2026 :
+- **Pas de planification quotidienne** — vérifié : `Program.cs` n'enregistre
+  que deux `BackgroundService` (`OverstayMonitor` ligne 132, `RetentionMonitor`
+  ligne 135), aucun troisième pour les sauvegardes. Le déclenchement est
+  manuel (bouton SuperAdmin ou CLI).
+- **Pas chiffrées au repos** — le `.dump` `pg_dump -Fc` est écrit en clair.
+- **Pas isolées de la production** — même volume Docker que le serveur ; une
+  compromission du VPS emporte les sauvegardes avec.
+- **Aucun test de restauration exécuté** à ce jour (le mécanisme CLI existe et
+  fonctionne, mais n'a jamais été exercé en conditions réelles ni documenté).
+
+### 11.3 2FA privilégié — CDC §7.2 : ⚠️ décision produit assumée, couverture contractuelle manquante
+
+Confirmé en configuration : `appsettings.json` → `"RequireTwoFactorForPrivileged": false`.
+Comportement cohérent avec `note-decisions-client.md` §5 (avertissement à la
+connexion plutôt que ré-enrôlement forcé, cf. `audit-securite-2026-08-05.md`
+finding M1). Ce n'est pas un bug — c'est la valeur intentionnellement figée.
+Le point ouvert est ailleurs : cette note dit explicitement *« à faire
+confirmer par écrit auprès de Sigasécurité avant le pilote »*, et rien dans
+les documents disponibles n'atteste que cette confirmation a été obtenue. Tant
+que ce n'est pas le cas, c'est un écart non couvert au CDC §7.2 (qui impose le
+2FA « obligatoire » pour ces rôles), pas seulement une case technique.
+Risque additionnel : combiné à la portée globale (non cloisonnée par site) du
+rôle Admin, un compte Admin compromis sans 2FA expose l'ensemble des clients
+de Sigasécurité, pas un seul site.
+
+### 11.4 Canal de notification push (Expo) — extension non documentée contractuellement
+
+Recherche exhaustive de `WhatsApp` dans `src/` : 4 occurrences, toutes des
+commentaires expliquant l'abandon du 01/08/2026 — **aucun code mort**, aucune
+dépendance résiduelle vers l'API Meta. En revanche, un canal de notification
+**push (Expo)** est apparu le 08/08/2026 (`OverstayPushNotifier`,
+`ExpoPushSender`, migration `AddPushSubscriptionsAndTerminalPushToken`),
+postérieur aux derniers documents de décision client lus. Ce n'est pas un
+problème de sécurité, mais une extension fonctionnelle qui n'apparaît dans
+aucun document contractuel — à documenter explicitement auprès du client
+(extension du canal « hôte notifié » déjà prévu, ou hors périmètre à faire
+valider selon la clause avenant de `accord-commercial.md`).
+
+### 11.5 App agent React Native — ⚠️ aucun test automatisé
+
+Confirmé : migration MAUI → React Native propre (`git log -- src/NovAcces.Mobile`
+montre la suppression du 08/08/2026 ; `NovAcces.sln` ne référence plus le
+projet ; aucune dépendance résiduelle). Mais `sigasacces-mobile/package.json`
+ne déclare aucun framework de test (`jest` ou autre) et le dépôt ne contient
+aucun fichier de test. Le moteur de décision hors-ligne (`engine.ts`), qui
+rejoue localement les mêmes règles de sûreté que `Domain/Visit.cs`, n'a donc
+**aucune preuve automatisée de non-régression** — contrairement à son
+équivalent serveur (`OfflineQrVerifierTests`, `OfflineScanEvaluatorTests`).
+
+### 11.6 Séparation des rôles PostgreSQL — ⚠️ non activée par défaut
+
+Le mécanisme (§4) est réel et testé (`ApplicationRole_CannotDeleteJournals_EvenIfTriggersWereDropped`),
+mais confirmé **non activé** dans la configuration de référence :
+`.env.example` déclare *« Rôle applicatif unique (propriétaire + runtime) pour
+ce premier déploiement »* et qualifie la double barrière d'« amélioration
+possible ultérieure, pas un prérequis ». L'inaltérabilité du journal repose
+donc aujourd'hui sur les triggers PostgreSQL seuls tant que
+`tools/provisionner-roles-postgres.sql` + `grant-app-role` n'ont pas été
+rejoués sur le VPS cible (action manuelle documentée mais non confirmée
+exécutée — déjà noté comme M2 ouvert dans `audit-securite-2026-08-05.md`).
+
+### 11.7 Autres constats
+
+- **Jours fériés** (`Holidays`/`SiteHolidays`) : confirmés **vides** dans
+  `appsettings.json`. Le mode dégradé (et le calcul jour ouvré en ligne)
+  ignore les fériés tant que Sigasécurité ne fournit pas la liste du site
+  pilote — gap opérationnel, pas de code.
+- **Supervision proactive (REQ-FIAB-05)** : `/health` existe, aucune sonde
+  externe ni alerting configuré ; la disponibilité mensuelle n'est mesurée par
+  aucun mécanisme automatisé.
+- **Tests d'intégration** : les 260 tests cités en §1/§6 ont été rejoués
+  personnellement par Mamadou dans son environnement (avec PostgreSQL réel) le
+  10/08/2026, résultat 260/260 — nombre confirmé, pas seulement documentaire.
+
+### 11.8 Ce qui reste solide (vérifié, pas seulement documenté)
+
+Cryptographie, anti-rejeu, RBAC, cloisonnement multi-tenant, rétention et
+anonymisation (sentinel `[anonymisé]` identique côté C# et trigger SQL,
+`RetentionMonitor` réellement enregistré comme tâche de fond) : tous vérifiés
+directement dans le code à cette date, cohérents avec les revues précédentes.
+Le correctif SMTP du 01/08 (§9.1 point liste) est toujours en place.
+
+---
+
+## 12. Conclusion
 
 Le socle critique de sûreté (signature, anti-rejeu, fenêtre serveur, cycle
-directionnel, cloisonnement multi-tenant, authentification/RBAC/2FA, journal
+directionnel, cloisonnement multi-tenant, authentification/RBAC, journal
 inaltérable) est **implémenté, conforme à la maquette validée et couvert par
-161 tests automatisés au vert**.
+260 tests automatisés au vert** (10/08/2026).
 
-Deux revues complémentaires ont suivi la recette initiale du 24/07 :
+Trois revues complémentaires ont suivi la recette initiale du 24/07 :
 - celle du 25/07 (§8) a identifié et corrigé une fuite temps réel inter-tenant
   (hub SignalR), avec test de non-régression ;
-- celle du 01/08 (§9), plus large, a porté sur l'API dans son ensemble puis sur
-  le Web écran par écran. Elle a corrigé douze constats de sécurité côté API
-  (dont un contournement du cloisonnement à la connexion agent et une
-  resynchronisation hors ligne qui faisait confiance au terminal), un bloquant
-  qui aurait rendu le portail Web inutilisable en production (parcours
-  d'enrôlement 2FA absent), et un défaut de disponibilité systémique touchant
-  onze actions du Web.
+- celle du 01/08 (§9) a porté sur l'API dans son ensemble puis sur le Web
+  écran par écran, corrigeant douze constats de sécurité côté API et un
+  bloquant de production (parcours d'enrôlement 2FA absent) ;
+- celle du 10/08 (§11) a comparé systématiquement le CDC signé au code actuel
+  et identifié **six écarts non résolus** à traiter avant une livraison
+  contractuelle : test de charge absent (REQ-FIAB-06), sauvegardes non
+  automatisées/chiffrées/isolées, confirmation écrite manquante sur
+  l'assouplissement du 2FA privilégié (CDC §7.2), app agent sans test
+  automatisé, séparation des rôles PostgreSQL non activée en configuration de
+  référence, et jours fériés non renseignés.
 
-Le périmètre **API + Web du Jalon 2** est jugé conforme à la maquette validée
-et à un niveau de sécurité et de fiabilité satisfaisant pour la suite de la
-recette. Il **n'est pas évalué prêt pour la mise en production** au sens du
-CDC : le test de charge (REQ-FIAB-06) n'a pas été exécuté et l'infrastructure
-de production (sauvegardes, PRA, supervision, WAF, séparation des
-environnements) n'est pas en place — ces deux points relèvent du Jalon 3 et
-sortent du périmètre de ce rapport. L'audit externe reste par ailleurs
-recommandé avant tout déploiement chez un client tiers de Sigasécurité, et la
-recette de l'application agent sur terminal réel reste à mener.
+Le périmètre **API + Web + App agent** est jugé conforme à la maquette
+validée et à un niveau de sécurité et de fiabilité satisfaisant pour la suite
+de la recette. Il **n'est toujours pas évalué prêt pour la mise en
+production** au sens strict du CDC : le test de charge (REQ-FIAB-06) n'a pas
+été exécuté, l'infrastructure de production (sauvegardes conformes, PRA
+testé, supervision, WAF, séparation des environnements) n'est pas en place,
+et un écart contractuel (2FA §7.2) attend une confirmation écrite du client.
+Ces points sont priorisés en §11 et doivent être soldés avant toute
+annonce de livraison au sens du Jalon 3. L'audit externe reste par ailleurs
+recommandé avant tout déploiement chez un client tiers de Sigasécurité.

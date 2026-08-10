@@ -59,6 +59,18 @@ services:
       # Doc Swagger en production : désactivée par défaut, à activer
       # ponctuellement via API_ENABLE_SWAGGER=true dans .env (voir README).
       Api__EnableSwagger: ${API_ENABLE_SWAGGER:-false}
+      # Sauvegarde automatique/chiffrée (§7.4, revue du 10/08/2026) — voir
+      # BackupScheduler. Désactivée par défaut : la production refuse de
+      # démarrer avec AutoBackup activé sans passphrase configurée (voir
+      # ProductionConfigurationValidator). Réplication hors-site optionnelle,
+      # désactivée par défaut (aucun compartiment S3 fourni ici).
+      DatabaseBackup__AutoBackup__Enabled: ${DATABASEBACKUP_AUTOBACKUP_ENABLED:-false}
+      DatabaseBackup__EncryptionPassphrase: ${DATABASEBACKUP_ENCRYPTIONPASSPHRASE:-}
+      DatabaseBackup__Offsite__Enabled: ${DATABASEBACKUP_OFFSITE_ENABLED:-false}
+      DatabaseBackup__Offsite__ServiceUrl: ${DATABASEBACKUP_OFFSITE_SERVICEURL:-}
+      DatabaseBackup__Offsite__BucketName: ${DATABASEBACKUP_OFFSITE_BUCKETNAME:-}
+      DatabaseBackup__Offsite__AccessKey: ${DATABASEBACKUP_OFFSITE_ACCESSKEY:-}
+      DatabaseBackup__Offsite__SecretKey: ${DATABASEBACKUP_OFFSITE_SECRETKEY:-}
     # Pas de "ports:" publiés directement : Caddy reverse-proxy vers ce
     # service par son nom DNS interne ("api"). L'app agent mobile (terminaux)
     # passe aussi par Caddy, jamais directement sur ce conteneur.
